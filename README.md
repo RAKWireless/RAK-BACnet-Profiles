@@ -14,7 +14,7 @@ A repository of BACnet configuration profiles for LoRaWAN devices used with RAKw
 
 ## 📖 Introduction
 
-This repository provides conversion configuration files from LoRaWAN devices to BACnet protocol. These profile files enable RAK gateways to map LoRaWAN device data to standard BACnet objects (such as Analog Input, Binary Input, Analog Output, etc.), achieving seamless integration with Building Automation Systems (BAS).
+This repository provides conversion configuration files from LoRaWAN devices to BACnet protocol. These profile files enable RAK gateways to map LoRaWAN device data to standard BACnet objects (such as Analog Input, Binary Input, Analog Output, etc.), achieving seamless integration with Building Management Systems (BMS).
 
 ### Key Features
 
@@ -136,9 +136,9 @@ Ensure the LoRaWAN device has successfully joined the RAK gateway (supports OTAA
 
 The gateway will automatically create corresponding BACnet objects according to the configuration file and map LoRaWAN data to these objects.
 
-### 4. BAS System Integration
+### 4. BMS System Integration
 
-In the Building Automation System (BAS), access these objects through standard BACnet protocol to achieve device monitoring and control.
+In the Building Management System (BMS), access these objects through standard BACnet protocol to achieve device monitoring and control.
 
 ### Example: Reading Temperature Data
 
@@ -149,13 +149,13 @@ Decode function parses
     ↓
 Map to BACnet object (AnalogInputObject)
     ↓
-BAS system reads (via BACnet protocol)
+BMS system reads (via BACnet protocol)
 ```
 
 ### Example: Controlling Air Conditioner
 
 ```
-BAS system writes command (via BACnet protocol)
+BMS system writes command (via BACnet protocol)
     ↓
 BACnet object receives (AnalogOutputObject)
     ↓

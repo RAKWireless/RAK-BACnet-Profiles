@@ -14,7 +14,7 @@
 
 ## 📖 简介
 
-本仓库提供了 LoRaWAN 设备到 BACnet 协议的转换配置文件。这些配置文件（Profile）使 RAK 网关能够将 LoRaWAN 设备的数据映射为标准的 BACnet 对象（如模拟输入、二进制输入、模拟输出等），从而实现与楼宇自动化系统（BAS）的无缝集成。
+本仓库提供了 LoRaWAN 设备到 BACnet 协议的转换配置文件。这些配置文件（Profile）使 RAK 网关能够将 LoRaWAN 设备的数据映射为标准的 BACnet 对象（如模拟输入、二进制输入、模拟输出等），从而实现与楼宇管理系统（BMS）的无缝集成。
 
 ### 主要特性
 
@@ -136,9 +136,9 @@ id: uuid-string                     # 唯一标识符（可选）
 
 网关会根据配置文件自动创建对应的 BACnet 对象，并将 LoRaWAN 数据映射到这些对象上。
 
-### 4. BAS 系统集成
+### 4. BMS 系统集成
 
-在楼宇自动化系统（BAS）中，通过标准 BACnet 协议访问这些对象，实现设备监控和控制。
+在楼宇管理系统（BMS）中，通过标准 BACnet 协议访问这些对象，实现设备监控和控制。
 
 ### 示例：读取温度数据
 
@@ -149,13 +149,13 @@ Decode 函数解析
     ↓
 映射到 BACnet 对象（AnalogInputObject）
     ↓
-BAS 系统读取（通过 BACnet 协议）
+BMS 系统读取（通过 BACnet 协议）
 ```
 
 ### 示例：控制空调
 
 ```
-BAS 系统写入命令（通过 BACnet 协议）
+BMS 系统写入命令（通过 BACnet 协议）
     ↓
 BACnet 对象接收（AnalogOutputObject）
     ↓
