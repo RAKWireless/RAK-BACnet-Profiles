@@ -18,20 +18,17 @@ codec: >-
     }
     
     var battery = (bytes[0] << 8) | bytes[1];
-    values.push({ name: "BatteryVoltage", channel: 1, value: battery });
-    
     var moistureRaw = (bytes[4] << 8) | bytes[5];
     var soilMoisture = moistureRaw / 100;
-    values.push({ name: "SoilMoisture", channel: 2, value: soilMoisture });
-    
     var tempRaw = (bytes[6] << 8) | bytes[7];
     var sign = (tempRaw & 0x8000) >> 15;
     var soilTemperature = sign ? (tempRaw - 0xFFFF) / 100 : tempRaw / 100;
-    values.push({ name: "SoilTemperature", channel: 3, value: soilTemperature });
-    
     var ecRaw = (bytes[8] << 8) | bytes[9];
+
+    values.push({ name: "BatteryVoltage", channel: 1, value: battery });
+    values.push({ name: "SoilMoisture", channel: 2, value: soilMoisture });
+    values.push({ name: "SoilTemperature", channel: 3, value: soilTemperature });
     values.push({ name: "SoilConductivity", channel: 4, value: ecRaw });
-    
     return values;
   }
 
