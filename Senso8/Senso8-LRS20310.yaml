@@ -1,0 +1,67 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    if (fPort == 10) {
+      var WaterLeakageLevel = data[3]
+      var Battery = data[2];
+      var WaterLeakAlert = (data[1] >> 2) & 0x01
+      var CableBreakAlert = (data[1] >> 3) & 0x01
+
+      values.push({ name: "WaterLeakageLevel", channel: 1, value: WaterLeakageLevel, unit: '%' })
+      values.push({ name: "Battery", channel: 2, value: Battery, unit: '%' })
+      values.push({ name: "WaterLeakAlert", channel: 3, value: WaterLeakAlert, unit: null })
+      values.push({ name: "CableBreakAlert", channel: 4, value: CableBreakAlert, unit: null })
+    }
+
+    return values
+  }
+
+  function Encode(data, variables) {
+    var bytes = []
+    return bytes
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    }
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    }
+  }
+datatype:
+  '1':
+    covIncrement: 1.0
+    name: Water Leakage Level
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '2':
+    covIncrement: 1.0
+    name: Battery Capacity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '3':
+    name: Water Leak Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '4':
+    name: Cable Break Alert
+    type: BinaryInputObject
+    updateInterval: 600
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Senso8-LRS20310
+profileVersion: 1.0.0

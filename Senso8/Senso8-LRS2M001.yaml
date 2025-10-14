@@ -1,0 +1,92 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    var array = new Uint8Array(data)
+    var view = new DataView(array.buffer)
+
+    if (fPort == 10) {
+      var DryContactInput1Stat = view.getUint8(3)
+      var DryContactInput2Stat = view.getUint8(6)
+      var DryContactInput1EventCount = view.getUint16(4, false)
+      var DryContactInput2EventCount = view.getUint16(7, false)
+
+      var PoweredByBattery = (data[0] >> 4) & 0x01
+      var DryContactInput2TriggerEvent = (data[0] >> 3) & 0x01
+      var DryContactInput1TriggerEvent = (data[0] >> 2) & 0x01
+
+      var ButtonPressed = (data[0] & 0x01)
+
+      values.push({ name: "DryContactInput1Stat", channel: 1, value: DryContactInput1Stat, unit: null })
+      values.push({ name: "DryContactInput2Stat", channel: 2, value: DryContactInput2Stat, unit: null })
+      values.push({ name: "DryContactInput1EventCount", channel: 3, value: DryContactInput1EventCount, unit: null })
+      values.push({ name: "DryContactInput2EventCount", channel: 4, value: DryContactInput2EventCount, unit: null })
+      values.push({ name: "PoweredByBattery", channel: 5, value: PoweredByBattery, unit: null })
+      values.push({ name: "DryContactInput1TriggerEvent", channel: 6, value: DryContactInput1TriggerEvent, unit: null })
+      values.push({ name: "DryContactInput2TriggerEvent", channel: 7, value: DryContactInput2TriggerEvent, unit: null })
+      values.push({ name: "ButtonPressed", channel: 8, value: ButtonPressed, unit: null })
+    }
+
+    return values
+  }
+
+  function Encode(data, variables) {
+    var bytes = []
+    return bytes
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    }
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    }
+  }
+datatype:
+  '1':
+    name: Dry Contact Input 1 State
+    type: BinaryInputObject
+    updateInterval: 600
+  '2':
+    name: Dry Contact Input 2 State
+    type: BinaryInputObject
+    updateInterval: 600
+  '3':
+    name: Dry Contact Input 1 Event Count
+    type: AnalogInputObject
+    updateInterval: 600
+  '4':
+    name: Dry Contact Input 2 Event Count
+    type: AnalogInputObject
+    updateInterval: 600
+  '5':
+    name: Powered By Battery
+    type: BinaryInputObject
+    updateInterval: 600
+  '6':
+    name: Dry Contact Input1 Trigger Event
+    type: BinaryInputObject
+    updateInterval: 600
+  '7':
+    name: Dry Contact Input2 Trigger Event
+    type: BinaryInputObject
+    updateInterval: 600
+  '8':
+    name: Button Pressed
+    type: BinaryInputObject
+    updateInterval: 600
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Senso8-LRS2M001
+profileVersion: 1.0.0

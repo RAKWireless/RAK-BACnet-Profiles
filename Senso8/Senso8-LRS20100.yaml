@@ -1,0 +1,123 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+    var array = new Uint8Array(data)
+    var view = new DataView(array.buffer)
+    if (fPort == 10) {
+      var Temperature = view.getInt16(3, false)
+      var Humidity = view.getUint16(5, false)
+
+      var Battery = data[2];
+      var HumidityLowAlart = (data[0] >> 5) & 0x01
+      var HumidityHighAlart = (data[0] >> 4) & 0x01
+      var TemperatureLowAlart = (data[0] >> 3) & 0x01
+      var TemperatureHighAlart = (data[0] >> 2) & 0x01
+      var ButtonPressed = (data[0]) & 0x01
+
+      values.push({ name: "Temperature", channel: 1, value: Temperature / 10.0, unit: '°C' })
+      values.push({ name: "Humidity", channel: 2, value: Humidity / 10.0, unit: '%' })
+      values.push({ name: "Battery", channel: 3, value: Battery, unit: '%' })
+      values.push({ name: "HumidityLowAlart", channel: 4, value: HumidityLowAlart, unit: null })
+      values.push({ name: "HumidityHighAlart", channel: 5, value: HumidityHighAlart, unit: null })
+      values.push({ name: "TemperatureLowAlart", channel: 6, value: TemperatureLowAlart, unit: null })
+      values.push({ name: "TemperatureHighAlart", channel: 7, value: TemperatureHighAlart, unit: null })
+      values.push({ name: "ButtonPressed", channel: 8, value: ButtonPressed, unit: null })
+    }
+
+    if (fPort == 12) {
+      var DataUploadInterval = view.getUint16(1, false)
+      values.push({ name: "DataUploadInterval", channel: 9, value: DataUploadInterval, unit: null })
+    }
+
+    if (fPort == 13) {
+      var TemperatureHighThreshold = view.getInt16(1, false)
+      var TemperatureLowThreshold = view.getInt16(3, false)
+      var HumidityHighTreshold = view.getUint8(5)
+      var HumidityLowThresHold = view.getUint8(6)
+
+      values.push({ name: "TemperatureHighThreshold", channel: 10, value: TemperatureHighThreshold, unit: '°C' })
+      values.push({ name: "TemperatureLowThreshold", channel: 11, value: TemperatureLowThreshold, unit: '°C' })
+      values.push({ name: "HumidityHighTreshold", channel: 12, value: HumidityHighTreshold, unit: '%' })
+      values.push({ name: "HumidityLowThresHold", channel: 13, value: HumidityLowThresHold, unit: '%' })
+    }
+
+    return values
+  }
+
+  function Encode(data, variables) {
+    /*
+    if (data.channel == 9) {
+      var array = new Uint8Array(5)
+      var view = new DataView(array.buffer)
+      view.setInt8(0, 1)
+      view.setInt8(1, 0)
+      view.setUint16(2, data.value, false)
+      view.setInt8(4, 1)
+      var bytes = Array.from(array)
+      return bytes
+    }
+    */
+    return []
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    }
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    }
+  }
+datatype:
+  '1':
+    covIncrement: 0.1
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    updateInterval: 600
+  '2':
+    covIncrement: 0.1
+    name: Humidity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '3':
+    covIncrement: 1.0
+    name: Battery Capacity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '4':
+    name: Humidity Low Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '5':
+    name: Humidity High Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '6':
+    name: Temperature Low Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '7':
+    name: Temperature High Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '8':
+    name: 'Button Pressed '
+    type: BinaryInputObject
+    updateInterval: 600
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Senso8-LRS20100
+profileVersion: 1.0.0

@@ -1,0 +1,191 @@
+codec: >
+  function Decode(fPort, data, variables) {
+
+    var values = []
+
+    var arr = new Uint8Array(data)
+    var view = new DataView(arr.buffer)
+
+    if (fPort == 10) {
+      var AQI_CO2_T = view.getUint32(1)
+      var AQI = AQI_CO2_T >> 23
+      var CO2 = (AQI_CO2_T >> 10) & 0x1FFF
+      var Temperature = ((AQI_CO2_T & 0x03FF) - 300) / 10
+      var Humidity = view.getUint8(5) * 0.5
+      var GAS1 = view.getUint16(6)
+      var GAS2 = view.getUint16(8)
+      var Battery = view.getUint8(10)
+
+      var ButtonPressed = data[0] & 0x01
+      var TemperatureHumidityAlert = (data[0] >> 2) & 0x01
+      var CO2Alert = (data[0] >> 3) & 0x01
+      var EC1Alert = (data[0] >> 4) & 0x01
+      var EC2Alert = (data[0] >> 5) & 0x01
+      var TVOCAlert = (data[0] >> 6) & 0x01
+      var PMxAlert = (data[0] >> 7) & 0x01
+
+      values.push({ name: "AQI", channel: 1, value: AQI, unit: null })
+      values.push({ name: "CO2", channel: 2, value: CO2, unit: null })
+      values.push({ name: "Temperature", channel: 3, value: Temperature, unit: null })
+      values.push({ name: "Humidity", channel: 4, value: Humidity, unit: null })
+      values.push({ name: "GAS1", channel: 5, value: GAS1, unit: null })
+      values.push({ name: "GAS2", channel: 6, value: GAS2, unit: null })
+      values.push({ name: "Battery", channel: 7, value: Battery, unit: null })
+
+      values.push({ name: "ButtonPressed", channel: 12, value: ButtonPressed, unit: null })
+      values.push({ name: "TemperatureHumidityAlert", channel: 13, value: TemperatureHumidityAlert, unit: null })
+      values.push({ name: "CO2Alert", channel: 14, value: CO2Alert, unit: null })
+      values.push({ name: "EC1Alert", channel: 15, value: EC1Alert, unit: null })
+      values.push({ name: "EC2Alert", channel: 16, value: EC2Alert, unit: null })
+      values.push({ name: "TVOCAlert", channel: 17, value: TVOCAlert, unit: null })
+      values.push({ name: "PMxAlert", channel: 18, value: PMxAlert, unit: null })
+
+    }
+    if (fPort == 11) {
+      var TVOC = (data[0] << 8) + data[1]
+      var PM1_0 = ((data[2] << 16) + (data[3] << 8) + data[4]) / 1000
+      var PM2_5 = ((data[5] << 16) + (data[6] << 8) + data[7]) / 1000
+      var PM10 = ((data[8] << 16) + (data[9] << 8) + data[10]) / 1000
+
+      values.push({ name: "TVOC", channel: 8, value: TVOC, unit: null })
+      values.push({ name: "PM1.0", channel: 9, value: PM1_0, unit: null })
+      values.push({ name: "PM2.5", channel: 10, value: PM2_5, unit: null })
+      values.push({ name: "PM10", channel: 11, value: PM10, unit: null })
+    }
+
+    return values
+  }
+
+  // Decode uplink function.
+  //
+  // Input is an object with the following fields:
+  // - bytes = Byte array containing the uplink payload, e.g. [255, 230, 255, 0]
+  // - fPort = Uplink fPort.
+  // - variables = Object containing the configured device variables.
+  //
+  // Output must be an object with the following fields:
+  // - data = Object representing the decoded payload.
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    }
+  }
+
+  // Encode downlink function.
+  //
+  // Input is an object with the following fields:
+  // - data = Object representing the payload that must be encoded.
+  // - variables = Object containing the configured device variables.
+  //
+  // Output must be an object with the following fields:
+  // - bytes = Byte array containing the downlink payload.
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    }
+  }
+datatype:
+  '1':
+    covIncrement: 1.0
+    name: AQI
+    type: AnalogInputObject
+    updateInterval: 600
+  '10':
+    covIncrement: 0.001
+    name: PM 2.5
+    type: AnalogInputObject
+    units: milligramsPerCubicMeter
+    updateInterval: 600
+  '11':
+    covIncrement: 0.001
+    name: PM 10
+    type: AnalogInputObject
+    units: milligramsPerCubicMeter
+    updateInterval: 600
+  '12':
+    name: Button Pressed
+    type: BinaryInputObject
+    updateInterval: 600
+  '13':
+    name: Temperature Humidity Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '14 ':
+    name: CO2 Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '15':
+    name: Gas Sensor 1 Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '16':
+    name: Gas Sensor 2 Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '17':
+    name: TVOC Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '18':
+    name: PMx Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '2':
+    covIncrement: 1.0
+    name: CO2
+    type: AnalogInputObject
+    units: partsPerMillion
+    updateInterval: 600
+  '3':
+    covIncrement: 0.1
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    updateInterval: 600
+  '4':
+    covIncrement: 0.5
+    name: Humidity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '5':
+    covIncrement: 1.0
+    name: Gas Sensor 1
+    type: AnalogInputObject
+    units: partsPerBillion
+    updateInterval: 600
+  '6':
+    covIncrement: 1.0
+    name: Gas Sensor 2
+    type: AnalogInputObject
+    units: partsPerBillion
+    updateInterval: 600
+  '7':
+    covIncrement: 1.0
+    name: Battery Capacity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '8':
+    covIncrement: 1.0
+    name: TVOC
+    type: AnalogInputObject
+    units: partsPerBillion
+    updateInterval: 600
+  '9':
+    covIncrement: 0.001
+    name: PM 1.0
+    type: AnalogInputObject
+    units: milligramsPerCubicMeter
+    updateInterval: 600
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Senso8-LRS10701
+profileVersion: 1.0.0

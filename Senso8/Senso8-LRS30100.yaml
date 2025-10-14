@@ -1,0 +1,617 @@
+codec: >-
+  function Decode(fPort, data, variables) {
+    var values = []
+
+    if (fPort == 10) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+      
+      var EVT = view.getUint8(0)
+      var Temperature = (view.getUint16(1))/10
+      var Humidity = (view.getUint16(3))/10
+      var TOFF = view.getUint16(5)
+      var UPID =view.getUint8(7)
+
+      values.push({ name: "EVT", channel: 1, value: EVT, unit: null })
+      values.push({ name: "TEMP", channel: 2, value: Temperature, unit: null })
+      values.push({ name: "HUM", channel: 3, value: Humidity, unit: null })
+      values.push({ name: "TOFF", channel: 4, value: TOFF, unit: null })
+      values.push({ name: "UPID", channel: 5, value: UPID, unit: null })
+    }  
+
+    if (fPort == 11) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+      
+      var EVT = view.getUint8(0)
+      var CO2 = view.getUint16(1)
+      var TVOC = view.getUint16(3)
+      var OCC = view.getUint8(5)
+      var LIGHT =view.getUint16(6)
+
+      values.push({ name: "EVT", channel: 16, value: EVT, unit: null })
+      values.push({ name: "CO2", channel: 17, value: CO2, unit: null })
+      values.push({ name: "TVOC", channel: 18, value: TVOC, unit: null })
+      values.push({ name: "Occupancy", channel: 19, value: OCC, unit: null })
+      values.push({ name: "Light intensity", channel: 20, value: LIGHT, unit: null })
+    }  
+
+    if (fPort == 8) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+
+      var XX = view.getUint8(0)
+      var YY = view.getUint8(1)
+      var ZZZHigh = view.getUint8(2)
+      var ZZZLow = view.getUint8(3)
+
+      var ZZZ = (ZZZHigh << 8) | ZZZLow
+      var firmwareVersion = `${XX}.${YY}.${ZZZ}`
+      values.push({ name: "FWV", channel: 6, value: firmwareVersion, unit: null })
+    }  
+
+    if (fPort == 9) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+
+      var XX = view.getUint8(0)
+      var YY = view.getUint8(1)
+      var ZZZHigh = view.getUint8(2)
+      var ZZZLow = view.getUint8(3)
+
+      var ZZZ = (ZZZHigh << 8) | ZZZLow
+      var firmwareVersion = `${XX}.${YY}.${ZZZ}`
+      var BAT_L = view.getUint16(4)
+      var BAT_P = view.getUint8(6)
+      var UL_CNT = view.getUint32(7)
+
+      values.push({ name: "FWV", channel: 7, value: firmwareVersion, unit: null })
+      values.push({ name: "BAT_L", channel: 8, value: BAT_L, unit: null })
+      values.push({ name: "BAT_P", channel: 9, value: BAT_P, unit: null })
+      values.push({ name: "UL_CNT", channel: 10, value: UL_CNT, unit: null })
+
+    }   
+
+    if (fPort == 12) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+      
+      var ULT = view.getUint16(0)
+      var TYP = view.getUint8(2)
+      var STS = view.getUint8(3)
+      var OWIN = view.getUint8(4)
+      var DACK =view.getUint8(5)
+
+      values.push({ name: "Data Upload Interval", channel: 11, value: ULT, unit: null })
+      values.push({ name: "Sensor Installed", channel: 12, value: TYP, unit: null })
+      values.push({ name: "Sensor Status", channel: 13, value: STS, unit: null })
+      values.push({ name: "Occupancy Window", channel: 14, value: OWIN, unit: null })
+      values.push({ name: "Reserved", channel: 15, value: DACK, unit: null })
+    }  
+
+    if (fPort == 13) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+      
+      var HTTH = view.getUint16(0)
+      var LTTH = view.getUint16(2)
+      var HHTH = view.getUint8(4)
+      var LHTH = view.getUint8(5)
+      var CO2TH = view.getUint16(6)
+      var TVOCTH = view.getUint16(8) 
+
+      values.push({ name: "High Temperature Threshold", channel: 21, value: HTTH, unit: null })
+      values.push({ name: "Low Temperature Threshold", channel: 22, value: LTTH, unit: null })
+      values.push({ name: "High Humidity Threshold", channel: 23, value: HHTH, unit: null })
+      values.push({ name: "Low Humidity Threshold", channel: 24, value: LHTH, unit: null })
+      values.push({ name: "CO2 High Threshold", channel: 25, value: CO2TH, unit: null })
+      values.push({ name: "TVOC High Threshold", channel: 25, value: TVOCTH, unit: null })
+    } 
+
+    if (fPort == 16) {
+      var arr = new Uint8Array(data)
+      var view = new DataView(arr.buffer)
+      
+      var SILENT = view.getUint16(0)
+      var DELTA_T = view.getUint16(2)
+      var DELTA_H = view.getUint16(4)
+      var REPEAT = view.getUint8(6)
+      var ADTR_EN = view.getUint8(7)
+
+      values.push({ name: "Maximum Silent Time", channel: 27, value: SILENT, unit: null })
+      values.push({ name: "Temperature Delta for Uplink", channel: 28, value: DELTA_T, unit: null })
+      values.push({ name: "Humidity Delta for Uplink", channel: 29, value: DELTA_H, unit: null })
+      values.push({ name: "Number of Redundant Payload", channel: 30, value: REPEAT, unit: null })
+      values.push({ name: "Adaptive Reporting Mode Enable", channel: 31, value: ADTR_EN, unit: null })
+    } 
+    return values
+      /****** END OF DECODE *******/
+  }
+
+
+  function Encode(data, variables) {
+    var result = []
+    if( data.channel == 32 ){
+        const c32 = variables.find(item => {
+            return item.channel === 32
+      })
+      result = result.concat([c32.value])
+      result.push
+    }
+
+    if( data.channel == 33 ){
+        const c33 = variables.find(item => {
+            return item.channel === 33
+        })
+        result = result.concat([c33.value])
+        result.push
+    }
+
+    if( data.channel >= 34 && data.channel <= 36 ){
+          const c34 = variables.find(item => {
+              return item.channel == 34
+          })
+          const c35 = variables.find(item => {
+              return item.channel == 35
+          })
+          const c36 = variables.find(item => {
+              return item.channel == 36
+          })
+
+          result = result.concat([c34.value >> 8, c34.value & 0xFF])
+          result = result.concat([c35.value])
+          result = result.concat([c36.value])
+          result.push
+          }
+
+      if( data.channel >= 37 && data.channel <= 42 ){
+          const c37 = variables.find(item => {
+              return item.channel == 37
+          })
+          const c38 = variables.find(item => {
+              return item.channel == 38
+          })
+          const c39 = variables.find(item => {
+              return item.channel == 39
+          })
+          const c40 = variables.find(item => {
+              return item.channel == 40
+          })
+          const c41 = variables.find(item => {
+              return item.channel == 41
+          })
+          const c42 = variables.find(item => {
+              return item.channel == 42
+          })
+
+          result = result.concat([c37.value >> 8, c37.value & 0xFF])
+          result = result.concat([c38.value >> 8, c38.value & 0xFF])
+          result = result.concat([c39.value])
+          result = result.concat([c40.value])
+          result = result.concat([c41.value >> 8, c41.value & 0xFF])
+          result = result.concat([c42.value >> 8, c42.value & 0xFF])
+          result.push
+          }
+
+      if( data.channel >= 43 && data.channel <= 47 ){
+          const c43 = variables.find(item => {
+              return item.channel == 43
+          })
+          const c44 = variables.find(item => {
+              return item.channel == 44
+          })
+          const c45 = variables.find(item => {
+              return item.channel == 45
+          })
+          const c46 = variables.find(item => {
+              return item.channel == 46
+          })
+          const c47 = variables.find(item => {
+              return item.channel == 47
+          })
+
+          result = result.concat([c43.value >> 8, c43.value & 0xFF])
+          result = result.concat([c44.value >> 8, c44.value & 0xFF])
+          result = result.concat([c45.value >> 8, c45.value & 0xFF])
+          result = result.concat([c46.value])
+          result = result.concat([c47.value])
+          result.push
+          }
+          /****** END OF ENCOD ********/
+      return result
+  }
+
+  function decodeUplink(input) {
+      return {
+          data: Decode(input.fPort, input.bytes, input.variables)
+      }
+  }
+
+
+  function encodeDownlink(input) {
+      return {
+          bytes: Encode(input.data, input.variables)
+      }
+  }
+
+datatype:
+  "1":
+    channel: 1
+    name: EVT
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 10
+    updateInterval: 600
+  "2":
+    channel: 2
+    name: TEMP
+    type: AnalogValueObject
+    covIncrement: 0.1
+    fport: 10
+    updateInterval: 600
+    units: degreesCelsius
+  "3":
+    channel: 3
+    name: HUM
+    type: AnalogValueObject
+    covIncrement: 0.1
+    fport: 10
+    updateInterval: 600
+    units: percent
+  "4":
+    channel: 4
+    name: TOFF
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 10
+    updateInterval: 600
+  "5":
+    channel: 5
+    name: UPID
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 10
+    updateInterval: 600
+  "6":
+    channel: 6
+    name: Device_ver_rep
+    type: OctetStringValueObject
+    covIncrement: 0
+    fport: 8
+    updateInterval: 1440
+  "7":
+    channel: 7
+    name: Device_FWV
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 9
+    updateInterval: 1440
+  "8":
+    channel: 8
+    name: Device_status_BAT_L
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 9
+    updateInterval: 1440
+    units: millivolts
+  "9":
+    channel: 9
+    name: Device_status_BAT_P
+    type: AnalogValueObject
+    covIncrement: 0.1
+    fport: 9
+    updateInterval: 1440
+    units: percent
+  "10":
+    channel: 10
+    name: Device_status_UL_CNT
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 9
+    updateInterval: 1440
+    units: null
+  "11":
+    channel: 11
+    name: Device_set_ULT
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 12
+    updateInterval: 1440
+    units: minutes
+  "12":
+    channel: 12
+    name: Device_set_TYP
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 12
+    updateInterval: 1440
+  "13":
+    channel: 13
+    name: Device_set_STS
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 12
+    updateInterval: 1440
+  "14":
+    channel: 14
+    name: Device_set_OWIN
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 12
+    updateInterval: 1440
+    units: minutes
+  "15":
+    channel: 15
+    name: Device_set_DACK
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 12
+    updateInterval: 1440
+    units: null
+  "16":
+    channel: 16
+    name: EVT_co2
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 11
+    updateInterval: 600
+    units: null
+  "17":
+    channel: 17
+    name: CO2
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 11
+    updateInterval: 600
+    units: partsPerMillion
+  "18":
+    channel: 18
+    name: TVOC
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 11
+    updateInterval: 600
+    units: microgramsPerLiter
+  "19":
+    channel: 19
+    name: OCC
+    type: BinaryOutputObject
+    covIncrement: 1
+    fport: 11
+    updateInterval: 600
+    units: microgramsPerLiter
+  "20":
+    channel: 20
+    name: Light
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 11
+    updateInterval: 600
+    units: luxes
+  "21":
+    channel: 21
+    name: HTTH
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 13
+    updateInterval: 600
+    units: degreesCelsius
+  "22":
+    channel: 22
+    name: LTTH
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 13
+    updateInterval: 600
+    units: degreesCelsius
+  "23":
+    channel: 23
+    name: HHTH
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 13
+    updateInterval: 600
+    units: percent
+  "24":
+    channel: 24
+    name: LHTH
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 13
+    updateInterval: 600
+    units: percent
+  "25":
+    channel: 25
+    name: CO2TH
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 13
+    updateInterval: 600
+    units: partsPerMillion
+  "26":
+    channel: 26
+    name: TVOCTH
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 13
+    updateInterval: 600
+    units: microgramsPerLiter
+  "27":
+    channel: 27
+    name: ADTR_slient
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 16
+    updateInterval: 600
+    units: minutes
+  "28":
+    channel: 28
+    name: ADTR_delta_T
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 16
+    updateInterval: 600
+    units: degreesCelsius
+  "29":
+    channel: 29
+    name: ADTR_delta_H
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 16
+    updateInterval: 600
+    units: percent
+  "30":
+    channel: 30
+    name: ADTR_repeat
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 16
+    updateInterval: 600
+    units: null
+  "31":
+    channel: 31
+    name: ADTR_EN
+    type: AnalogValueObject
+    covIncrement: 1
+    fport: 16
+    updateInterval: 600
+    units: null
+  "32":
+    channel: 32
+    name: Device_version_req
+    type: BinaryOutputObject
+    covIncrement: 0
+    fport: 20
+    updateInterval: 600
+  "33":
+    channel: 33
+    name: Device_setting_req
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 21
+    updateInterval: 600
+  "34":
+    channel: 34
+    name: Device_setting_ULT
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 22
+    updateInterval: 600
+    units: minutes
+  "35":
+    channel: 35
+    name: Device_setting_OWIN
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 22
+    updateInterval: 600
+    units: null
+  "36":
+    channel: 36
+    name: Device_setting_DACK
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 22
+    updateInterval: 600
+    units: null
+  "37":
+    channel: 37
+    name: HTTH_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 23
+    updateInterval: 600
+    units: degreesCelsius
+  "38":
+    channel: 38
+    name: LTTH_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 23
+    updateInterval: 600
+    units: degreesCelsius
+  "39":
+    channel: 39
+    name: HHTH_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 23
+    updateInterval: 600
+    units: percent
+  "40":
+    channel: 40
+    name: LHTH_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 23
+    updateInterval: 600
+    units: percent
+  "41":
+    channel: 41
+    name: CO2TH_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 23
+    updateInterval: 600
+    units: partsPerMillion
+  "42":
+    channel: 42
+    name: TVOCTH_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 23
+    updateInterval: 600
+    units: microgramsPerLiter
+  "43":
+    channel: 43
+    name: ADTR_slient_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 26
+    updateInterval: 600
+    units: minutes
+  "44":
+    channel: 44
+    name: ADTR_delta_T_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 26
+    updateInterval: 600
+    units: degreesCelsius
+  "45":
+    channel: 45
+    name: ADTR_delta_H_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 26
+    updateInterval: 600
+    units: percent
+  "46":
+    channel: 46
+    name: ADTR_repeat_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 26
+    updateInterval: 600
+    units: null
+  "47":
+    channel: 47
+    name: ADTR_EN_set
+    type: AnalogValueObject
+    covIncrement: 0
+    fport: 26
+    updateInterval: 600
+    units: null
+lorawan:
+  region: AS923
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: RP002_1_0_3
+  adrAlgorithm: LoRA Only
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+  classCDownlinkTimeout: 0
+profileVersion: 1.0.0
+model: Senso8-LRS30100
+name: LRS30100
+vendor: Senso8

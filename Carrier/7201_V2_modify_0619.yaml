@@ -1,0 +1,77 @@
+codec: >-
+  function Decode(fPort, data, variables) {
+    var values = [];
+    if (data.length >= 2 && data[0] === 0x48) {
+      var batteryLevel = data[1];
+      values.push({ name: "battery", channel: 2, value: batteryLevel, unit: "percent" });
+    }
+
+    else if (data.length >= 2 && data[0] === 0x57) {
+      var warningLevel = data[1];
+      values.push({ name: "lowbattery", channel: 3, value: warningLevel, unit: "percent" });
+      values.push({ name: "lowbattery1", channel: 3, value: warningLevel, unit: "percent" });
+    }
+
+    else {
+      var button = data[0] - 0x30;
+      values.push({ name: "button", channel: 1, value: button, unit: null });
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    // Reserved for future use
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+
+datatype:
+  "1":
+    covIncrement: 1.0    
+    name: button
+    type: AnalogValueObject
+    updateInterval: 10
+  "2":
+    covIncrement: 1.0 
+    name: battery
+    type: AnalogValueObject
+    units: percent
+    updateInterval: 10
+  "3":
+    covIncrement: 1.0 
+    name: lowbattery
+    type: AnalogValueObject
+    units: percent
+    updateInterval: 10
+  "4":
+    covIncrement: 2.0 
+    name: lowbattery1
+    type: AnalogValueObject
+    units: percent
+    updateInterval: 10
+
+lorawan:
+  region: AS923
+  macVersion: LORAWAN_1_0_3
+  regionalParametetsRevision: RP002_1_0_3
+  adrAlgorithm: LoRA Only
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+  classCDownlinkTimeout: 0
+profileVersion: 1.0.0
+model: RAK-7201_V2
+name: 7201_V2
+vendor: RAKwireless

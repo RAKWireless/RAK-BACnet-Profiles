@@ -1,0 +1,72 @@
+codec: >-
+  function Decode(fPort, data, variables) {
+    var values = [];
+    
+    if (fPort == 10) {
+      var batteryRaw = (data[0] << 8) | data[1];
+      var batteryVoltage = batteryRaw & 0x3FFF;
+      var doorStatus = (data[0] & 0x80) ? 1 : 0; // 1: OPEN, 0: CLOSED
+      var totalOpenEvents = (data[3] << 16) | (data[4] << 8) | data[5];
+      var lastOpenDuration = (data[6] << 16) | (data[7] << 8) | data[8];
+      var alarmStatus = data[9] & 0x01; 
+      
+      values.push({ name: "BatteryVoltage", channel: 1, value: batteryVoltage});
+      values.push({ name: "DoorStatus", channel: 2, value: doorStatus });
+      values.push({ name: "TotalDoorOpenEvents", channel: 3, value: totalOpenEvents });
+      values.push({ name: "LastDoorOpenDuration", channel: 4, value: lastOpenDuration });
+      values.push({ name: "AlarmStatus", channel: 5, value: alarmStatus });
+    }
+    
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Battery Voltage
+    type: AnalogInputObject
+    units: millivolts
+    description: Battery voltage Info
+  "2":
+    name: Door Status
+    type: AnalogInputObject
+  "3":
+    name: Total Door Open Events
+    type: AnalogInputObject
+  "4":
+    name: Last Door Open Duration
+    type: AnalogInputObject
+    units: minutes
+  "5":
+    name: Alarm Status
+    type: AnalogInputObject
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Dragino-LDS02
+profileVersion: 1.0.0
+name: LDS02
+vendor: RAKwireless

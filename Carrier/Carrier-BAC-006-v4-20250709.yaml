@@ -1,0 +1,265 @@
+codec: >
+    const fieldTypeMap = 
+    {
+        0x01: { name: "Power", unit: null, parse: v => v },
+        0x02: { name: "Lock", unit: null, parse: v => v },
+        0x03: { name: "Mode", unit: null, parse: v => v },
+        0x04: { name: "FanSpeed", unit: null, parse: v => v },
+        0x05: { name: "CurrentTemp", unit: "°C", parse: v => v / 2 },
+        0x06: { name: "SetTemp", unit: "°C", parse: v => v / 2},
+        0x07: { name: "CardStatus", unit: null, parse: v => v },
+        0x08: { name: "ManualMode", unit: null, parse: v => v },
+        0x09: { name: "CloudTemp", unit: "°C", parse: v => v / 2 },
+        0x0A: { name: "Valve", unit: null, parse: v => v },
+    }	
+
+    function Decode(fPort, bytes, variables) 
+    {
+        const values = [];
+
+
+        if (bytes[0] !== 0x55) 
+        {
+            return values; 
+        }
+
+        const cmdType = bytes[1];
+        const dataLen = (bytes[2] << 8) | bytes[3];
+        const dataStart = 4;
+        const dataEnd = 4 + dataLen;
+        const data = bytes.slice(dataStart, dataEnd);
+        const checksum = bytes[dataEnd];
+
+        const calcChecksum = bytes.slice(0, dataEnd).reduce((sum, b) => sum + b, 0) % 256;
+      
+        if (checksum !== calcChecksum)
+        {
+            return values;
+        }
+
+        let i = 0;
+        while (i <data.length) 
+        {
+            const type = data[i++];
+
+            if (type === 0x0F) 
+            {
+                const fieldOrder = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A];
+                for (let j = 0; j < fieldOrder.length; j++) 
+                {
+                    const v = data[i++];
+                    const ch = j+1; 
+                    const field = fieldTypeMap[fieldOrder[j]];
+                    if (field) 
+                    {
+                        values.push({
+                            name: field.name,
+                            channel: ch,
+                            value: field.parse ? field.parse(v) : v,
+                            unit: field.unit
+                        });		  
+                    }
+                }
+            } 
+            else 
+            {
+                const value = data[i++];
+                const field = fieldTypeMap[type];
+                if (field) 
+                {
+                    values.push({
+                        name: field.name,
+                        channel: type,
+                        value: field.parse ? field.parse(value) : value,
+                        unit: field.unit
+                    });
+                } 
+                else 
+                {
+                    values.push({ name: `UnknownField_${type}`, channel:ch,  value: value, unit: null });
+                }
+            }
+        }
+        return values;
+    }
+
+    function Encode(data, variables) 
+    {
+        var channel = data.channel;
+        var value = data.value;
+        var bytes = [];
+    
+        bytes.push(0x55);
+        if (channel === 20 )    // inquiry all
+        {
+            bytes.push(0x02);   // command : 02 - inquiry 
+            bytes.push(0x00);   // length : null data
+            bytes.push(0x01);     
+            bytes.push(0x0f);   // function : all  
+            const cheksum = bytes.slice(0, 5).reduce((sum, b) => sum + b, 0) % 256;
+            bytes.push(cheksum);            
+        }
+        if (channel > 10)
+        {        
+            bytes.push(0x01);  // command : 01 - set 
+            bytes.push(0x00);  // lenght : 0002
+            bytes.push(0x02);  
+            const func_code = channel -10;             
+            bytes.push(func_code);
+
+            if (channel === 15 || channel === 17)
+                bytes.push(value*2);
+            else 
+                bytes.push(value);
+            
+            const cheksum = bytes.slice(0, 6).reduce((sum, b) => sum + b, 0) % 256;
+            bytes.push(cheksum);            
+        }
+
+        return bytes;
+    }
+
+    function decodeUplink(input) {
+        return {
+            data: Decode(input.fPort, input.bytes, input.variables)
+        }
+    }
+
+    function encodeDownlink(input) {
+        return {
+            bytes: Encode(input.data, input.variables)
+        }
+    }
+    
+datatype:
+  "1":
+    name: Power
+    type: BinaryInputObject
+    updateInterval: 60
+    channel: 1
+  "2":
+    name: Lock
+    type: BinaryInputObject
+    updateInterval: 60
+    channel: 2
+  "3":
+    name: Operating Mode 
+    type: AnalogInputObject
+    updateInterval: 60
+    channel: 3
+  "4":
+    name: Fan Speed
+    type: AnalogInputObject
+    updateInterval: 60
+    channel: 4
+  "5":
+    name: Current Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.1
+    updateInterval: 60
+    channel: 5
+  "6":
+    name: Set Temperature Value
+    type: AnalogInputObject
+    units: degreesCelsius
+    channel: 6
+  "7":
+    name: Card Status
+    type: BinaryInputObject
+    updateInterval: 60
+    channel: 7
+  "8":
+    name: Manual Mode
+    type: BinaryInputObject
+    updateInterval: 60
+    channel: 8
+  "9":
+    name: Cloud Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    updateInterval: 60
+    channel: 9
+  "10":
+    name: Valve Relay
+    type: BinaryInputObject
+    updateInterval: 60
+    channel: 10
+  "11":
+    name: Set Power
+    type: BinaryOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 11
+  "12":
+    name: Set Lock
+    type: BinaryOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 12
+  "13":
+    name: Set Mode 
+    type: AnalogOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 13
+  "14":
+    name: Set Fan Speed
+    type: AnalogOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 14
+  "15":
+    name: Set Temperature
+    type: AnalogOutputObject
+    units: degreesCelsius
+    updateInterval: 60    
+    fport: 85
+    channel: 15
+  "16":
+    name: Set Manual Mode
+    type: BinaryOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 16
+  "17":
+    name: Set Cloud Temperature
+    type: AnalogOutputObject
+    units: degreesCelsius
+    updateInterval: 60    
+    fport: 85    
+    channel: 17
+  "18":
+    name: Set Valve Relay
+    type: BinaryOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 18
+  "19":
+    name: Set All
+    type: OctetStringValueObject
+    fport: 85
+    channel: 19    
+  "20":
+    name: Inquiry All
+    type: BinaryOutputObject
+    updateInterval: 60    
+    fport: 85
+    channel: 20
+    
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametetsRevision: A
+  supportClassB: false
+  supportClassC: true
+  supportOTAA: true
+  downlinkFPort: 85
+  
+model: Carrier-BAC-006-v4
+profileVersion: 1.0.0
+name: Carrier-BAC-006-v4
+vendor: Carrier
+id: 315a078f-5b7f-4461-a53e-ddea72624868

@@ -1,0 +1,74 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+    var array = new Uint8Array(data)
+    var view = new DataView(array.buffer)
+
+    if (fPort == 10) {
+      var Distance = view.getUint16(3, false)
+      var DistanceState = data[5]
+      var Battery = data[2]
+      var DistanceStateAlert = (data[0] >> 2) & 0x01
+      var ButtonPressed = (data[0] & 0x01)
+
+      values.push({ name: "Distance", channel: 1, value: Distance / 10.0, unit: "cm" })
+      values.push({ name: "DistanceState", channel: 2, value: DistanceState, unit: null })
+      values.push({ name: "Battery", channel: 3, value: Battery, unit: null })
+      values.push({ name: "DistanceStateAlert", channel: 4, value: DistanceStateAlert, unit: null })
+      values.push({ name: "ButtonPressed", channel: 5, value: ButtonPressed, unit: null })
+    }
+    return values
+  }
+
+  function Encode(data, variables) {
+    var bytes = []
+    return bytes
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    }
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    }
+  }
+datatype:
+  '1':
+    covIncrement: 0.1
+    name: Distance
+    type: AnalogInputObject
+    units: centimeters
+    updateInterval: 600
+  '2':
+    name: Distance State
+    type: BinaryInputObject
+    updateInterval: 600
+  '3':
+    covIncrement: 1.0
+    name: Battery Capacity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+  '4':
+    name: Distance State Alert
+    type: BinaryInputObject
+    updateInterval: 600
+  '5':
+    name: Butten Pressed
+    type: BinaryInputObject
+    updateInterval: 600
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Senso8-LRS20LD0
+profileVersion: 1.0.0

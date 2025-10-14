@@ -1,0 +1,83 @@
+codec: >-
+  function Decode(fPort, bytes, variables) {
+    var values = [];
+    
+    if (fPort !== 2) {
+      return values;
+    }
+    
+    if (bytes.length !== 11) {
+      return values;
+    }
+    
+    var modByte = bytes[10];
+    var mod = (modByte >> 7) & 0x01;
+    
+    if (mod !== 0) {
+      return values;
+    }
+    
+    var battery = (bytes[0] << 8) | bytes[1];
+    values.push({ name: "BatteryVoltage", channel: 1, value: battery });
+    
+    var moistureRaw = (bytes[4] << 8) | bytes[5];
+    var soilMoisture = moistureRaw / 100;
+    values.push({ name: "SoilMoisture", channel: 2, value: soilMoisture });
+    
+    var tempRaw = (bytes[6] << 8) | bytes[7];
+    var sign = (tempRaw & 0x8000) >> 15;
+    var soilTemperature = sign ? (tempRaw - 0xFFFF) / 100 : tempRaw / 100;
+    values.push({ name: "SoilTemperature", channel: 3, value: soilTemperature });
+    
+    var ecRaw = (bytes[8] << 8) | bytes[9];
+    values.push({ name: "SoilConductivity", channel: 4, value: ecRaw });
+    
+    return values;
+  }
+
+  function Encode(data, variables) {
+    return [];
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Battery Voltage
+    type: AnalogInputObject
+    units: millivolts
+  "2":
+    name: Soil Moisture
+    type: AnalogInputObject
+    units: percent
+  "3":
+    name: Soil Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+  "4":
+    name: Soil Conductivity (EC)
+    type: AnalogInputObject
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Dragino-LSE01
+profileVersion: 1.0.0
+name: LSE01
+vendor: RAKwireless

@@ -1,0 +1,117 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    if (fPort == 10) {
+      var DryContactInputStatus = data[3]
+      var Battery = data[2]
+      var EventCount = (data[4] << 8) | data[5]
+      var ButtonPressed = (data[0] & 0x01)
+      var PulseMeter = ((data[6] << 24 ) | (data[7] << 16) | (data[8] << 8) | data[9]) 
+      values.push({ name: "DryContactInputStatus", channel: 1, value: DryContactInputStatus, unit: null })
+      values.push({ name: "Battery", channel: 2, value: Battery, unit: '%' })
+      values.push({ name: "EventCount", channel: 3, value: EventCount, unit: null })
+      values.push({ name: "ButtonPressed", channel: 4, value: ButtonPressed, unit: null })
+      values.push({ name: 'PulseMeterValue', channel: 5, value: PulseMeter, unit: null})
+    }
+
+    if( fPort == 16 ){
+      values.push({ name: 'PulseMeterEnable', channel: 6, value: data[1]})
+      values.push({ name: 'PulseMeterMaxNumber', channel: 7, value: data[2]})
+      values.push({ name: 'PulseMeterDecimalPlace', channel: 8, value: data[3]})
+      values.push({ name: 'PulseMeterInitNumber', channel: 9, value: ((data[4] << 24)|(data[5] << 16) | (data[6] << 8) | data[7])})
+      values.push({ name: 'PulseMeterInitDecimalValue', channel: 10, value: ((data[8] << 8) | data[9])})
+    }
+
+    return values
+  }
+
+  function Encode(data, variables) {
+    var bytes = []
+    return bytes
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    }
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    }
+  }
+datatype:
+  "1":
+    name: Dry Contact Input Status
+    type: BinaryInputObject
+    updateInterval: 600
+    channel: 1
+  "2":
+    covIncrement: 1
+    name: Battery Capacity
+    type: AnalogInputObject
+    units: percent
+    updateInterval: 600
+    channel: 2
+  "3":
+    covIncrement: 1
+    name: Event Count
+    type: AnalogInputObject
+    updateInterval: 600
+    channel: 3
+  "4":
+    name: Button Pressed
+    type: BinaryInputObject
+    updateInterval: 600
+    channel: 4
+  "5":
+    channel: 5
+    name: Pulse Meter Value
+    type: AnalogInputObject
+    covIncrement: 1
+    updateInterval: 600
+  "6":
+    channel: 6
+    name: Pulse Meter Enable
+    type: BinaryInputObject
+    updateInterval: 600
+  "7":
+    channel: 7
+    name: Pulse Meter Max Number
+    type: AnalogInputObject
+    covIncrement: 1
+    updateInterval: 600
+  "8":
+    channel: 8
+    name: Pulse Meter Decimal Place
+    type: AnalogInputObject
+    covIncrement: 1
+    updateInterval: 600
+  "9":
+    channel: 9
+    name: Pulse Meter Initial Number
+    type: AnalogInputObject
+    covIncrement: 1
+    updateInterval: 600
+  "10":
+    channel: 10
+    name: Pulse Meter Initial Decimal Value
+    type: AnalogInputObject
+    covIncrement: 1
+    updateInterval: 600
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Senso8-LRS20600
+profileVersion: 1.0.0
+name: LRS20600
+vendor: Senso8
+id: a2d81f6f-6aa3-41f7-83cb-462a40570370
