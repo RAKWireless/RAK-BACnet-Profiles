@@ -1,0 +1,86 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+    
+    if (fPort === 2) {
+      for (var i = 0; i < data.length; i++) {
+        if (i + 2 < data.length && data[i] === 0x05) {
+          var humidityRaw = (data[i+1] << 8) | data[i+2];
+          var humidity = humidityRaw / 10.0;
+          values.push({ name: "Humidity", channel: 1, value: humidity});
+          i += 2;
+        }
+        else if (i + 2 < data.length && data[i] === 0x06) {
+          var tempRaw = (data[i+1] << 8) | data[i+2];
+          var temperature = tempRaw > 32767 ? (tempRaw - 65536) / 10.0 : tempRaw / 10.0;
+          values.push({ name: "Temperature", channel: 2, value: temperature});
+          i += 2;
+        }
+        else if (i + 2 < data.length && data[i] === 0x0A) {
+          var pressureRaw = (data[i+1] << 8) | data[i+2];
+          var pressure = pressureRaw / 10.0;
+          values.push({ name: "Pressure", channel: 3, value: pressure});
+          i += 2;
+        }
+      }
+    }
+
+    if (fPort === 5 ) {
+      var batRaw = (data[5] << 8) | data[6];
+      values.push({ name: "BatteryVoltage", channel: 4, value: batRaw});
+    }
+
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Humidity
+    type: AnalogInputObject
+    units: percent
+  "2":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+  "3":
+    name: Pressure
+    type: AnalogInputObject
+    units: kilopascals
+  "4":
+    name: Battery Voltage
+    type: AnalogInputObject
+    units: millivolts
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: US923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+
+model: Dragino-WSC2-L
+profileVersion: 1.0.0
+name: WSC2-L
+vendor: RAKwireless
+id: a2d81f6f-6aa3-41f7-83cb-462a40570370

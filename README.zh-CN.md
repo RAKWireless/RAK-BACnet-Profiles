@@ -32,18 +32,22 @@ RAK-BACnet-Profiles/
 │   ├── Carrier-BAC-006-v4-20250709.yaml
 │   └── 7201_V2_modify_0619.yaml
 ├── Dragino/                    # Dragino 品牌设备配置
-│   ├── Dragino-LDS02.yaml     # 门磁传感器
-│   └── Dragino-LES01.yaml     # 门窗传感器
+│   ├── Dragino-DDS45.yaml
+│   ├── Dragino-LDS02.yaml
+│   ├── Dragino-LES01.yaml
+│   └── Dragino-WSC2-L.yaml
+├── Milesight/                  # Milesight 品牌设备配置
+│   └── Milesight-VS330.yaml
 ├── Senso8/                     # Senso8 品牌设备配置
 │   ├── Senso8-LRS10701.yaml
 │   ├── Senso8-LRS20100.yaml
 │   ├── Senso8-LRS20200.yaml
-│   ├── Senso8-LRS20310.yaml   # 水浸传感器
+│   ├── Senso8-LRS20310.yaml
 │   ├── Senso8-LRS20600.yaml
 │   ├── Senso8-LRS20LD0.yaml
 │   ├── Senso8-LRS20Uxx.yaml
 │   ├── Senso8-LRS2M001.yaml
-│   └── Senso8-LRS30100.yaml   # 多功能环境传感器
+│   └── Senso8-LRS30100.yaml
 └── README.md
 ```
 
