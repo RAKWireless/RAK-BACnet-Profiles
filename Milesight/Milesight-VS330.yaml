@@ -1,0 +1,70 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    if (data.length >= 3 && data[0] === 0x01 && data[1] === 0x75) {
+      var batteryLevel = data[2] & 0xff;
+      values.push({ name: "BatteryLevel", channel: 1, value: batteryLevel });
+    }
+    
+    if (data.length >= 6 && data[3] === 0x02 && data[4] === 0x82) {
+      var distance = ((data[6] << 8) | data[5]) & 0xffff;
+      values.push({ name: "Distance", channel: 2, value: distance});
+    }
+    
+    if (data.length >= 9 && data[7] === 0x03 && data[8] === 0x8e) {
+      var occupancyStatus = data[9];
+      values.push({ name: "OccupancyStatus", channel: 3, value: occupancyStatus });
+    }
+    
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Battery Level
+    type: AnalogInputObject
+    units: percent
+    channel: 1
+  "2":
+    name: Distance
+    type: AnalogInputObject
+    units: millimeters
+    channel: 2
+  "3":
+    name: Occupancy Status
+    type: MultiStateInputObject
+    channel: 3
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+
+model: Milesight-VS330
+profileVersion: 1.0.0
+name: VS330
+vendor: RAKwireless
+id: a2d81f6f-6aa3-41f7-83cb-462a40570370

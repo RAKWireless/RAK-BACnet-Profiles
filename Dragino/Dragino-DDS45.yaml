@@ -1,0 +1,78 @@
+codec: >
+  function Decode(fPort, data, variables) {
+    var values = [];
+    
+    if (fPort === 2 && data.length >= 8) {
+    
+      var batteryRaw = (data[0] << 8) | data[1];
+      var sensorFlag = data[7];
+      
+      var distanceRaw = (data[2] << 8) | data[3];
+      var distanceValue;
+      if (distanceRaw === 0x0000) {
+        distanceValue = 0;
+      } else if (distanceRaw < 0x001E) {
+        distanceValue = 0;
+      } else {
+        distanceValue = distanceRaw;
+      }
+
+      values.push({ name: "BatteryVoltage", channel: 1, value: batteryRaw });
+      values.push({ name: "Distance", channel: 2, value: distanceValue});
+      values.push({ name: "SensorFlag", channel: 3, value: sensorFlag });
+    }
+    
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Battery Voltage
+    type: AnalogInputObject
+    units: millivolts
+    updateInterval: 600
+    channel: 1
+  "2":
+    name: Distance
+    type: AnalogInputObject
+    units: millimeters
+    updateInterval: 600
+    channel: 2
+  "3":
+    name: Sensor Flag
+    type: AnalogInputObject
+    updateInterval: 600
+    channel: 3
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  region: AS923
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+
+model: Dragino-DDS45-LB/LS
+profileVersion: 1.0.0
+name: DDS45-LB/LS
+vendor: RAKwireless
+id: 5a8d6f4e-2b3c-4d9e-8f7a-1b6c9d0e3f2a

@@ -42,7 +42,6 @@ datatype:
     name: Battery Voltage
     type: AnalogInputObject
     units: millivolts
-    description: Battery voltage Info
   "2":
     name: Door Status
     type: AnalogInputObject
