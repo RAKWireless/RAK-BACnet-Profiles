@@ -1,0 +1,46 @@
+### 设备厂商
+
+Senso8
+
+### 设备型号
+
+LRS20100
+
+### 产品手册/数据表链接
+
+https://example.com/datasheet
+
+### LoRaWAN 类别
+
+Class A
+
+### LoRaWAN 协议版本
+
+LORAWAN_1_0_3
+
+### 上行数据示例
+
+fPort 10: 01016400e901ef00000000
+fPort 10: 01016400ea01ef00000000
+
+### BACnet 对象映射要求
+
+- 温度 → AnalogInputObject (degreesCelsius)
+- 湿度 → AnalogInputObject (percent)
+- 电池电量 → AnalogInputObject (percent)
+- 湿度低报警 → BinaryInputObject
+- 湿度高报警 → BinaryInputObject
+- 温度低报警 → BinaryInputObject
+- 温度高报警 → BinaryInputObject
+- 按钮按下 → BinaryInputObject
+
+### 优先级
+
+Medium - Planned for near-term use
+
+### 提交前检查清单
+
+- [x] 我已提供完整的设备型号信息
+- [x] 我已提供真实的上行数据示例
+- [x] 我已解释数据字段的含义
+- [x] 我已检查是否有重复的 Profile 请求

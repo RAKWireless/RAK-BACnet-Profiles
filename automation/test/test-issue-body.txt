@@ -1,0 +1,46 @@
+### Device Vendor
+
+Senso8
+
+### Device Model
+
+LRS20100
+
+### Product Manual/Datasheet Link
+
+https://example.com/datasheet
+
+### LoRaWAN Class
+
+Class A
+
+### LoRaWAN Protocol Version
+
+LORAWAN_1_0_3
+
+### Uplink Data Examples
+
+fPort 10: 01016400e901ef00000000
+fPort 10: 01016400ea01ef00000000
+
+### BACnet Object Mapping Requirements
+
+- Temperature → AnalogInputObject (degreesCelsius)
+- Humidity → AnalogInputObject (percent)
+- Battery Capacity → AnalogInputObject (percent)
+- Humidity Low Alert → BinaryInputObject
+- Humidity High Alert → BinaryInputObject
+- Temperature Low Alert → BinaryInputObject
+- Temperature High Alert → BinaryInputObject
+- Button Pressed → BinaryInputObject
+
+### Priority
+
+Medium - Planned for near-term use
+
+### Pre-submission Checklist
+
+- [x] I have provided complete device model information
+- [x] I have provided real uplink data examples
+- [x] I have explained the meaning of data fields
+- [x] I have checked for duplicate profile requests

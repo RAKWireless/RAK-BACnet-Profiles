@@ -1,0 +1,11 @@
+deepagents
+langchain
+langgraph
+
+langchain-openai>=1.0.0
+
+pyyaml>=6.0
+python-dotenv>=1.0.0
+jsonschema>=4.20.0
+
+# pygithub>=2.0.0
