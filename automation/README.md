@@ -1,232 +1,273 @@
-# BACnet Profile 自动化生成 Agent
+## Overview
 
-从 GitHub Issue 自动生成 BACnet Profile YAML 文件。
+This is a **BACnet Profile Automation Agent** that generates device profiles from GitHub Issues using AI (LLM).
 
-## 快速开始
+### Key Features
 
-### 1. 安装依赖
+- **AI-Powered**: Uses Qwen (primary) and DeepSeek (fallback) LLMs
+- **Deterministic**: LangGraph workflow with sequential processing
+- **Smart Templates**: Automatic template selection based on device similarity
+- **Self-Healing**: Auto-retry on validation failure (max 2 attempts)
+- **Clean Code**: Modular architecture following Clean Code principles
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- API Keys: [Qwen](https://dashscope.aliyun.com/) + [DeepSeek](https://platform.deepseek.com/)
+
+### Installation
 
 ```bash
 cd automation
 pip install -r requirements.txt
 ```
 
-### 2. 配置 API Keys
+### Run Locally
 
 ```bash
-# 方法1: 环境变量
-export QWEN_API_KEY="your_qwen_key"
-export DEEPSEEK_API_KEY="your_deepseek_key"
-
-# 方法2: .env 文件
-cp .env.example .env
-# 编辑 .env 填入你的 API Keys
-```
-
-### 3. 运行 Agent
-
-```bash
-# 使用测试数据
 python scripts/run-agent.py \
-    --issue-body-file test/test-issue-body.txt \
-    --issue-number 1
-
-# 使用自己的 Issue 文件
-python scripts/run-agent.py \
-    --issue-body-file path/to/your-issue.txt \
-    --issue-number 123
+  --issue-body-file test/test-issue-body.txt \
+  --issue-number 1
 ```
 
-### 4. 查看结果
+**Parameters:**
+- `--issue-body-file`: Path to the file containing the GitHub Issue body
+- `--issue-number`: GitHub Issue number (used for:
+  - Creating unique temp directory: `temp/run-{issue-number}-{timestamp}/`
+  - Naming result files: `agent-result-{issue-number}.json`
+  - Logging: identifying which issue this run is for
+  - Example: `1`, `42`, `999` - any unique number works for local testing)
 
-生成的文件保存在：
-- `profiles/{vendor}/{vendor}-{model}.yaml` - Profile 文件
-- `profiles/{vendor}/tests/` - 测试数据和期望输出
-- `automation/temp/run-{issue-number}-*/` - 日志和临时文件
+## GitHub Actions Integration
 
-## 前置要求
+### Automatic Profile Generation
 
-- Python 3.11+
-- Node.js 18+ (用于验证脚本)
-- Qwen API Key ([阿里云 DashScope](https://dashscope.aliyun.com/))
-- DeepSeek API Key ([DeepSeek Platform](https://platform.deepseek.com/))
+When a new Issue is created with the label `new-device`:
 
-## 目录结构
+1. **Trigger**: Issue is opened/reopened
+2. **Run**: GitHub Actions executes the Agent
+3. **Generate**: Profile YAML + tests + changelog
+4. **PR**: Creates Pull Request with changes
+5. **Notify**: Comments on Issue with results
 
-```
-automation/
-├── scripts/
-│   ├── run-agent.py          # 主程序入口
-│   ├── validate-profiles.py  # 验证工具
-│   ├── agent/                # 核心逻辑模块
-│   │   ├── config.py         # 配置常量
-│   │   ├── context.py        # 工作流上下文
-│   │   ├── llm.py            # AI 模型调用
-│   │   ├── nodes/            # 工作流节点
-│   │   │   ├── parse.py      # 解析 Issue
-│   │   │   ├── validate.py   # 验证 Profile
-│   │   │   ├── test_gen.py   # 生成测试数据
-│   │   │   ├── changelog.py  # 生成变更日志
-│   │   │   └── merge.py      # 合并结果
-│   │   ├── router.py         # 路由逻辑
-│   │   └── workflow.py       # 工作流构建
-│   └── tools/
-│       └── parse_issue.py    # Issue 解析工具
-├── skills/                   # AI Prompt 模板
-│   ├── parse-issue/
-│   ├── generate-profile/
-│   ├── validate-profile/
-│   ├── generate-tests/
-│   └── generate-changelog/
-├── test/                     # 测试数据
-├── requirements.txt          # Python 依赖
-└── docker-entrypoint.sh      # Docker 入口
-```
+### Required Secrets
 
-## Docker 运行
+Configure these in your GitHub repository:
+
+- `QWEN_API_KEY` - Qwen API key from Alibaba Cloud
+- `DEEPSEEK_API_KEY` - DeepSeek API key
+
+### Manual Trigger
+
+You can also run validation manually:
 
 ```bash
-# 构建镜像
-docker build -t profile-agent .
-
-# 运行 Agent
-docker run --rm \
-  -e QWEN_API_KEY \
-  -e DEEPSEEK_API_KEY \
-  -v $(pwd)/../:/workspace \
-  profile-agent \
-  --issue-body-file /workspace/test-issue-body.txt
-
-# 验证所有 Profiles
+# Validate all profiles
 docker run --rm \
   --entrypoint python \
   profile-agent \
   /workspace/automation/scripts/validate-profiles.py --all
 ```
 
-## 工作流程
+## Architecture
 
 ```
-Issue Body → Parse → Generate Profile → Generate Tests → Validate → Changelog → Merge Results
-                ↑                              ↓
-                └──────────────── Retries (max 2) ─────────────────┘
+GitHub Issue
+    ↓
+GitHub Actions
+    ↓
+┌─────────────────────────────────────┐
+│       Agent Workflow (LangGraph)     │
+│                                      │
+│  Parse → Generate → Test → Validate  │
+│    ↑                        ↓        │
+│    └───── Retry (max 2) ────┘       │
+│                                      │
+└─────────────────────────────────────┘
+    ↓
+Pull Request
+    ↓
+Issue Comment
 ```
 
-1. **Parse**: 从 Issue 提取设备信息（厂商、型号、传感器等）
-2. **Generate**: 使用 LLM 生成 Profile YAML（带智能模板选择）
-3. **Test Gen**: 生成测试数据和期望输出
-4. **Validate**: 验证 YAML 语法和 Codec 逻辑
-5. **Retry**: 验证失败时自动重试（最多2次）
-6. **Changelog**: 生成 CHANGELOG.md
-7. **Merge**: 汇总结果，报告成功/失败
+## Project Structure
 
-## 配置说明
+All code is organized under `automation/` directory:
 
-### LLM 模型
+```
+automation/
+├── scripts/
+│   ├── run-agent.py              # Main entry point - workflow orchestration
+│   ├── comment-on-issue.py       # GitHub API - post comments to issues
+│   ├── validate-profiles.py      # Profile validation tool
+│   ├── test-all-profiles.py      # Batch testing tool
+│   ├── agent/                    # Core business logic (Clean Code)
+│   │   ├── __init__.py
+│   │   ├── config.py             # Configuration constants
+│   │   ├── context.py            # Workflow context (state management)
+│   │   ├── llm.py                # LLM integration (Qwen/DeepSeek)
+│   │   ├── state.py              # Type definitions for workflow state
+│   │   ├── template.py           # Smart template selection algorithm
+│   │   ├── utils.py              # Utility functions (script execution)
+│   │   ├── router.py             # Workflow routing logic
+│   │   ├── workflow.py           # LangGraph workflow builder
+│   │   └── nodes/                # Workflow nodes (each < 100 lines)
+│   │       ├── __init__.py
+│   │       ├── parse.py          # Parse issue and generate profile
+│   │       ├── validate.py       # Validate generated profile
+│   │       ├── test_gen.py       # Generate test data
+│   │       ├── changelog.py      # Generate changelog
+│   │       └── merge.py          # Merge results
+│   └── tools/
+│       ├── __init__.py
+│       └── parse_issue.py        # Standalone issue parser
+├── skills/                       # AI prompt templates
+│   ├── parse-issue/
+│   ├── generate-profile/
+│   ├── validate-profile/
+│   ├── generate-tests/
+│   └── generate-changelog/
+├── test/                         # Test data
+│   ├── test-issue-body.txt
+│   └── test-issue-body-zh.txt
+├── temp/                         # Runtime temporary files
+├── requirements.txt              # Python dependencies
+├── docker-entrypoint.sh          # Docker entry point
+└── README.md                     # This file
+```
 
-- **主模型**: Qwen (qwen-turbo) - 阿里云 DashScope
-- **备用模型**: DeepSeek (deepseek-chat) - Qwen 失败时自动降级
+### Design Principles
 
-### 模板选择算法
+1. **Single Language**: All business logic in Python (no JavaScript in workflows)
+2. **Clean Code**: Each function < 20 lines, each module < 300 lines
+3. **No Global State**: Dependency injection via `WorkflowContext`
+4. **Unified Logging**: All modules use `logging.getLogger(__name__)`
+5. **Type Safety**: Full type hints on all functions
 
-根据设备特征匹配最佳模板：
-- 设备类型匹配: 40% (water/air/climate/etc.)
-- BACnet 对象类型: 30% (analog/binary)
-- 传感器数量: 20%
-- LoRaWAN 类别: 10%
-
-## 常见问题
-
-**Q: API Key 未设置错误**  
-A: 确保已设置环境变量 `QWEN_API_KEY` 和 `DEEPSEEK_API_KEY`，或正确配置 `.env` 文件
-
-**Q: 验证脚本失败**  
-A: 确保 Node.js 已安装 (>= 18)，且 `scripts/` 目录包含 `validate-profile.js`
-
-**Q: 生成的 Profile 验证失败**  
-A: Agent 会自动重试最多 2 次。查看日志文件 `automation/temp/run-*/agent.log` 了解详细错误
-
-**Q: 如何调试**  
-A: 检查 `automation/temp/run-{issue-number}-{timestamp}/` 目录中的：
-- `agent.log` - 完整执行日志
-- `agent-result-{issue-number}.json` - 执行结果
-- `generated-files-list.txt` - 生成的文件列表
-
-## 开发说明
-
-### 代码规范
-
-- Clean Code 原则：单一职责、小函数、无全局状态
-- 类型注解：所有函数都有类型提示
-- 文档字符串：每个模块和函数都有详细注释
-
-### 测试
+## Development
+### Testing
 
 ```bash
-# 验证所有现有 Profiles
-python scripts/validate-profiles.py --all
+# Run agent with test data (use any number for local testing)
+python scripts/run-agent.py --issue-body-file test/test-issue-body.txt --issue-number 1
 
-# 测试特定 Profile
-python scripts/validate-profiles.py profiles/Senso8/Senso8-LRS20100.yaml
+# Validate profiles
+python scripts/validate-profiles.py --all
+```
+
+## Configuration
+
+### Environment Variables
+
+The agent requires these environment variables:
+
+- `QWEN_API_KEY` - Qwen API key from Alibaba Cloud
+- `DEEPSEEK_API_KEY` - DeepSeek API key
+
+### Setup by Deployment Method
+
+**1. Local Development**
+
+Create `.env` file in `automation/` directory:
+```bash
+cd automation
+cp .env.example .env
+# Edit .env and add your API keys
+```
+
+Or export directly:
+```bash
+export QWEN_API_KEY="your_qwen_key"
+export DEEPSEEK_API_KEY="your_deepseek_key"
+```
+
+**2. Docker**
+
+Pass via `-e` flag:
+```bash
+docker run --rm \
+  -e QWEN_API_KEY="your_key" \
+  -e DEEPSEEK_API_KEY="your_key" \
+  profile-agent \
+  --issue-body-file /workspace/test.txt
+```
+
+Or mount `.env` file:
+```bash
+docker run --rm \
+  -v $(pwd)/automation/.env:/workspace/automation/.env \
+  profile-agent \
+  --issue-body-file /workspace/test.txt
+```
+
+**3. GitHub Actions**
+
+Configure in repository settings:
+1. Go to Settings → Secrets and variables → Actions
+2. Click "New repository secret"
+3. Add `QWEN_API_KEY` and `DEEPSEEK_API_KEY`
+
+The workflow will automatically use these secrets.
+
+## Troubleshooting
+
+### Common Issues
+
+**API Key Errors**
+```
+ValueError: QWEN_API_KEY not set
+```
+→ Check configuration section above for your deployment method
+
+**Validation Failures**
+→ Check `automation/temp/run-*/agent.log` for details
+
+**Node.js Not Found**
+→ Install Node.js 18+ for validation scripts
+
+### Debug Mode
+
+Set `LOG_LEVEL=debug` to see detailed execution logs.
+
+## Pull Request Template
+
+When submitting a PR for automated profile generation, please use this template:
+
+```markdown
+## Automated Profile Generation
+
+This PR was automatically generated by the BACnet Profile Agent from issue #ISSUE_NUMBER.
+
+### Changes
+
+- [ ] Added new BACnet device profile
+- [ ] Generated test data and expected outputs
+- [ ] Created CHANGELOG.md
+
+### Validation Checklist
+
+- [ ] Profile YAML syntax is valid
+- [ ] Codec functions work correctly
+- [ ] Test data passes validation
+- [ ] All required fields are present
+- [ ] File naming follows convention (Vendor-Model.yaml)
+
+### Review Notes
+
+**Maintainers:** Please review before merging.
+
+1. Check that the device type and sensors are correctly identified
+2. Verify BACnet object mappings are appropriate
+3. Confirm LoRaWAN class and version are correct
+4. Test the codec with real uplink data if possible
+
+---
+*This is an automated PR. If changes are needed, please comment on the original issue.*
 ```
 
 ## License
 
 MIT
-
----
-
-## 附录：阶段一实现记录
-
-### 已创建的文件
-
-```
-automation/
-├── skills/                          已创建
-│   ├── parse-issue/
-│   │   └── SKILL.md                解析 Issue body
-│   ├── generate-profile/
-│   │   └── SKILL.md                生成 Profile YAML
-│   ├── validate-profile/
-│   │   └── SKILL.md                验证 Profile
-│   ├── generate-tests/
-│   │   └── SKILL.md                生成测试数据（两阶段）
-│   └── generate-changelog/
-│       └── SKILL.md                生成变更日志
-│
-├── scripts/                         已创建
-│   ├── run-agent.py                主程序（支持模型降级）
-│   ├── validate-profiles.py        验证工具
-│   ├── test-all-profiles.py        批量测试
-│   └── tools/
-│       └── parse_issue.py          Issue 解析工具
-│
-├── test/                            已创建
-│   ├── test-issue-body.txt         英文测试 Issue
-│   └── test-issue-body-zh.txt      中文测试 Issue
-│
-├── requirements.txt                 Python 依赖
-├── .env.example                    环境变量示例
-├── .gitignore                      Git 忽略规则
-└── README.md                       使用说明（本文档）
-```
-
-### 核心功能
-
-#### 1. Skills 实现
-- **parse-issue**: 解析 GitHub Issue body（支持中英文、多设备）
-- **generate-profile**: 生成 Profile YAML（支持幂等性、版本管理）
-- **validate-profile**: 验证 Profile（调用现有验证脚本）
-- **generate-tests**: 两阶段测试数据生成
-- **generate-changelog**: 生成变更日志（Keep a Changelog 格式）
-
-#### 2. Agent 主程序
-- 支持 Qwen（主）+ DeepSeek（降级）
-- 错误处理和模型切换
-- Skills 自动加载
-- LangGraph 工作流编排
-
-#### 3. 测试支持
-- 英文 Issue 测试用例
-- 中文 Issue 测试用例
-- 批量验证工具

@@ -1,0 +1,125 @@
+name: Generate BACnet Profile from Issue
+
+on:
+  # Automatic trigger (production)
+  issues:
+    types: [opened, reopened]
+  
+  # Manual trigger (testing on feature branch)
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Test issue number (for local testing)'
+        required: true
+        default: '999'
+      issue_body_file:
+        description: 'Path to issue body file'
+        required: true
+        default: 'automation/test/test-issue-body.txt'
+
+jobs:
+  generate-profile:
+    runs-on: ubuntu-latest
+    # Only check label for automatic trigger; skip for manual trigger
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.labels.*.name, 'new-device')
+    
+    steps:
+      # Prepare - Installation
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: feature/create-ai-and-cicd-william  # Test on feature branch
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd automation
+          pip install -r requirements.txt
+          cd ../scripts && npm install
+
+      # Prepare - Create issue body
+      - name: Save issue body to file (automatic trigger)
+        if: github.event_name == 'issues'
+        run: |
+          mkdir -p automation/temp
+          echo "${{ github.event.issue.body }}" > automation/temp/issue-body.txt
+          echo "ISSUE_NUMBER=${{ github.event.issue.number }}" >> $GITHUB_ENV
+      
+      - name: Save issue body to file (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p automation/temp
+          # Use test file or provided content
+          if [ -f "${{ github.event.inputs.issue_body_file }}" ]; then
+            cp "${{ github.event.inputs.issue_body_file }}" automation/temp/issue-body.txt
+          else
+            echo "Error: Issue body file not found: ${{ github.event.inputs.issue_body_file }}"
+            exit 1
+          fi
+          echo "ISSUE_NUMBER=${{ github.event.inputs.issue_number }}" >> $GITHUB_ENV
+
+      # Run - Execute agent
+      - name: Run Agent
+        env:
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          cd automation
+          python scripts/run-agent.py \
+            --issue-body-file temp/issue-body.txt \
+            --issue-number ${{ env.ISSUE_NUMBER }}
+
+      # Validate - Execute validate javascript
+      - name: Check generated files
+        id: check_files
+        run: |
+          if [ -f automation/temp/generated-files-list.txt ]; then
+            echo "files_found=true" >> $GITHUB_OUTPUT
+            echo "Generated files:"
+            cat automation/temp/generated-files-list.txt
+          else
+            echo "files_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Human Validation - Create PR for human review changes
+      - name: Create Pull Request
+        if: steps.check_files.outputs.files_found == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Add BACnet profile for issue #${{ github.event.issue.number }}"
+          title: "Add: BACnet profile from issue #${{ github.event.issue.number }}"
+          body: |
+            This PR was automatically generated from issue #${{ env.ISSUE_NUMBER }}
+            
+            **Changes:**
+            - Added new BACnet device profile
+            - Generated test data and expected outputs
+            - Created CHANGELOG.md
+            
+            **Validation:**
+            - [ ] Profile YAML syntax validated
+            - [ ] Codec functions tested
+            - [ ] Test data generated successfully
+            
+            Please review the generated profile before merging.
+          branch: auto-profile-${{ env.ISSUE_NUMBER }}
+          delete-branch: true
+
+      - name: Comment on Issue
+        if: always() && github.event_name == 'issues'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          cd automation
+          python scripts/comment-on-issue.py ${{ env.ISSUE_NUMBER }}
