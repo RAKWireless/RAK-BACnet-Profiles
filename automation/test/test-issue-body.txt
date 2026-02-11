@@ -20,8 +20,8 @@ LORAWAN_1_0_3
 
 ### Uplink Data Examples
 
-fPort 10: 01016400e901ef00000000
-fPort 10: 01016400ea01ef00000000
+fPort 10: 01 01 64 00 e9 01 ef 00 00 00 00
+fPort 10: 01 01 64 00 ea 01 ef 00 00 00 00
 
 ### BACnet Object Mapping Requirements
 
