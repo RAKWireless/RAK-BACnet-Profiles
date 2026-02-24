@@ -64,7 +64,8 @@ cd automation
 
 | Scenario | Trigger | Input Source | Output |
 |----------|---------|--------------|--------|
-| Local Dev | Manual command | `test/test-issue-body.txt` | Local files in `temp/` |
+| Local Dev (Python) | Manual command | `test/test-issue-body.txt` (from `automation/`) | Local files in `temp/` |
+| Local Dev (Docker) | Manual command | `automation/test/test-issue-body.txt` (from repo root) | Local files in `temp/` 
 | Production | GitHub Issue created | Real Issue body | PR + Issue comment |
 
 ### Automatic Profile Generation
