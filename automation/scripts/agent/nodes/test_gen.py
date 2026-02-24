@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agent.context import WorkflowContext
 from agent.state import DeviceProfile, OverallState
-from agent.template import extract_hex_bytes
+from agent.template import parse_uplink_examples
 from agent.utils import run_script
 
 logger = logging.getLogger(__name__)
@@ -56,20 +56,28 @@ def _save_test_data(
 
 def _build_test_data(device: DeviceProfile) -> dict:
     """Build test data structure from device info."""
+    import sys
+
     device_name = device["device_name"]
     uplink_data = device["device_info"].get("uplinkData", "")
+    print(f"[TEST_DEBUG] device_name: {device_name}", file=sys.stderr)
+    print(f"[TEST_DEBUG] uplink_data: {repr(uplink_data)}", file=sys.stderr)
+    print(
+        f"[TEST_DEBUG] device_info keys: {list(device['device_info'].keys())}",
+        file=sys.stderr,
+    )
 
-    return {
-        "device": device_name,
-        "testCases": [
-            {
-                "name": "Issue example",
-                "model": device_name,
-                "fPort": 2,
-                "input": extract_hex_bytes(uplink_data),
-            }
-        ],
-    }
+    examples = parse_uplink_examples(uplink_data)
+    test_cases = [
+        {
+            "name": ex["name"],
+            "model": device_name,
+            "fPort": ex["fPort"],
+            "input": ex["hex"],
+        }
+        for ex in examples
+    ]
+    return {"device": device_name, "testCases": test_cases}
 
 
 def _generate_expected_output(
@@ -88,7 +96,7 @@ def _generate_expected_output(
 
     if success:
         logger.info(f"Generated expected output for {device['device_name']}")
-        ctx.save_file(expected_path, expected_path.read_text(encoding="utf-8"))
+        ctx.save_file(expected_path, output)
         return expected_path
 
     logger.error(

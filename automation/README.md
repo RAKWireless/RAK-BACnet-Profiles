@@ -8,7 +8,7 @@ This is a **BACnet Profile Automation Agent** that generates device profiles fro
 - **Deterministic**: LangGraph workflow with sequential processing
 - **Smart Templates**: Automatic template selection based on device similarity
 - **Self-Healing**: Auto-retry on validation failure (max 2 attempts)
-- **Clean Code**: Modular architecture following Clean Code principles
+- **Profile Reuse**: Skips regeneration when existing profile passes validation (use `--force-regenerate` to override)
 
 ## Quick Start
 
@@ -25,28 +25,49 @@ cd automation
 pip install -r requirements.txt
 ```
 
-### Run Locally
+### Running the Agent
 
+**Python (direct):**
 ```bash
-python scripts/run-agent.py \
-  --issue-body-file test/test-issue-body.txt \
-  --issue-number 1
+cd automation
+python scripts/run-agent.py --issue-body-file test/test-issue-body.txt --issue-number 1
+```
+
+**Docker (recommended for consistent local runs):**
+```bash
+cd automation
+# Linux/macOS
+./run-local-docker.sh test/test-issue-body.txt 1
+# Windows PowerShell
+.\run-local-docker.ps1 -IssueBodyFile test\test-issue-body.txt -IssueNumber 1
 ```
 
 **Parameters:**
-- `--issue-body-file`: Path to the file containing the GitHub Issue body
-- `--issue-number`: GitHub Issue number (used for:
-  - Creating unique temp directory: `temp/run-{issue-number}-{timestamp}/`
-  - Naming result files: `agent-result-{issue-number}.json`
-  - Logging: identifying which issue this run is for
-  - Example: `1`, `42`, `999` - any unique number works for local testing)
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--issue-body-file` | Yes | Path to Issue body text |
+| `--issue-number` | Yes | Run identifier (logs, output dirs) |
+| `--force-regenerate` | No | Overwrite existing validated profiles |
+
+**Behavior:** Reuses existing profile if it passes validation (unless `--force-regenerate`). Results in `temp/run-{issue-number}-{timestamp}/` and `profiles/`.
 
 ## GitHub Actions Integration
 
+### Trigger Methods
+
+**1. Automatic Trigger (Production)**
+- Create a GitHub Issue
+- Workflow automatically runs and generates profile
+- Results posted as PR and Issue comment
+
+**2. Local Testing vs GitHub Actions**
+
+| Scenario | Trigger | Input Source | Output |
+|----------|---------|--------------|--------|
+| Local Dev | Manual command | `test/test-issue-body.txt` | Local files in `temp/` |
+| Production | GitHub Issue created | Real Issue body | PR + Issue comment |
+
 ### Automatic Profile Generation
-
-When a new Issue is created with the label `new-device`:
-
 1. **Trigger**: Issue is opened/reopened
 2. **Run**: GitHub Actions executes the Agent
 3. **Generate**: Profile YAML + tests + changelog
@@ -74,6 +95,29 @@ docker run --rm \
 
 ## Architecture
 
+### Why Template Similarity Matching?
+
+The agent uses **smart template selection** based on content similarity to improve generation quality:
+
+| Problem | Solution |
+|---------|----------|
+| LLM hallucination | Reference similar existing profiles as examples |
+| Inconsistent structure | Follow proven profile patterns |
+| Wrong sensor mappings | Match by device type (temperature → use temp sensor template) |
+| Invalid codec patterns | Copy working codec structures |
+
+**How it works:**
+1. Parse device requirements from Issue (vendor, model, sensor types)
+2. Compare against all existing profiles using weighted scoring
+3. Select best matching template as reference for LLM
+4. LLM generates new profile following the reference structure
+
+**Scoring Algorithm:**
+- Device type matching: 40% (water/air/climate/etc.)
+- BACnet object types: 30% (analog/binary inputs)
+- Sensor count: 20% (how many sensors)
+- LoRaWAN class: 10% (Class A/B/C)
+
 ```
 GitHub Issue
     ↓
@@ -83,9 +127,12 @@ GitHub Actions
 │       Agent Workflow (LangGraph)     │
 │                                      │
 │  Parse → Generate → Test → Validate  │
-│    ↑                        ↓        │
+│    ↑         ↓              ↓        │
+│    │    generate-expected    │       │
+│    │      -output.js         │       │
 │    └───── Retry (max 2) ────┘       │
 │                                      │
+│  Template Selection (Similarity)    │
 └─────────────────────────────────────┘
     ↓
 Pull Request
@@ -102,8 +149,6 @@ automation/
 ├── scripts/
 │   ├── run-agent.py              # Main entry point - workflow orchestration
 │   ├── comment-on-issue.py       # GitHub API - post comments to issues
-│   ├── validate-profiles.py      # Profile validation tool
-│   ├── test-all-profiles.py      # Batch testing tool
 │   ├── agent/                    # Core business logic (Clean Code)
 │   │   ├── __init__.py
 │   │   ├── config.py             # Configuration constants
@@ -124,6 +169,13 @@ automation/
 │   └── tools/
 │       ├── __init__.py
 │       └── parse_issue.py        # Standalone issue parser
+├── ../scripts/                   # Root-level scripts (shared with validation)
+│   ├── validate-profile.js       # Profile validation
+│   ├── generate-expected-output.js # Generate expected test outputs from codec
+│   └── test-codec.js             # Codec testing utilities
+├── tests/                        # Testing and validation tools
+│   ├── validate-profiles.py      # Profile validation tool
+│   └── test-all-profiles.py      # Batch testing tool
 ├── skills/                       # AI prompt templates
 │   ├── parse-issue/
 │   ├── generate-profile/
@@ -135,6 +187,8 @@ automation/
 │   └── test-issue-body-zh.txt
 ├── temp/                         # Runtime temporary files
 ├── requirements.txt              # Python dependencies
+├── run-local-docker.sh           # Local Docker run (Linux/macOS)
+├── run-local-docker.ps1          # Local Docker run (Windows)
 ├── docker-entrypoint.sh          # Docker entry point
 └── README.md                     # This file
 ```
@@ -148,15 +202,39 @@ automation/
 5. **Type Safety**: Full type hints on all functions
 
 ## Development
-### Testing
 
 ```bash
-# Run agent with test data (use any number for local testing)
+# Run agent (see "Running the Agent" above)
 python scripts/run-agent.py --issue-body-file test/test-issue-body.txt --issue-number 1
 
-# Validate profiles
-python scripts/validate-profiles.py --all
+# Force regenerate even when profile exists
+python scripts/run-agent.py --issue-body-file test/test-issue-body.txt --issue-number 1 --force-regenerate
+
+# Validate all profiles
+python tests/validate-profiles.py --all
 ```
+
+#### Test Node Workflow
+
+The **Test** node in the workflow does two things:
+
+1. **Generate Test Data** (`test-data.json`)
+   - Parses all uplink examples (supports multiple fPorts)
+   - Creates one test case per uplink example
+   - Saved to `profiles/{vendor}/tests/test-data.json`
+
+2. **Generate Expected Output** (`expected-output.json`) 
+   - Uses profile's codec to decode test data
+   - Executes `scripts/generate-expected-output.js`
+   - Produces expected sensor values (temperature, humidity, etc.)
+   - Saved to `profiles/{vendor}/tests/expected-output.json`
+
+**Purpose**: 
+- Enables CI/CD testing - validate that codec changes don't break existing functionality
+- Documents expected decoding results for each device
+- Allows regression testing when profiles are modified
+
+**If script is missing**: Test node will only generate `test-data.json` without expected outputs.
 
 ## Configuration
 
@@ -268,6 +346,136 @@ This PR was automatically generated by the BACnet Profile Agent from issue #ISSU
 *This is an automated PR. If changes are needed, please comment on the original issue.*
 ```
 
-## License
+## Extending the System
 
-MIT
+### Adding New Fields to Device Profiles
+
+When you need to add new fields to device profiles (e.g., new sensor types, configuration options), you need to modify the following components:
+
+#### 1. **Update Issue Parser** (`scripts/tools/parse_issue.py`)
+
+Add the new field to the sections mapping and data extraction:
+
+```python
+# In parse_issue_body() function, add to sections dict:
+sections = {
+    # ... existing fields ...
+    "New Field Name": "newFieldKey",  # Add here
+}
+
+# The field will be automatically extracted and included in device_info
+```
+
+#### 2. **Update SKILL.md** (`skills/generate-profile/SKILL.md`)
+
+Update the AI instructions to include the new field:
+
+```markdown
+#### Required Fields
+
+Add your new field to the table:
+| Field | Type | Description |
+|-------|------|-------------|
+| ... existing fields ... |
+| newFieldKey | string | Description of new field |
+```
+
+Update the examples section to show usage:
+```markdown
+<good_example>
+name: "Device Name"
+newFieldKey: "value"  # Add example
+</good_example>
+```
+
+#### 3. **Update LLM Prompt** (Optional)
+
+If the new field requires special handling, update `scripts/agent/llm.py`:
+
+```python
+def create_profile_prompt(skill, device_json, template_content):
+    content = f"""You are a BACnet profile generator.
+
+{skill}
+
+REQUIREMENTS:
+- ... existing requirements ...
+- Include newFieldKey in the datatype section when applicable
+"""
+```
+
+#### 4. **Update State Type** (Optional)
+
+If you need strict type checking, update `scripts/agent/state.py`:
+
+```python
+class DeviceProfile(TypedDict):
+    # ... existing fields ...
+    new_field: str  # Add type definition
+```
+
+#### 5. **Update Template Selection** (Optional)
+
+If the new field affects template matching, update `scripts/agent/template.py`:
+
+```python
+SECTIONS = {
+    # ... existing mappings ...
+    "New Field": "newFieldKey",
+}
+```
+
+#### Data Flow
+
+```
+GitHub Issue (markdown)
+    ↓
+parse_issue.py (extracts to device_info["newFieldKey"])
+    ↓
+SKILL.md (instructs LLM how to use the field)
+    ↓
+LLM generates profile with new field
+    ↓
+save_and_register() persists to YAML
+```
+
+#### Testing New Fields
+
+1. **Update test data** (`test/test-issue-body.txt`):
+```markdown
+### New Field Name
+Value here
+```
+
+2. **Run locally** (add `--force-regenerate` to overwrite existing profile):
+```bash
+python scripts/run-agent.py --issue-body-file test/test-issue-body.txt --issue-number 999
+```
+
+3. **Check output** in `temp/run-999-*/` directory
+
+#### Example: Adding "Firmware Version" Field
+
+1. **parse_issue.py**:
+```python
+sections = {
+    # ... existing ...
+    "Firmware Version": "firmwareVersion",
+}
+```
+
+2. **SKILL.md**:
+```markdown
+### Step 1: Load Input Data
+Extract from device_info:
+- **firmwareVersion**: Device firmware version (e.g., "1.2.3")
+
+#### Required Fields
+| Field | Type | Description |
+| firmwareVersion | string | Firmware version (optional) |
+```
+
+3. **Test**:
+```bash
+python scripts/run-agent.py --issue-body-file test/test-issue-body.txt --issue-number 1
+```

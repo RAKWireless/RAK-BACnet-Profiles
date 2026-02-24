@@ -8,8 +8,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-
-from agent.config import TEMP_ROOT_DIR
 from agent.context import WorkflowContext
 from agent.nodes.parse import parse_issue_node
 from agent.nodes.validate import validate_profile_node
@@ -46,13 +44,19 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--issue-number", type=int, required=True, help="GitHub Issue number"
     )
+    parser.add_argument(
+        "--force-regenerate",
+        action="store_true",
+        help="Force regenerate even if profile exists and passes validation",
+    )
     return parser.parse_args()
 
 
-def _initialize_context(issue_number: int) -> WorkflowContext:
+def _initialize_context(issue_number: int, force_regenerate: bool = False) -> WorkflowContext:
     """Initialize workflow context and logging."""
     ctx = WorkflowContext()
     ctx.setup(issue_number)
+    ctx.force_regenerate = force_regenerate
     _setup_logging(ctx.run_dir / "agent.log")
     return ctx
 
@@ -78,6 +82,8 @@ def _run_workflow(
 ) -> dict:
     """Execute the workflow."""
     issue_body = Path(issue_body_file).read_text(encoding="utf-8")
+    logger.info(f"[_run_workflow] Read issue body: {len(issue_body)} chars")
+    logger.info(f"[_run_workflow] FULL issue_body:\n{issue_body}\n{'=' * 50}")
     initial_state = _create_initial_state(issue_body, issue_number)
 
     node_functions = {
@@ -99,6 +105,8 @@ def _run_workflow(
 
 def _create_initial_state(issue_body: str, issue_number: int) -> dict:
     """Create initial workflow state."""
+    logger.info(f"[_create_initial_state] issue_body length: {len(issue_body)}")
+    logger.info(f"[_create_initial_state] issue_number: {issue_number}")
     return {
         "issue_body": issue_body,
         "issue_number": issue_number,
@@ -115,19 +123,13 @@ def _extract_result(final_state: dict) -> dict:
     success = len(final_state.get("errors", [])) == 0
     generated_files = final_state.get("all_generated_files", [])
 
-    logger.info(f"Workflow completed - Generated {len(generated_files)} files")
-
-    for file_path in generated_files:
-        logger.info(f"  - {file_path}")
-
-    if final_state.get("errors"):
-        logger.warning(f"Errors: {len(final_state['errors'])}")
-
-    return {
+    result = {
         "success": success,
         "generated_files": generated_files,
         "errors": final_state.get("errors", []),
     }
+    logger.info(f"Workflow completed - Generated {len(generated_files)} files", extra={"result": result})
+    return result
 
 
 def _save_result(result: dict, ctx: WorkflowContext, issue_number: int) -> None:

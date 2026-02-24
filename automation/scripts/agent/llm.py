@@ -11,7 +11,7 @@ Context:
     - Authentication: Environment variables QWEN_API_KEY, DEEPSEEK_API_KEY
 
 Model Selection:
-    - Primary: qwen-turbo (Chinese model, good for device specs)
+    - Primary: qwen-plus (Chinese model, better capability for complex profiles)
     - Fallback: deepseek-chat (alternative if Qwen fails)
 """
 
@@ -39,7 +39,7 @@ def _create_qwen_llm() -> ChatOpenAI:
     if not api_key:
         raise ValueError("QWEN_API_KEY not set")
     return ChatOpenAI(
-        model="qwen-turbo",
+        model="qwen-plus",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         api_key=api_key,
         temperature=0,

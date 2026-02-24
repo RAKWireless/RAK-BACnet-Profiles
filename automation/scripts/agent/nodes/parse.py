@@ -2,6 +2,7 @@
 
 import json
 import logging
+from pathlib import Path
 
 from langchain_core.messages import AIMessage
 
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 def parse_issue_node(state: OverallState, ctx: WorkflowContext) -> dict:
     """Parse GitHub Issue and generate all profiles sequentially."""
     logger.info("Node: Parse issue")
+    issue_body = state.get("issue_body", "")
+    logger.info(
+        f"[parse_issue_node] FULL issue_body from state:\n{issue_body}\n{'=' * 50}"
+    )
 
     parsed_data = _parse_issue_body(state, ctx)
     if not parsed_data:
@@ -40,6 +45,8 @@ def _save_issue_body(issue_body: str, ctx: WorkflowContext) -> None:
         raise RuntimeError("Context not initialized. Call setup() first.")
     issue_file = ctx.run_dir / "current-issue-body.txt"
     issue_file.write_text(issue_body, encoding="utf-8")
+    logger.info(f"[_save_issue_body] Saved to {issue_file}")
+    logger.info(f"[_save_issue_body] FULL content:\n{issue_body}\n{'=' * 50}")
 
 
 def _run_parse_script(ctx: WorkflowContext) -> dict | None:
@@ -54,7 +61,21 @@ def _run_parse_script(ctx: WorkflowContext) -> dict | None:
         logger.error(f"Parse script failed: {output}")
         return None
 
-    return json.loads(parsed_file.read_text(encoding="utf-8"))
+    parsed_data = json.loads(parsed_file.read_text(encoding="utf-8"))
+
+    # DEBUG: Print parsed data
+    logger.info(
+        f"[_run_parse_script] Parsed {len(parsed_data.get('devices', []))} devices"
+    )
+    for i, device in enumerate(parsed_data.get("devices", [])):
+        logger.info(
+            f"[_run_parse_script] Device {i + 1}: {device.get('vendor')}-{device.get('model')}"
+        )
+        logger.info(
+            f"[_run_parse_script]   uplinkData: {repr(device.get('uplinkData', 'EMPTY'))}"
+        )
+
+    return parsed_data
 
 
 def _generate_profiles_for_devices(
@@ -95,6 +116,12 @@ def _process_single_device(
             return existing
         logger.info(f"Retrying generation for {device_name}")
 
+    # If profile already exists on disk and passes validation, reuse it (unless --force-regenerate)
+    if not ctx.force_regenerate:
+        existing_profile = _try_use_existing_profile_on_disk(device_info, existing_map, ctx)
+        if existing_profile is not None:
+            return existing_profile
+
     return _generate_or_error(device_info, existing_map, ctx)
 
 
@@ -102,6 +129,36 @@ def _should_use_existing(existing: DeviceProfile) -> bool:
     """Check if existing device should be reused."""
     attempts = int(existing.get("validate_attempts", 0))
     return existing.get("validation_passed", False) or attempts >= MAX_RETRY_ATTEMPTS
+
+
+def _try_use_existing_profile_on_disk(
+    device_info: dict, existing_map: dict, ctx: WorkflowContext
+) -> DeviceProfile | None:
+    """If profile exists on disk and passes validation, reuse it (avoid overwriting)."""
+    vendor = device_info["vendor"]
+    model = device_info["model"]
+    profile_path = PROFILES_DIR / vendor / f"{vendor}-{model}.yaml"
+
+    if not profile_path.exists():
+        return None
+
+    logger.info(f"Profile exists for {device_info['name']}, validating before reuse...")
+    success, _ = run_script("validate-profile.js", str(profile_path))
+
+    if not success:
+        logger.info(f"Existing profile failed validation, will regenerate")
+        return None
+
+    logger.info(f"Using existing validated profile for {device_info['name']}")
+    content = profile_path.read_text(encoding="utf-8")
+    return _create_device_profile(
+        device_info["name"],
+        device_info,
+        profile_path,
+        content,
+        existing_map,
+        validation_passed=True,
+    )
 
 
 def _generate_or_error(
@@ -173,6 +230,8 @@ def _create_device_profile(
     profile_path: Path,
     yaml_content: str,
     existing_map: dict,
+    *,
+    validation_passed: bool = False,
 ) -> DeviceProfile:
     """Create DeviceProfile with preserved attempt count if retrying."""
     attempts = _get_preserved_attempts(device_name, existing_map)
@@ -183,7 +242,7 @@ def _create_device_profile(
         profile_path=str(profile_path),
         profile_content=yaml_content,
         generated_files=[str(profile_path)],
-        validation_passed=False,
+        validation_passed=validation_passed,
         validation_errors=[],
         validate_attempts=attempts,
         test_data_path=None,

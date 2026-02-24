@@ -27,7 +27,7 @@ SCRIPTS_DIR = WORKSPACE_ROOT / "scripts"
 # Model Configuration
 # ============================================================================
 
-MODEL_NAME_PRIMARY = "qwen-trubo"
+MODEL_NAME_PRIMARY = "qwen-plus"
 MODEL_NAME_FALLBACK = "deepseek-chat"
 
 # ============================================================================

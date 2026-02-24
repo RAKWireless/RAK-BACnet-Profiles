@@ -91,8 +91,11 @@ def _load_all_profile_features() -> list[dict]:
 
 
 def _should_skip_profile(profile_path: Path) -> bool:
-    """Check if profile should be skipped."""
-    return profile_path.name == "profile.yaml" or "tests" in str(profile_path)
+    """Check if profile should be skipped.
+
+    Skips files in tests/ subdirectories (temporary test data, not device profiles).
+    """
+    return "tests" in profile_path.parts
 
 
 def _extract_profile_features(profile_path: Path) -> dict | None:
@@ -204,15 +207,96 @@ def _calculate_lorawan_class_score(device_info: dict, profile: dict) -> float:
     return 0.0
 
 
+def extract_fport(text: str) -> int:
+    """Extract first fPort from uplink data. E.g. 'fPort 10: 01 02 64...' -> 10."""
+    examples = parse_uplink_examples(text)
+    return examples[0]["fPort"] if examples else 10
+
+
+def parse_uplink_examples(text: str) -> list[dict]:
+    """Parse all uplink examples from text. Returns list of {fPort, hex, name}."""
+    if not text or not text.strip():
+        return []
+
+    results = []
+    seen: set[tuple[int, str]] = set()
+
+    # Match each "fPort N: hex" or "fport: N" line (case-insensitive)
+    for m in re.finditer(
+        r"(?:fPort|fport|port)\s*:?\s*(\d+)\s*:\s*([0-9a-fA-F][0-9a-fA-F\s]*)",
+        text,
+        re.IGNORECASE,
+    ):
+        port = int(m.group(1))
+        raw_hex = m.group(2).strip().replace("\n", " ")
+        if len(re.sub(r"[^0-9a-fA-F]", "", raw_hex)) < 4:
+            continue
+        hex_str = _normalize_hex(raw_hex)
+        key = (port, hex_str)
+        if key not in seen:
+            seen.add(key)
+            results.append({"fPort": port, "hex": hex_str, "name": f"fPort {port} example"})
+
+    if results:
+        return results
+
+    # Fallback: single block without explicit fPort
+    try:
+        hex_str = extract_hex_bytes(text)
+        return [{"fPort": 10, "hex": hex_str, "name": "Issue example"}]
+    except ValueError:
+        return []
+
+
+def _normalize_hex(raw: str) -> str:
+    """Normalize hex to space-separated bytes."""
+    hex_chars = re.sub(r"[^0-9a-fA-F]", "", raw)
+    return " ".join(hex_chars[i : i + 2] for i in range(0, len(hex_chars), 2))
+
+
 def extract_hex_bytes(text: str) -> str:
     """Extract hex byte sequence from text.
+
+    Handles both space-separated ("01 64 00 C8") and continuous ("01016400C8") formats.
+    Returns space-separated hex bytes.
 
     Raises:
         ValueError: If no hex byte sequence found in text.
     """
-    match = re.search(r"([0-9a-fA-F]{2}(?:\s+[0-9a-fA-F]{2})+)", text or "")
+    text = text or ""
+    logger.info(f"Input text: {repr(text)}")
+
+    # First try space-separated hex bytes
+    match = re.search(r"([0-9a-fA-F]{2}(?:\s+[0-9a-fA-F]{2})+)", text)
+    logger.info(f"Regex 1 (space-separated) match: {match}")
     if match:
-        return match.group(1)
+        result = match.group(1)
+        logger.info(f"[Returning space-separated: {result}")
+        return result
+
+    # Try continuous hex string (at least 4 bytes = 8 hex chars)
+    # Match sequences that look like port data (fPort XX:) or standalone hex
+    match = re.search(r":\s*([0-9a-fA-F]{8,})", text)
+    logger.info(f"Regex 2 (fPort format) match: {match}")
+
+    if match:
+        hex_str = match.group(1)
+        result = " ".join(hex_str[i : i + 2] for i in range(0, len(hex_str), 2))
+        logger.info(f"Returning fPort format: {result}")
+        return result
+
+    # Last resort: find any long hex string
+    match = re.search(r"\b([0-9a-fA-F]{8,})\b", text)
+    logger.info(f"Regex 3 (standalone hex) match: {match}")
+    if match:
+        hex_str = match.group(1)
+        result = " ".join(hex_str[i : i + 2] for i in range(0, len(hex_str), 2))
+        logger.info(f"Returning standalone hex: {result}")
+        return result
+
+    logger.error(
+        f"All regex patterns failed for text: {repr(text)}"
+    )
     raise ValueError(
         "No hex byte sequence found in issue text. Please provide example uplink data like '01 64 00 C8'"
     )

@@ -11,6 +11,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _extract_content(content: str) -> str:
+    """Extract content, handling markdown code blocks."""
+    content = content.strip()
+
+    # If content is wrapped in code block, extract inner content
+    if content.startswith("```"):
+        lines = content.split("\n")
+        # Remove first line (```text or ```) and last line (```)
+        if len(lines) >= 3:
+            content = "\n".join(lines[1:-1])
+
+    return content.strip()
+
+
 def parse_issue_body(body: str):
     """
     Parses the GitHub Issue body into a structured JSON.
@@ -42,7 +56,7 @@ def parse_issue_body(body: str):
 
     for header, content in matches:
         header = header.strip()
-        content = content.strip()
+        content = _extract_content(content)
 
         field = sections.get(header)
         if field:
@@ -101,7 +115,6 @@ def main():
         json.dump(result, f, indent=2, ensure_ascii=False)
 
     logger.info(f"Successfully parsed issue into: {output_file}")
-
 
 if __name__ == "__main__":
     main()
