@@ -9,9 +9,9 @@ LABEL maintainer="RAKwireless IoT Automation" \
 
 WORKDIR /workspace
 
-# Install Node.js and Python dependencies
+# Install Node.js, git (for comment-on-issue), and Python dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nodejs npm \
+    nodejs npm git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

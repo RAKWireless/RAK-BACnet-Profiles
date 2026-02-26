@@ -12,35 +12,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          cd automation
-          pip install -r requirements.txt
-          cd ../scripts && npm install
-
       - name: Save issue body to file
         run: |
           mkdir -p automation/temp
           echo "${{ github.event.issue.body }}" > automation/temp/issue-body.txt
+
+      - name: Build Docker image
+        run: docker build -t profile-agent .
 
       - name: Run Agent
         env:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          cd automation
-          python scripts/run-agent.py \
-            --issue-body-file temp/issue-body.txt \
+          docker run --rm \
+            -e QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
+            -e DEEPSEEK_API_KEY="${{ secrets.DEEPSEEK_API_KEY }}" \
+            -v "${{ github.workspace }}:/workspace" \
+            profile-agent \
+            --issue-body-file automation/temp/issue-body.txt \
             --issue-number ${{ github.event.issue.number }}
 
       - name: Check generated files
@@ -89,5 +79,10 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           BASE_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          cd automation
-          python scripts/comment-on-issue.py ${{ github.event.issue.number }}
+          docker run --rm \
+            -e GITHUB_TOKEN \
+            -e GITHUB_REPOSITORY \
+            -e BASE_BRANCH \
+            -v "${{ github.workspace }}:/workspace" \
+            profile-agent \
+            python automation/scripts/comment-on-issue.py ${{ github.event.issue.number }}

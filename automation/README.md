@@ -70,7 +70,7 @@ cd automation
 
 ### Automatic Profile Generation
 1. **Trigger**: Issue is opened/reopened
-2. **Run**: GitHub Actions executes the Agent
+2. **Run**: GitHub Actions builds the Docker image and runs the Agent (same image as local)
 3. **Generate**: Profile YAML + tests + changelog
 4. **PR**: Creates Pull Request with changes
 5. **Notify**: Comments on Issue with results
