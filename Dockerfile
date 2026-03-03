@@ -27,7 +27,10 @@ RUN chmod +x /entrypoint.sh
 
 # Create non-root user
 RUN groupadd -r agent && useradd -r -g agent -m agent
-RUN chown -R agent:agent /workspace
+
+# Pre-create automation/temp with correct ownership (fixes PermissionError in CI)
+RUN mkdir -p /workspace/automation/temp && chown -R agent:agent /workspace
+
 USER agent
 
 # Health check
