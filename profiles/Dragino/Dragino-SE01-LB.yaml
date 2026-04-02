@@ -18,14 +18,11 @@ codec: |
     // EC → Analog Input (AI) – Units: µS/cm
     // BatV → Analog Input (AI) – Units: Volts
 
-    // Assume fixed 8-byte payload: [SoilMoisture_H, SoilMoisture_L, SoilTemp_H, SoilTemp_L, EC_H, EC_L, BatV_H, BatV_L]
-    // All values are uint16_t scaled: moisture * 10, temp * 10, EC * 10, BatV * 100
     if (data.length >= 8) {
-
-      var BatV = (bytes[0] << 8 | bytes[1]);
-      var SoilMoisture = ((bytes[2] << 8) | bytes[3]) / 10;
-      var SoilTemperature = ((bytes[4] << 24 >> 16) | bytes[5]) / 10;
-      var EC = ((bytes[6] << 8) | bytes[7]);
+      var BatV = (data[0] << 8 | data[1]);
+      var SoilMoisture = ((data[2] << 8) | data[3]) / 100;
+      var SoilTemperature = ((data[4] << 24 >> 16) | data[5]) / 100;
+      var EC = ((data[6] << 8) | data[7]);
 
       values.push({ name: "SoilMoisture", channel: 1, value: SoilMoisture, unit: "percent" });
       values.push({ name: "SoilTemperature", channel: 2, value: SoilTemperature, unit: "degreesCelsius" });
