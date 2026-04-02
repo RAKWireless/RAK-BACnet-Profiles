@@ -1,0 +1,72 @@
+name: Dragino-S31B-LB
+model: S31B-LB
+vendor: Dragino
+profileVersion: 1.0.0
+codec: |
+  function Decode(fPort, data, variables) {
+    var values = [];
+    // Expecting 4-byte payload: [temp_MSB, temp_LSB, hum_MSB, hum_LSB] + optional battery (5th byte)
+    if (data.length >= 4) {
+      // Temperature: signed 16-bit big-endian → °C × 100
+      var tempRaw = (data[0] << 8) | data[1];
+      var temperature = tempRaw / 100.0;
+      values.push({ name: "TempC_SHT31", channel: 1, value: temperature, unit: "degreesC" });
+
+      // Humidity: unsigned 16-bit big-endian → %RH × 100
+      var humRaw = (data[2] << 8) | data[3];
+      var humidity = humRaw / 100.0;
+      values.push({ name: "Hum_SHT31", channel: 2, value: humidity, unit: "percentRelativeHumidity" });
+    }
+
+    // Battery voltage (if present, e.g., 5th byte = V × 10 → e.g., 0x030A = 778 → 3.08V)
+    if (data.length >= 5) {
+      var batRaw = (data[4] << 8) | (data.length > 5 ? data[5] : 0);
+      var batteryVoltage = batRaw / 100.0;
+      values.push({ name: "BatV", channel: 3, value: batteryVoltage, unit: "volts" });
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    // Not used for uplink-only sensor; stub implementation
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+datatype:
+  "1":
+    covIncrement: 0.1
+    name: TempC_SHT31
+    type: AnalogInputObject
+    units: degreesC
+    updateInterval: 60
+  "2":
+    covIncrement: 0.5
+    name: Hum_SHT31
+    type: AnalogInputObject
+    units: percentRelativeHumidity
+    updateInterval: 60
+  "3":
+    covIncrement: 0.01
+    name: BatV
+    type: AnalogInputObject
+    units: volts
+    updateInterval: 3600
+lorawan:
+  adrAlgorithm: LoRA Only
+  classCDownlinkTimeout: 0
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: RP002_1_0_3
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
