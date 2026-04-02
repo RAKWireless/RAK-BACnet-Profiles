@@ -30,7 +30,7 @@ codec: |
       values.push({ name: "SoilMoisture", channel: 1, value: SoilMoisture, unit: "percent" });
       values.push({ name: "SoilTemperature", channel: 2, value: SoilTemperature, unit: "degreesCelsius" });
       values.push({ name: "EC", channel: 3, value: EC, });
-      values.push({ name: "BatV", channel: 4, value: BatV , unit: "volts" });
+      values.push({ name: "BatV", channel: 4, value: BatV , unit: "millivolts" });
     }
 
     return values;
