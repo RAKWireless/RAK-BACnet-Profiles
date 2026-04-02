@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💡 Profile Examples
+    url: https://github.com/RAKWireless/RAK-BACnet-Profiles/tree/main/examples
+    about: View standard profile examples and test data

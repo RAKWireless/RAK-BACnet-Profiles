@@ -1,0 +1,172 @@
+name: 🐛 Bug Report
+description: Report issues or errors with existing profiles
+title: "[Bug] <Vendor>-<Model> - <Brief Description>"
+labels: ["bug", "needs-fix"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! A detailed description helps us quickly identify and fix the issue.
+        
+  - type: dropdown
+    id: bug-type
+    attributes:
+      label: Issue Type
+      description: Select the most appropriate issue type
+      options:
+        - Decode Error - Data parsing result is incorrect
+        - Encode Error - Downlink command format error
+        - BACnet Object Configuration Error
+        - LoRaWAN Configuration Error
+        - Documentation Error
+        - Other
+      default: 0
+    validations:
+      required: true
+      
+  - type: input
+    id: profile-path
+    attributes:
+      label: Profile File Path
+      description: Path to the problematic profile file
+      placeholder: e.g., profiles/Dragino/Dragino-LDS02.yaml
+    validations:
+      required: true
+      
+  - type: input
+    id: profile-version
+    attributes:
+      label: Profile Version
+      description: Profile version number (profileVersion in the YAML file)
+      placeholder: e.g., 1.0.0
+    validations:
+      required: false
+      
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Issue Description
+      description: Clearly describe the problem you encountered
+      placeholder: Explain in detail what happened and what the expected behavior should be
+    validations:
+      required: true
+      
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to Reproduce
+      description: How to reproduce this issue
+      placeholder: |
+        1. Send uplink data '01 02 64 00 C8'
+        2. Decode using the Decode function
+        3. Observe...
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+      
+  - type: textarea
+    id: test-data
+    attributes:
+      label: Test Data
+      description: Raw data that reproduces the issue (hexadecimal format)
+      placeholder: |
+        fPort: 10
+        Hex Data: 01 02 64 00 C8 01 90 00
+      render: text
+    validations:
+      required: true
+      
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Result
+      description: Describe the expected correct result
+      placeholder: |
+        Expected decode result:
+        {
+          "Temperature": 20.0,
+          "Humidity": 65.5,
+          "Battery": 100
+        }
+      render: json
+    validations:
+      required: true
+      
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Result
+      description: Describe the actual incorrect result
+      placeholder: |
+        Actual decode result:
+        {
+          "Temperature": 0,
+          "Humidity": 0,
+          "Battery": 100
+        }
+      render: json
+    validations:
+      required: true
+      
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: Information about the usage environment
+      placeholder: |
+        - WisGateOS Version: v2.3.0 b30
+        - BACnet Version: 1.1.0 b11
+      value: |
+        - WisGateOS Version: 
+        - BACnet Version: 
+    validations:
+      required: true
+      
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: Error Logs or Screenshots
+      description: If you have error logs or screenshots, please paste them here
+      placeholder: Paste error logs or drag screenshots here
+    validations:
+      required: false
+      
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Information
+      description: Any other information that might help understand the issue
+      placeholder: e.g., frequency of the issue, temporary workarounds, etc.
+    validations:
+      required: false
+      
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: Impact level of this issue
+      options:
+        - 🔴 Critical - Completely unusable
+        - 🟠 Moderate - Some features affected
+        - 🟡 Minor - Small issue or optimization suggestion
+      default: 1
+    validations:
+      required: true
+      
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate report
+          required: true
+        - label: I have provided test data that reproduces the issue
+          required: true
+        - label: I have explained the difference between expected and actual results
+          required: true
+

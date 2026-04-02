@@ -1,0 +1,153 @@
+name: 🆕 Device Profile Request
+description: Request to create a BACnet profile configuration for a new device
+title: "[Profile Request] <Vendor> - <Model>"
+labels: ["profile-request", "requirement-gathering"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for submitting a device profile request! Please fill in the following information so we can create a BACnet profile for your device.
+        
+        **Note**: The more detailed the information, the faster the profile can be created.
+        
+  - type: input
+    id: vendor
+    attributes:
+      label: Device Vendor
+      description: Name of the device manufacturer
+      placeholder: e.g., Dragino, Milesight, Senso8
+    validations:
+      required: true
+      
+  - type: input
+    id: model
+    attributes:
+      label: Device Model
+      description: Complete device model number
+      placeholder: e.g., LDS02, VS330, LRS20100
+    validations:
+      required: true
+      
+  - type: input
+    id: datasheet
+    attributes:
+      label: Product Manual/Datasheet Link
+      description: URL to the product datasheet or technical specification document
+      placeholder: https://
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: lorawan-class
+    attributes:
+      label: LoRaWAN Class
+      description: LoRaWAN Class supported by the device
+      options:
+        - Class A
+        - Class B
+        - Class C
+      default: 0
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: lorawan-version
+    attributes:
+      label: LoRaWAN Protocol Version
+      description: LoRaWAN MAC version used by the device
+      options:
+        - LORAWAN_1_0_2
+        - LORAWAN_1_0_3
+        - LORAWAN_1_0_4
+      default: 1
+    validations:
+      required: true
+        
+  - type: textarea
+    id: uplink-data
+    attributes:
+      label: Uplink Data Examples
+      description: Provide hexadecimal examples of device uplink data (at least 2-3 different scenarios)
+      placeholder: |
+        fPort 10: 01 02 64 00 C8 01 90 00
+        fPort 10: 00 03 5A 00 FA 02 10 00
+        fPort 12: 01 00 3C
+      render: text
+    validations:
+      required: true
+      
+  - type: textarea
+    id: decode-function
+    attributes:
+      label: Decode Function (Optional)
+      description: |
+        If you have a payload decoding function, providing it can significantly speed up profile creation.
+        Supported formats: JavaScript, Python, or any other language with clear logic.
+      placeholder: |
+        function decodeUplink(input) {
+          var bytes = input.bytes;
+          var data = {};
+          data.temperature = (bytes[0] << 8 | bytes[1]) / 100;
+          data.humidity = (bytes[2] << 8 | bytes[3]) / 100;
+          data.battery = bytes[4];
+          return { data: data };
+        }
+      render: code
+    validations:
+      required: false
+
+  - type: textarea
+    id: bacnet-mapping
+    attributes:
+      label: BACnet Object Mapping Requirements
+      description: |
+        Specify which BACnet object type each parameter should be mapped to
+        
+        **Currently supported BACnet object types:**
+        - AnalogInputObject - Analog input (sensor readings)
+        - AnalogOutputObject - Analog output (controllable analog values)
+        - AnalogValueObject - Analog value (general analog values)
+        - BinaryInputObject - Binary input (switch status, alarms, etc.)
+        - BinaryOutputObject - Binary output (controllable switches)
+        - BinaryValueObject - Binary value (general binary values)
+        - OctetStringValueObject - Octet string value (strings, special data)
+      placeholder: |
+        - Temperature → AnalogInputObject (degreesCelsius)
+        - Humidity → AnalogInputObject (percent)
+        - Door Status → BinaryInputObject
+        - Battery Voltage → AnalogInputObject (millivolts)
+      value: |
+        - Parameter Name → BACnet Object Type (unit)
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Priority of this request
+      options:
+        - 🔥 High - Urgently needed for project
+        - ⚡ Medium - Planned for near-term use
+        - 📝 Low - Long-term planning
+      default: 1
+    validations:
+      required: true
+      
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following
+      options:
+        - label: I have provided complete device model information
+          required: true
+        - label: I have provided real uplink data examples
+          required: true
+        - label: I have explained the meaning of data fields
+          required: true
+        - label: I have checked for duplicate profile requests
+          required: true
+
