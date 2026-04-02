@@ -17,6 +17,9 @@ codec: |
     // SoilTemperature → Analog Input (AI) – Units: °C
     // EC → Analog Input (AI) – Units: µS/cm
     // BatV → Analog Input (AI) – Units: Volts
+    if (fPort !== 2) {
+      return values;
+    }
 
     if (data.length >= 8) {
       var BatV = (data[0] << 8 | data[1]);
