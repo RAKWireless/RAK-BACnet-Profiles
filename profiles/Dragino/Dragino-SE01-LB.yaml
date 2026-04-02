@@ -1,0 +1,77 @@
+name: Dragino-SE01-LB
+model: SE01-LB
+vendor: Dragino
+profileVersion: 1.0.0
+lorawan:
+  macVersion: LORAWAN_1_0_3
+  supportClassB: false
+  supportClassC: false
+  adrAlgorithm: LoRA Only
+  classCDownlinkTimeout: 0
+  regionalParametersRevision: RP002_1_0_3
+  supportOTAA: true
+codec: |
+  function Decode(fPort, data, variables) {
+    var values = [];
+    // SoilMoisture → Analog Input (AI) – Units: %
+    // SoilTemperature → Analog Input (AI) – Units: °C
+    // EC → Analog Input (AI) – Units: µS/cm
+    // BatV → Analog Input (AI) – Units: Volts
+
+    // Assume fixed 8-byte payload: [SoilMoisture_H, SoilMoisture_L, SoilTemp_H, SoilTemp_L, EC_H, EC_L, BatV_H, BatV_L]
+    // All values are uint16_t scaled: moisture * 10, temp * 10, EC * 10, BatV * 100
+    if (data.length >= 8) {
+      var soilMoisture = (data[0] << 8) | data[1];
+      var soilTemp = (data[2] << 8) | data[3];
+      var ec = (data[4] << 8) | data[5];
+      var batV = (data[6] << 8) | data[7];
+
+      values.push({ name: "SoilMoisture", channel: 1, value: soilMoisture / 10.0, unit: "percent" });
+      values.push({ name: "SoilTemperature", channel: 2, value: soilTemp / 10.0, unit: "degreesCelsius" });
+      values.push({ name: "EC", channel: 3, value: ec / 10.0, unit: "microsiemensPerCentimeter" });
+      values.push({ name: "BatV", channel: 4, value: batV / 100.0, unit: "volts" });
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    // Not implemented for uplink-only sensor
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+datatype:
+  "1":
+    covIncrement: 0.1
+    name: SoilMoisture
+    type: AnalogValueObject
+    units: percent
+    updateInterval: 300
+  "2":
+    covIncrement: 0.1
+    name: SoilTemperature
+    type: AnalogValueObject
+    units: degreesCelsius
+    updateInterval: 300
+  "3":
+    covIncrement: 1.0
+    name: EC
+    type: AnalogValueObject
+    units: microsiemensPerCentimeter
+    updateInterval: 300
+  "4":
+    covIncrement: 0.01
+    name: BatV
+    type: AnalogValueObject
+    units: volts
+    updateInterval: 3600
