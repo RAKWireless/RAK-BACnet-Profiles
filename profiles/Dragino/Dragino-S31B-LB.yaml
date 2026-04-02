@@ -3,28 +3,20 @@ model: S31B-LB
 vendor: Dragino
 profileVersion: 1.0.0
 codec: |
-  function Decode(fPort, data, variables) {
+  function Decode(fPort, bytes, variables) {
     var values = [];
-    // Expecting 4-byte payload: [temp_MSB, temp_LSB, hum_MSB, hum_LSB] + optional battery (5th byte)
-    if (data.length >= 4) {
-      // Temperature: signed 16-bit big-endian → °C × 100
-      var tempRaw = (data[0] << 8) | data[1];
-      var temperature = tempRaw / 100.0;
-      values.push({ name: "TempC_SHT31", channel: 1, value: temperature, unit: "degreesC" });
-
-      // Humidity: unsigned 16-bit big-endian → %RH × 100
-      var humRaw = (data[2] << 8) | data[3];
-      var humidity = humRaw / 100.0;
-      values.push({ name: "Hum_SHT31", channel: 2, value: humidity, unit: "percentRelativeHumidity" });
+    if (!bytes || bytes.length < 11 || fPort !== 2) {
+      return values;
     }
-
-    // Battery voltage (if present, e.g., 5th byte = V × 10 → e.g., 0x030A = 778 → 3.08V)
-    if (data.length >= 5) {
-      var batRaw = (data[4] << 8) | (data.length > 5 ? data[5] : 0);
-      var batteryVoltage = batRaw / 100.0;
-      values.push({ name: "BatV", channel: 3, value: batteryVoltage, unit: "volts" });
+    var mode = (bytes[6] & 0x7c) >> 2;
+    if (mode === 0) {
+      var batV = ((bytes[0] << 8) | bytes[1]);
+      var tempC = ((bytes[7] << 24 >> 16) | bytes[8]) / 10;
+      var hum = ((bytes[9] << 8) | bytes[10]) / 10;
+      values.push({ name: "TempC_SHT31", channel: 1, value: tempC, unit: "degreesCelsius" });
+      values.push({ name: "Hum_SHT31", channel: 2, value: hum, unit: "percentRelativeHumidity" });
+      values.push({ name: "BatV", channel: 3, value: batV, unit: "millivolts" });
     }
-
     return values;
   }
 
@@ -48,7 +40,7 @@ datatype:
     covIncrement: 0.1
     name: TempC_SHT31
     type: AnalogInputObject
-    units: degreesC
+    units: degreesCelsius
     updateInterval: 60
   "2":
     covIncrement: 0.5
@@ -57,16 +49,16 @@ datatype:
     units: percentRelativeHumidity
     updateInterval: 60
   "3":
-    covIncrement: 0.01
+    covIncrement: 10
     name: BatV
     type: AnalogInputObject
-    units: volts
+    units: millivolts
     updateInterval: 3600
 lorawan:
   adrAlgorithm: LoRA Only
   classCDownlinkTimeout: 0
   macVersion: LORAWAN_1_0_3
-  regionalParametersRevision: RP002_1_0_3
+  regionalParametersRevision: A
   supportClassB: false
   supportClassC: false
   supportOTAA: true
