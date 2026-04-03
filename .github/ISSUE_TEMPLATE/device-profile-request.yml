@@ -135,7 +135,27 @@ body:
       default: 1
     validations:
       required: true
-      
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Contact (optional)
+        If you would like us to follow up, you may share an email or organization name below. Issues in public repositories are visible to everyone—only include what you are comfortable sharing publicly, or leave these fields blank.
+
+  - type: input
+    id: contact-email
+    attributes:
+      label: Email
+      description: Optional. For follow-up questions if needed.
+      placeholder: name@example.com
+
+  - type: input
+    id: organization
+    attributes:
+      label: Company or organization
+      description: Optional. Helps us understand context (e.g., integrator, end user).
+      placeholder: e.g., RAKwireless
+
   - type: checkboxes
     id: checklist
     attributes:
