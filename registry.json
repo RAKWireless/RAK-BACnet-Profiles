@@ -1,8 +1,8 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-01-16",
-  "totalProfiles": 19,
+  "lastUpdate": "2026-04-03",
+  "totalProfiles": 21,
   "profiles": [
     {
       "id": "carrier-7201-v2-modify-0619",
@@ -17,6 +17,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "5e10152d81fa45330121f740f6b941b0512a1e0157eefc27052af9160b30c3e6",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -32,6 +33,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "2fa9f299faed3c4ab22c074cd2a30b4f2df0df9d4ecb8f16aad9579bb5deac18",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -47,6 +49,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "39a1f6b2ee7740bf6bf074759cb9a8dcd6d305a356bd3f498e9a7bf987b1006f",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -62,6 +65,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "6d4de71c2f2addf21853fc2e8a5aba74d6b07173f915778626ba8563e2b74c45",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -77,7 +81,40 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "b8e25ffb41c3c77987d6fa1b526afdfe5af9f7550d5a1448e57e34b8fffa2eb6",
       "lastUpdate": "2025-12-12"
+    },
+    {
+      "id": "dragino-s31b-lb",
+      "vendor": "Dragino",
+      "model": "S31B LB",
+      "version": "1.0.0",
+      "path": "profiles/Dragino/Dragino-S31B-LB.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Dragino S31B LB Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "acb5d17ae2e54813bd41b31b33f6358b6d5fdb07e6fd0910639e40f31d14fe11",
+      "lastUpdate": "2026-04-02"
+    },
+    {
+      "id": "dragino-se01-lb",
+      "vendor": "Dragino",
+      "model": "SE01 LB",
+      "version": "1.0.0",
+      "path": "profiles/Dragino/Dragino-SE01-LB.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Dragino SE01 LB Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "f1bc046eb11e4aefc4193b535f43c989036bfacca64a4f3b7efe8da866ee22b1",
+      "lastUpdate": "2026-04-02"
     },
     {
       "id": "dragino-wsc2-l",
@@ -92,6 +129,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "7d99af4356ab5d5d42fbdcf10d523c7c464ce8f6188c67efd987253756d8acc8",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -107,6 +145,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "88a18146b865a79c178a249195944d3940b615828d1a60f55c30a76c2fcdb810",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -122,6 +161,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "2ba99d2aaeaa9886e476e58475ffe150ce936a5e32062ccb6273a79305e43164",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -130,13 +170,14 @@
       "model": "LW013SB",
       "version": "1.0.0",
       "path": "profiles/Moko/Moko-LW013SB.yaml",
-      "verified": true,
-      "hasTests": true,
+      "verified": false,
+      "hasTests": false,
       "description": "LW013-SB Smart Button with multiple event types",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "ad5019b9b3a4bb09f98d98b05154e275cdeba6fdfa476fecba5a1c200388813f",
       "lastUpdate": "2026-01-16"
     },
     {
@@ -152,6 +193,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "f632a328a905a73b42b7c140c6d92d3cdd5cc6253b39e03392af582201851474",
       "lastUpdate": "2025-12-18"
     },
     {
@@ -167,6 +209,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "fdfad5b62ba33c2f63bec6a2a6894a8d1cb01ad08b55789984d84fe19b0d7c25",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -175,13 +218,14 @@
       "model": "LRS20100",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20100.yaml",
-      "verified": true,
-      "hasTests": true,
+      "verified": false,
+      "hasTests": false,
       "description": "Senso8 LRS20100 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "c82944c00b47f7a86c4761b4264239f328648b8e270c9095f5d4f4364ec94728",
       "lastUpdate": "2026-01-14"
     },
     {
@@ -190,13 +234,14 @@
       "model": "LRS20200",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20200.yaml",
-      "verified": true,
-      "hasTests": true,
+      "verified": false,
+      "hasTests": false,
       "description": "Senso8 LRS20200 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "74a9a39d0de17d2e7cc8c904c528f6e4882228eec9f8f8dbfd5a542f73afc546",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -212,6 +257,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "5783f230c6671d7bf781acecd16929460a421af51baca16c61223a56e2a9a883",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -227,6 +273,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "aca992f0c46e6088b1fbcbdfd16fd7221143a33e9f4d19dd7ffa47d1b4264d62",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -242,6 +289,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "a3f8d1b8bb860c2c81b7dfcbef6e96b171a1bfddcd79251a885a45c3a6d1ca2d",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -257,6 +305,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "5fc4ed262fbc7f7c694826854bc0b53c32d19c2ba20235dcd931d084e31d1f91",
       "lastUpdate": "2025-12-12"
     },
     {
@@ -272,6 +321,7 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "91eee7d90377785ba3449d33bfe53511d0448f9c1b9f045c1083e7d9effa85e9",
       "lastUpdate": "2026-01-14"
     },
     {
@@ -287,19 +337,20 @@
       "lorawanClass": [
         "A"
       ],
+      "contentSha256": "41a2da70ef277b483935b70286c2778a25a1e392b53a6d3d4f168dc66f142d94",
       "lastUpdate": "2025-12-12"
     }
   ],
   "statistics": {
     "byVendor": {
       "Carrier": 2,
-      "Dragino": 4,
+      "Dragino": 6,
       "Milesight": 2,
       "Moko": 1,
       "Sensedge": 1,
       "Senso8": 9
     },
-    "withTests": 3,
-    "withoutTests": 16
+    "withTests": 0,
+    "withoutTests": 21
   }
 }

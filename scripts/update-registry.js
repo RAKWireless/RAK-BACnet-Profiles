@@ -10,6 +10,7 @@
  *   node scripts/update-registry.js
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
@@ -104,7 +105,7 @@ function getModelsWithTests(vendorDir) {
 }
 
 /**
- * Get file modification date
+ * Get file modification date (used when profile content changed or is new)
  */
 function getLastUpdateDate(filePath) {
   try {
@@ -112,6 +113,37 @@ function getLastUpdateDate(filePath) {
     return stats.mtime.toISOString().split('T')[0];
   } catch (error) {
     return new Date().toISOString().split('T')[0];
+  }
+}
+
+/**
+ * SHA-256 of profile file bytes (UTF-8) for stable change detection (mtime is not)
+ */
+function hashProfileContent(yamlContent) {
+  return crypto.createHash('sha256').update(yamlContent, 'utf8').digest('hex');
+}
+
+/**
+ * Preserve per-profile lastUpdate when YAML content unchanged vs existing registry.
+ * First run after adding contentSha256: keep old lastUpdate (migration).
+ */
+function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
+  const byPath = new Map();
+  if (existingRegistry && Array.isArray(existingRegistry.profiles)) {
+    for (const p of existingRegistry.profiles) {
+      if (p && p.path) byPath.set(p.path, p);
+    }
+  }
+  for (const profile of profiles) {
+    const absPath = path.join(__dirname, '..', profile.path);
+    const old = byPath.get(profile.path);
+    if (old && old.contentSha256 === profile.contentSha256) {
+      profile.lastUpdate = old.lastUpdate;
+    } else if (old && old.contentSha256 === undefined) {
+      profile.lastUpdate = old.lastUpdate;
+    } else {
+      profile.lastUpdate = getLastUpdateDate(absPath);
+    }
   }
 }
 
@@ -167,6 +199,7 @@ function scanProfiles() {
       
       const deviceType = guessDeviceType(vendor, modelClean, profileData);
       const description = extractDescription(vendor, modelClean, yamlContent, profileData);
+      const contentSha256 = hashProfileContent(yamlContent);
       const lastUpdate = getLastUpdateDate(filePath);
       
       profiles.push({
@@ -180,6 +213,7 @@ function scanProfiles() {
         description,
         deviceType,
         lorawanClass: ['A'], // Default, can be enhanced later
+        contentSha256,
         lastUpdate
       });
     }
@@ -222,32 +256,34 @@ function generateStatistics(profiles) {
 }
 
 /**
- * Main function
+ * Load existing registry.json if present.
  */
-function main() {
-  console.log('🔍 Scanning profiles directory...');
-  
-  const profiles = scanProfiles();
-  console.log(`✅ Found ${profiles.length} profiles`);
-  
-  const statistics = generateStatistics(profiles);
-  
-  const registry = {
-    $schema: REGISTRY_SCHEMA_FILE,
-    version: '1.0.0',
-    lastUpdate: new Date().toISOString().split('T')[0],
-    totalProfiles: profiles.length,
-    profiles,
-    statistics
-  };
-  
-  // Write registry file
-  fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2) + '\n');
-  console.log(`📝 Registry updated: ${REGISTRY_FILE}`);
-  
-  // Print statistics
+function loadExistingRegistry() {
+  try {
+    const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when registry payload matches except root lastUpdate.
+ */
+function isSameRegistryData(existing, generated) {
+  if (!existing || !generated) return false;
+  return (
+    existing.version === generated.version &&
+    existing.$schema === generated.$schema &&
+    existing.totalProfiles === generated.totalProfiles &&
+    JSON.stringify(existing.statistics) === JSON.stringify(generated.statistics) &&
+    JSON.stringify(existing.profiles) === JSON.stringify(generated.profiles)
+  );
+}
+
+function printRegistryStats(statistics, totalProfiles) {
   console.log('\n📊 Statistics:');
-  console.log(`   Total Profiles: ${profiles.length}`);
+  console.log(`   Total Profiles: ${totalProfiles}`);
   console.log(`   With Tests: ${statistics.withTests} | Without Tests: ${statistics.withoutTests}`);
   console.log('\n📦 By Vendor:');
   for (const [vendor, count] of Object.entries(statistics.byVendor).sort()) {
@@ -256,9 +292,62 @@ function main() {
   console.log('\n✨ Done!');
 }
 
+/**
+ * Main function
+ */
+function main() {
+  console.log('🔍 Scanning profiles directory...');
+  
+  const existingRegistry = loadExistingRegistry();
+  const profiles = scanProfiles();
+  mergeLastUpdatesFromRegistry(existingRegistry, profiles);
+  console.log(`✅ Found ${profiles.length} profiles`);
+  
+  const statistics = generateStatistics(profiles);
+  
+  const today = new Date().toISOString().split('T')[0];
+  const registry = {
+    $schema: REGISTRY_SCHEMA_FILE,
+    version: '1.0.0',
+    lastUpdate: today,
+    totalProfiles: profiles.length,
+    profiles,
+    statistics
+  };
+  
+  if (existingRegistry && isSameRegistryData(existingRegistry, registry)) {
+    registry.lastUpdate = existingRegistry.lastUpdate;
+  }
+  
+  const output = JSON.stringify(registry, null, 2) + '\n';
+  if (existingRegistry) {
+    try {
+      const previous = fs.readFileSync(REGISTRY_FILE, 'utf8');
+      if (previous === output) {
+        console.log(`📝 Registry unchanged (lastUpdate: ${registry.lastUpdate}), skipping write.`);
+        printRegistryStats(statistics, profiles.length);
+        return;
+      }
+    } catch {
+      // fall through to write
+    }
+  }
+  
+  fs.writeFileSync(REGISTRY_FILE, output);
+  console.log(`📝 Registry updated: ${REGISTRY_FILE}`);
+  printRegistryStats(statistics, profiles.length);
+}
+
 // Run main function
 if (require.main === module) {
   main();
 }
 
-module.exports = { scanProfiles, generateStatistics };
+module.exports = {
+  scanProfiles,
+  generateStatistics,
+  hashProfileContent,
+  mergeLastUpdatesFromRegistry,
+  loadExistingRegistry,
+  isSameRegistryData
+};

@@ -84,6 +84,11 @@
             "format": "date",
             "description": "Last update date for this profile"
           },
+          "contentSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of profile YAML UTF-8 text; used to avoid bumping lastUpdate when only file mtime changes"
+          },
           "downloads": {
             "type": "integer",
             "minimum": 0,
