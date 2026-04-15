@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const yaml = require('js-yaml');
+const { ALLOWED_UNITS } = require('../unit');
 
 /**
  * Read and parse YAML file
@@ -113,20 +114,19 @@ function validateBACnetObjects(profile) {
   
   if (profile.datatype) {
     for (const [channel, config] of Object.entries(profile.datatype)) {
-      // 验证对象类型
+      // Validate object type
       if (!supportedTypes.includes(config.type)) {
         errors.push(`datatype.${channel}: unsupported BACnet object type '${config.type}'`);
       }
-      
-      // // 验证 Analog 对象的单位
-      // if (config.type.startsWith('Analog') && !config.units) {
-      //   warnings.push(`datatype.${channel}: Analog object should have 'units' field`);
-      // }
-      
-      // // 验证 updateInterval
-      // if (!config.updateInterval) {
-      //   warnings.push(`datatype.${channel}: missing 'updateInterval' field`);
-      // }
+
+      // Validate units against allowed BACnet unit list
+      if (Object.prototype.hasOwnProperty.call(config, 'units') && config.units !== null) {
+        if (typeof config.units !== 'string') {
+          errors.push(`datatype.${channel}: units must be a string or null`);
+        } else if (!ALLOWED_UNITS.has(config.units)) {
+          errors.push(`datatype.${channel}: unsupported unit '${config.units}'`);
+        }
+      }
     }
   }
   
