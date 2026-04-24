@@ -168,5 +168,5 @@ lorawan:
 model: Dragino-WSC2-L
 profileVersion: 1.0.0
 name: WSC2-L
-vendor: RAKwireless
+vendor: Dragino
 id: a2d81f6f-6aa3-41f7-83cb-462a40570370

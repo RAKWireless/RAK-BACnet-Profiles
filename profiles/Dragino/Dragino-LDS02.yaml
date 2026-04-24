@@ -67,4 +67,4 @@ lorawan:
 model: Dragino-LDS02
 profileVersion: 1.0.0
 name: LDS02
-vendor: RAKwireless
+vendor: Dragino

@@ -73,5 +73,5 @@ lorawan:
 model: Dragino-DDS45
 profileVersion: 1.0.0
 name: DDS45-LB/LS
-vendor: RAKwireless
+vendor: Dragino
 id: 5a8d6f4e-2b3c-4d9e-8f7a-1b6c9d0e3f2a

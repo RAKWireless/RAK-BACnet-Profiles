@@ -65,5 +65,5 @@ lorawan:
 model: Milesight-VS330
 profileVersion: 1.0.0
 name: VS330
-vendor: RAKwireless
+vendor: Milesight
 id: a2d81f6f-6aa3-41f7-83cb-462a40570370

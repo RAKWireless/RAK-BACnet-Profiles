@@ -76,4 +76,4 @@ lorawan:
 model: Dragino-LSE01
 profileVersion: 1.0.0
 name: LSE01
-vendor: RAKwireless
+vendor: Dragino

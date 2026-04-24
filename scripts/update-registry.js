@@ -180,18 +180,19 @@ function scanProfiles() {
         continue;
       }
       
-      // Extract model name from filename
-      const model = yamlFile.replace(/^.*?-/, '').replace(/\.(yaml|yml)$/, '');
-      const modelClean = model.replace(/_/g, ' ').replace(/-/g, ' ');
-      
+      // Read model directly from profile YAML field
+      const modelClean = profileData && profileData.model
+        ? String(profileData.model)
+        : yamlFile.replace(/^.*?-/, '').replace(/\.(yaml|yml)$/, '').replace(/_/g, ' ').replace(/-/g, ' ');
+
+      // Generate ID from model field (lowercased, non-alphanumeric replaced with -)
+      const id = modelClean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
       // Normalize model name for comparison with test data
-      const normalizedModel = model.toLowerCase().replace(/[-_]/g, '');
+      const normalizedModel = modelClean.toLowerCase().replace(/[-_]/g, '');
       
       // Check if this specific model has test data
       const hasTests = modelsWithTests.has(normalizedModel);
-      
-      // Generate profile ID
-      const id = `${vendor.toLowerCase()}-${model.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
       
       // Extract version from filename or default to 1.0.0
       const versionMatch = yamlFile.match(/v(\d+)/i);

@@ -1,34 +1,18 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-04-03",
+  "lastUpdate": "2026-04-24",
   "totalProfiles": 21,
   "profiles": [
     {
-      "id": "carrier-7201-v2-modify-0619",
+      "id": "carrier-bac-006-v4",
       "vendor": "Carrier",
-      "model": "7201 V2 modify 0619",
-      "version": "2.0.0",
-      "path": "profiles/Carrier/7201_V2_modify_0619.yaml",
-      "verified": false,
-      "hasTests": false,
-      "description": "Carrier 7201 V2 modify 0619 HVAC Controller",
-      "deviceType": "HVAC Controller",
-      "lorawanClass": [
-        "A"
-      ],
-      "contentSha256": "5e10152d81fa45330121f740f6b941b0512a1e0157eefc27052af9160b30c3e6",
-      "lastUpdate": "2025-12-12"
-    },
-    {
-      "id": "carrier-bac-006-v4-20250709",
-      "vendor": "Carrier",
-      "model": "BAC 006 v4 20250709",
+      "model": "Carrier-BAC-006-v4",
       "version": "4.0.0",
       "path": "profiles/Carrier/Carrier-BAC-006-v4-20250709.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Carrier BAC 006 v4 20250709 HVAC Controller",
+      "description": "Carrier Carrier-BAC-006-v4 HVAC Controller",
       "deviceType": "HVAC Controller",
       "lorawanClass": [
         "A"
@@ -37,62 +21,94 @@
       "lastUpdate": "2025-12-12"
     },
     {
+      "id": "rak-7201-v2",
+      "vendor": "Carrier",
+      "model": "RAK-7201_V2",
+      "version": "2.0.0",
+      "path": "profiles/Carrier/7201_V2_modify_0619.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Carrier RAK-7201_V2 HVAC Controller",
+      "deviceType": "HVAC Controller",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "5e10152d81fa45330121f740f6b941b0512a1e0157eefc27052af9160b30c3e6",
+      "lastUpdate": "2025-12-12"
+    },
+    {
       "id": "dragino-dds45",
       "vendor": "Dragino",
-      "model": "DDS45",
+      "model": "Dragino-DDS45",
       "version": "1.0.0",
       "path": "profiles/Dragino/Dragino-DDS45.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Dragino DDS45 Sensor",
+      "description": "Dragino Dragino-DDS45 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "39a1f6b2ee7740bf6bf074759cb9a8dcd6d305a356bd3f498e9a7bf987b1006f",
-      "lastUpdate": "2025-12-12"
+      "contentSha256": "21b896230e8c5381575c17d0715ed680db2399bee71d5150b9a168cf7282091a",
+      "lastUpdate": "2026-04-24"
     },
     {
       "id": "dragino-lds02",
       "vendor": "Dragino",
-      "model": "LDS02",
+      "model": "Dragino-LDS02",
       "version": "1.0.0",
       "path": "profiles/Dragino/Dragino-LDS02.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Dragino LDS02 Sensor",
+      "description": "Dragino Dragino-LDS02 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "6d4de71c2f2addf21853fc2e8a5aba74d6b07173f915778626ba8563e2b74c45",
-      "lastUpdate": "2025-12-12"
+      "contentSha256": "5516b3868d00ebc6cea3096928179596b6fa30642a85ec31f07e3d2ae22522e2",
+      "lastUpdate": "2026-04-24"
     },
     {
-      "id": "dragino-les01",
+      "id": "dragino-lse01",
       "vendor": "Dragino",
-      "model": "LES01",
+      "model": "Dragino-LSE01",
       "version": "1.0.0",
       "path": "profiles/Dragino/Dragino-LES01.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Dragino LES01 Sensor",
+      "description": "Dragino Dragino-LSE01 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "b8e25ffb41c3c77987d6fa1b526afdfe5af9f7550d5a1448e57e34b8fffa2eb6",
-      "lastUpdate": "2025-12-12"
+      "contentSha256": "6a923d6fd57fa53e727d5c318a9862dccfe8623c6814eaa640ff25eb2be1236f",
+      "lastUpdate": "2026-04-24"
     },
     {
-      "id": "dragino-s31b-lb",
+      "id": "dragino-wsc2-l",
       "vendor": "Dragino",
-      "model": "S31B LB",
+      "model": "Dragino-WSC2-L",
+      "version": "1.0.0",
+      "path": "profiles/Dragino/Dragino-WSC2-L.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Dragino Dragino-WSC2-L Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "ec6bd00b66f02bbc08dc5b9f9a929d0622355b89ee95e8bca4a2ce817c853c65",
+      "lastUpdate": "2026-04-24"
+    },
+    {
+      "id": "s31b-lb",
+      "vendor": "Dragino",
+      "model": "S31B-LB",
       "version": "1.0.0",
       "path": "profiles/Dragino/Dragino-S31B-LB.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Dragino S31B LB Sensor",
+      "description": "Dragino S31B-LB Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -101,14 +117,14 @@
       "lastUpdate": "2026-04-02"
     },
     {
-      "id": "dragino-se01-lb",
+      "id": "se01-lb",
       "vendor": "Dragino",
-      "model": "SE01 LB",
+      "model": "SE01-LB",
       "version": "1.0.0",
       "path": "profiles/Dragino/Dragino-SE01-LB.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Dragino SE01 LB Sensor",
+      "description": "Dragino SE01-LB Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -117,30 +133,14 @@
       "lastUpdate": "2026-04-02"
     },
     {
-      "id": "dragino-wsc2-l",
-      "vendor": "Dragino",
-      "model": "WSC2 L",
-      "version": "1.0.0",
-      "path": "profiles/Dragino/Dragino-WSC2-L.yaml",
-      "verified": false,
-      "hasTests": false,
-      "description": "Dragino WSC2 L Sensor",
-      "deviceType": "Sensor",
-      "lorawanClass": [
-        "A"
-      ],
-      "contentSha256": "7d99af4356ab5d5d42fbdcf10d523c7c464ce8f6188c67efd987253756d8acc8",
-      "lastUpdate": "2025-12-12"
-    },
-    {
       "id": "milesight-uc300",
       "vendor": "Milesight",
-      "model": "UC300",
+      "model": "Milesight-UC300",
       "version": "1.0.0",
       "path": "profiles/Milesight/Milesight-UC300.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Milesight UC300 Sensor",
+      "description": "Milesight Milesight-UC300 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -151,23 +151,23 @@
     {
       "id": "milesight-vs330",
       "vendor": "Milesight",
-      "model": "VS330",
+      "model": "Milesight-VS330",
       "version": "1.0.0",
       "path": "profiles/Milesight/Milesight-VS330.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Milesight VS330 Sensor",
+      "description": "Milesight Milesight-VS330 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "2ba99d2aaeaa9886e476e58475ffe150ce936a5e32062ccb6273a79305e43164",
-      "lastUpdate": "2025-12-12"
+      "contentSha256": "203a38a53e7763c900b24e203732bb26f43993ba71ce963f03b89020c2e0e999",
+      "lastUpdate": "2026-04-24"
     },
     {
       "id": "moko-lw013sb",
       "vendor": "Moko",
-      "model": "LW013SB",
+      "model": "Moko-LW013SB",
       "version": "1.0.0",
       "path": "profiles/Moko/Moko-LW013SB.yaml",
       "verified": false,
@@ -183,12 +183,12 @@
     {
       "id": "sensedge-se300",
       "vendor": "Sensedge",
-      "model": "SE300",
+      "model": "Sensedge-SE300",
       "version": "1.0.0",
       "path": "profiles/Sensedge/Sensedge-SE300.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Sensedge SE300 CO2 Sensor",
+      "description": "Sensedge Sensedge-SE300 CO2 Sensor",
       "deviceType": "CO2 Sensor",
       "lorawanClass": [
         "A"
@@ -199,12 +199,12 @@
     {
       "id": "senso8-lrs10701",
       "vendor": "Senso8",
-      "model": "LRS10701",
+      "model": "Senso8-LRS10701",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS10701.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS10701 CO2 Sensor",
+      "description": "Senso8 Senso8-LRS10701 CO2 Sensor",
       "deviceType": "CO2 Sensor",
       "lorawanClass": [
         "A"
@@ -215,12 +215,12 @@
     {
       "id": "senso8-lrs20100",
       "vendor": "Senso8",
-      "model": "LRS20100",
+      "model": "Senso8-LRS20100",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20100.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS20100 Sensor",
+      "description": "Senso8 Senso8-LRS20100 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -231,12 +231,12 @@
     {
       "id": "senso8-lrs20200",
       "vendor": "Senso8",
-      "model": "LRS20200",
+      "model": "Senso8-LRS20200",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20200.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS20200 Sensor",
+      "description": "Senso8 Senso8-LRS20200 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -247,12 +247,12 @@
     {
       "id": "senso8-lrs20310",
       "vendor": "Senso8",
-      "model": "LRS20310",
+      "model": "Senso8-LRS20310",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20310.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS20310 Sensor",
+      "description": "Senso8 Senso8-LRS20310 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -263,12 +263,12 @@
     {
       "id": "senso8-lrs20600",
       "vendor": "Senso8",
-      "model": "LRS20600",
+      "model": "Senso8-LRS20600",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20600.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS20600 Sensor",
+      "description": "Senso8 Senso8-LRS20600 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -279,12 +279,12 @@
     {
       "id": "senso8-lrs20ld0",
       "vendor": "Senso8",
-      "model": "LRS20LD0",
+      "model": "Senso8-LRS20LD0",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20LD0.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS20LD0 Sensor",
+      "description": "Senso8 Senso8-LRS20LD0 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -295,12 +295,12 @@
     {
       "id": "senso8-lrs20uxx",
       "vendor": "Senso8",
-      "model": "LRS20Uxx",
+      "model": "Senso8-LRS20Uxx",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS20Uxx.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS20Uxx Sensor",
+      "description": "Senso8 Senso8-LRS20Uxx Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -311,12 +311,12 @@
     {
       "id": "senso8-lrs2m001",
       "vendor": "Senso8",
-      "model": "LRS2M001",
+      "model": "Senso8-LRS2M001",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS2M001.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS2M001 Sensor",
+      "description": "Senso8 Senso8-LRS2M001 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
         "A"
@@ -327,12 +327,12 @@
     {
       "id": "senso8-lrs30100",
       "vendor": "Senso8",
-      "model": "LRS30100",
+      "model": "Senso8-LRS30100",
       "version": "1.0.0",
       "path": "profiles/Senso8/Senso8-LRS30100.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Senso8 LRS30100 CO2 Sensor",
+      "description": "Senso8 Senso8-LRS30100 CO2 Sensor",
       "deviceType": "CO2 Sensor",
       "lorawanClass": [
         "A"
