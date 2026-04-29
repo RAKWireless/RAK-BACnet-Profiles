@@ -19,6 +19,9 @@ const PROFILES_DIR = path.join(__dirname, '..', 'profiles');
 const REGISTRY_FILE = path.join(__dirname, '..', 'registry.json');
 const REGISTRY_SCHEMA_FILE = './registry-schema.json';
 
+/** Vendor whose profiles are listed first in registry.json */
+const PINNED_VENDOR_FIRST = 'RAKwireless';
+
 /**
  * Get device type from profile data
  */
@@ -37,7 +40,6 @@ function guessDeviceType(vendor, model, profileData) {
   if (modelLower.includes('light')) return 'Light Sensor';
   if (modelLower.includes('button')) return 'Smart Button';
   if (modelLower.includes('ultrasonic') || modelLower.includes('distance')) return 'Ultrasonic Sensor';
-  if (vendorLower === 'carrier' || modelLower.includes('hvac') || modelLower.includes('bac')) return 'HVAC Controller';
   
   // Check profile content
   if (profileData && profileData.datatype) {
@@ -220,8 +222,11 @@ function scanProfiles() {
     }
   }
   
-  // Sort profiles by vendor and model
+  // Sort profiles: RAKwireless first, then by vendor and model
   profiles.sort((a, b) => {
+    const aPinned = a.vendor === PINNED_VENDOR_FIRST ? 0 : 1;
+    const bPinned = b.vendor === PINNED_VENDOR_FIRST ? 0 : 1;
+    if (aPinned !== bPinned) return aPinned - bPinned;
     if (a.vendor !== b.vendor) return a.vendor.localeCompare(b.vendor);
     return a.model.localeCompare(b.model);
   });
@@ -287,7 +292,12 @@ function printRegistryStats(statistics, totalProfiles) {
   console.log(`   Total Profiles: ${totalProfiles}`);
   console.log(`   With Tests: ${statistics.withTests} | Without Tests: ${statistics.withoutTests}`);
   console.log('\n📦 By Vendor:');
-  for (const [vendor, count] of Object.entries(statistics.byVendor).sort()) {
+  const vendorEntries = Object.entries(statistics.byVendor).sort(([a], [b]) => {
+    if (a === PINNED_VENDOR_FIRST && b !== PINNED_VENDOR_FIRST) return -1;
+    if (b === PINNED_VENDOR_FIRST && a !== PINNED_VENDOR_FIRST) return 1;
+    return a.localeCompare(b);
+  });
+  for (const [vendor, count] of vendorEntries) {
     console.log(`   ${vendor}: ${count}`);
   }
   console.log('\n✨ Done!');
@@ -350,5 +360,6 @@ module.exports = {
   hashProfileContent,
   mergeLastUpdatesFromRegistry,
   loadExistingRegistry,
-  isSameRegistryData
+  isSameRegistryData,
+  PINNED_VENDOR_FIRST
 };

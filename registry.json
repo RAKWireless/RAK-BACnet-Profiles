@@ -1,40 +1,40 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-04-24",
+  "lastUpdate": "2026-04-29",
   "totalProfiles": 21,
   "profiles": [
     {
-      "id": "carrier-bac-006-v4",
-      "vendor": "Carrier",
-      "model": "Carrier-BAC-006-v4",
-      "version": "4.0.0",
-      "path": "profiles/Carrier/Carrier-BAC-006-v4-20250709.yaml",
+      "id": "rakwireless-rak7201",
+      "vendor": "RAKwireless",
+      "model": "RAKwireless-RAK7201",
+      "version": "1.0.0",
+      "path": "profiles/RAKwireless/RAKwireless-RAK7201.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Carrier Carrier-BAC-006-v4 HVAC Controller",
-      "deviceType": "HVAC Controller",
+      "description": "RAKwireless RAKwireless-RAK7201 Sensor",
+      "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "2fa9f299faed3c4ab22c074cd2a30b4f2df0df9d4ecb8f16aad9579bb5deac18",
-      "lastUpdate": "2025-12-12"
+      "contentSha256": "f7d77ed011cbe49aa3386e1eae07ec4b6d43f9c011e0bc84616e327036c3a297",
+      "lastUpdate": "2026-04-29"
     },
     {
-      "id": "rak-7201-v2",
-      "vendor": "Carrier",
-      "model": "RAK-7201_V2",
-      "version": "2.0.0",
-      "path": "profiles/Carrier/7201_V2_modify_0619.yaml",
+      "id": "becasmart-bac006",
+      "vendor": "Becasmart",
+      "model": "Becasmart-BAC006",
+      "version": "1.0.0",
+      "path": "profiles/Becasmart/Becasmart-BAC006.yaml",
       "verified": false,
       "hasTests": false,
-      "description": "Carrier RAK-7201_V2 HVAC Controller",
-      "deviceType": "HVAC Controller",
+      "description": "Becasmart Becasmart-BAC006 Sensor",
+      "deviceType": "Sensor",
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "5e10152d81fa45330121f740f6b941b0512a1e0157eefc27052af9160b30c3e6",
-      "lastUpdate": "2025-12-12"
+      "contentSha256": "d3931b9f50e86d61584c07513403ba786abf3e30dc1bd810b15947075c573237",
+      "lastUpdate": "2026-04-29"
     },
     {
       "id": "dragino-dds45",
@@ -343,7 +343,8 @@
   ],
   "statistics": {
     "byVendor": {
-      "Carrier": 2,
+      "RAKwireless": 1,
+      "Becasmart": 1,
       "Dragino": 6,
       "Milesight": 2,
       "Moko": 1,

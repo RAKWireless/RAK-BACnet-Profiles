@@ -72,6 +72,6 @@ lorawan:
   supportOTAA: true # Optional Default: true
   
 profileVersion: 1.0.0
-model: RAK-7201_V2
-name: 7201_V2
+model: RAKwireless-RAK7201
+name: RAK7201
 vendor: RAKwireless

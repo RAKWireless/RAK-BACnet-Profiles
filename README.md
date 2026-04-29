@@ -29,9 +29,10 @@ This repository provides conversion configuration files from LoRaWAN devices to 
 ```
 RAK-BACnet-Profiles/
 ├── profiles/                   # Real device profiles
-│   ├── Carrier/               # Carrier devices
+│   ├── Becasmart/             # Becasmart devices
 │   ├── Dragino/               # Dragino devices
 │   ├── Milesight/             # Milesight devices
+│   ├── RAKwireless/           # RAKwireless devices
 │   └── Senso8/                # Senso8 devices
 │       ├── *.yaml             # Profile files
 │       └── tests/             # Test data (optional)

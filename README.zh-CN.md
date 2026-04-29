@@ -29,9 +29,10 @@
 ```
 RAK-BACnet-Profiles/
 ├── profiles/                   # 真实设备 Profile 配置
-│   ├── Carrier/               # 开利设备
+│   ├── Becasmart/             # Becasmart 设备
 │   ├── Dragino/               # Dragino 设备
 │   ├── Milesight/             # Milesight 设备
+│   ├── RAKwireless/           # RAKwireless 设备
 │   └── Senso8/                # Senso8 设备
 │       ├── *.yaml             # Profile 文件
 │       └── tests/             # 测试数据（可选）

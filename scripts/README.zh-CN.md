@@ -136,7 +136,7 @@ node scripts/validate-all.js --json
 
 ======================================================================
 
-[1/16] profiles/Carrier/Carrier-BAC-006-v4-20250709.yaml
+[1/16] profiles/Becasmart/Becasmart-BAC006.yaml
 ----------------------------------------------------------------------
 ✅ 通过
 

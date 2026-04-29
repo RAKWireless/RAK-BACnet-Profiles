@@ -14,8 +14,25 @@ const path = require('path');
 const Ajv = require('ajv');
 const addFormats = require('ajv-formats');
 
+const { PINNED_VENDOR_FIRST } = require('./update-registry');
+
 const REGISTRY_FILE = path.join(__dirname, '..', 'registry.json');
 const SCHEMA_FILE = path.join(__dirname, '..', 'registry-schema.json');
+
+/**
+ * True when all PINNED_VENDOR_FIRST entries appear before any other vendor (matches update-registry.js order).
+ */
+function isPinnedVendorGroupedFirst(profiles) {
+  let seenOtherVendor = false;
+  for (const p of profiles) {
+    if (p.vendor === PINNED_VENDOR_FIRST) {
+      if (seenOtherVendor) return false;
+    } else {
+      seenOtherVendor = true;
+    }
+  }
+  return true;
+}
 
 function validateRegistry() {
   console.log('🔍 Validating registry.json...\n');
@@ -82,6 +99,16 @@ function validateRegistry() {
     
     if (!vendorMismatch) {
       console.log('✅ Vendor statistics are consistent');
+    }
+
+    if (registry.profiles.some(p => p.vendor === PINNED_VENDOR_FIRST)) {
+      if (isPinnedVendorGroupedFirst(registry.profiles)) {
+        console.log(`✅ ${PINNED_VENDOR_FIRST} profiles are listed first`);
+      } else {
+        console.warn(
+          `⚠️  Warning: ${PINNED_VENDOR_FIRST} profiles should be listed first; run: node scripts/update-registry.js`
+        );
+      }
     }
     
     // Check test data statistics

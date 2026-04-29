@@ -255,8 +255,8 @@ lorawan:
   supportClassB: false
   supportClassC: true
   
-model: Carrier-BAC-006-v4
+model: Becasmart-BAC006
 profileVersion: 1.0.0
-name: Carrier-BAC-006-v4
-vendor: Carrier
+name: BAC006
+vendor: Becasmart
 id: 315a078f-5b7f-4461-a53e-ddea72624868
