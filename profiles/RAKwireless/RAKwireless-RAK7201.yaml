@@ -9,7 +9,6 @@ codec: |
     else if (data.length >= 2 && data[0] === 0x57) {
       var warningLevel = data[1];
       values.push({ name: "lowbattery", channel: 3, value: warningLevel, unit: "percent" });
-      values.push({ name: "lowbattery1", channel: 3, value: warningLevel, unit: "percent" });
     }
 
     else {
@@ -52,12 +51,6 @@ datatype:
   "3":
     covIncrement: 1.0 
     name: lowbattery
-    type: AnalogValueObject
-    units: percent
-    updateInterval: 10
-  "4":
-    covIncrement: 2.0 
-    name: lowbattery1
     type: AnalogValueObject
     units: percent
     updateInterval: 10
