@@ -1,7 +1,7 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-04-29",
+  "lastUpdate": "2026-05-08",
   "totalProfiles": 21,
   "profiles": [
     {
@@ -85,6 +85,38 @@
       "lastUpdate": "2026-04-24"
     },
     {
+      "id": "dragino-s31b-lb",
+      "vendor": "Dragino",
+      "model": "Dragino-S31B-LB",
+      "version": "1.0.0",
+      "path": "profiles/Dragino/Dragino-S31B-LB.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Dragino Dragino-S31B-LB Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "e956c36b6c00ea22bd186c754660d8ec59f0fe9819085b444530b85a3eede81e",
+      "lastUpdate": "2026-05-08"
+    },
+    {
+      "id": "dragino-se01-lb",
+      "vendor": "Dragino",
+      "model": "Dragino-SE01-LB",
+      "version": "1.0.0",
+      "path": "profiles/Dragino/Dragino-SE01-LB.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Dragino Dragino-SE01-LB Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "52a590f83589085990e6814e08897575da4e4d8e0ec349c6ce3ec806cbcdaddc",
+      "lastUpdate": "2026-05-08"
+    },
+    {
       "id": "dragino-wsc2-l",
       "vendor": "Dragino",
       "model": "Dragino-WSC2-L",
@@ -99,38 +131,6 @@
       ],
       "contentSha256": "ec6bd00b66f02bbc08dc5b9f9a929d0622355b89ee95e8bca4a2ce817c853c65",
       "lastUpdate": "2026-04-24"
-    },
-    {
-      "id": "s31b-lb",
-      "vendor": "Dragino",
-      "model": "S31B-LB",
-      "version": "1.0.0",
-      "path": "profiles/Dragino/Dragino-S31B-LB.yaml",
-      "verified": false,
-      "hasTests": false,
-      "description": "Dragino S31B-LB Sensor",
-      "deviceType": "Sensor",
-      "lorawanClass": [
-        "A"
-      ],
-      "contentSha256": "acb5d17ae2e54813bd41b31b33f6358b6d5fdb07e6fd0910639e40f31d14fe11",
-      "lastUpdate": "2026-04-02"
-    },
-    {
-      "id": "se01-lb",
-      "vendor": "Dragino",
-      "model": "SE01-LB",
-      "version": "1.0.0",
-      "path": "profiles/Dragino/Dragino-SE01-LB.yaml",
-      "verified": false,
-      "hasTests": false,
-      "description": "Dragino SE01-LB Sensor",
-      "deviceType": "Sensor",
-      "lorawanClass": [
-        "A"
-      ],
-      "contentSha256": "f1bc046eb11e4aefc4193b535f43c989036bfacca64a4f3b7efe8da866ee22b1",
-      "lastUpdate": "2026-04-02"
     },
     {
       "id": "milesight-uc300",

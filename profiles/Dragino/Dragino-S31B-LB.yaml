@@ -1,5 +1,5 @@
-name: Dragino-S31B-LB
-model: S31B-LB
+name: S31B-LB
+model: Dragino-S31B-LB
 vendor: Dragino
 profileVersion: 1.0.0
 codec: |

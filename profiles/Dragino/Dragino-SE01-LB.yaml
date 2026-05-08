@@ -1,5 +1,5 @@
-name: Dragino-SE01-LB
-model: SE01-LB
+name: SE01-LB
+model: Dragino-SE01-LB
 vendor: Dragino
 profileVersion: 1.0.0
 lorawan:
