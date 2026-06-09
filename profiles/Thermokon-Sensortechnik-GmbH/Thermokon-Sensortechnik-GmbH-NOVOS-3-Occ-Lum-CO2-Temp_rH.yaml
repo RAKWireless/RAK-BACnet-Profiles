@@ -1,0 +1,112 @@
+name: Thermokon-Sensortechnik-GmbH-NOVOS-3-Occ-Lum-CO2-Temp_rH
+model: NOVOS-3-Occ-Lum-CO2-Temp_rH
+vendor: Thermokon-Sensortechnik-GmbH
+profileVersion: 1.0.0
+lorawan:
+  macVersion: LORAWAN_1_0_4
+  supportClassB: false
+  supportClassC: false
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  regionalParametersRevision: A
+  supportOTAA: true
+codec: |
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    // Channel 1: Temperature (degreesCelsius) — assume signed 16-bit, big-endian, scaled by 10
+    if (data.length >= 2) {
+      var tempRaw = (data[0] << 8) | data[1];
+      var temperature = (tempRaw & 0x8000) ? -(0x10000 - tempRaw) / 10.0 : tempRaw / 10.0;
+      values.push({ name: "Temperature", channel: 1, value: temperature, unit: "degreesCelsius" });
+    }
+
+    // Channel 2: Relative Humidity (percent) — uint8, 0–100%
+    if (data.length >= 3) {
+      var humidity = data[2] & 0xff;
+      values.push({ name: "RelativeHumidity", channel: 2, value: humidity, unit: "percent" });
+    }
+
+    // Channel 3: CO2 (partsPerMillion) — uint16, big-endian
+    if (data.length >= 5) {
+      var co2 = (data[3] << 8) | data[4];
+      values.push({ name: "CO2", channel: 3, value: co2, unit: "partsPerMillion" });
+    }
+
+    // Channel 4: Brightness (lux) — uint16, big-endian
+    if (data.length >= 7) {
+      var lux = (data[5] << 8) | data[6];
+      values.push({ name: "Brightness", channel: 4, value: lux, unit: "lux" });
+    }
+
+    // Channel 5: Motion Detection (BinaryInputObject) — 0 = no motion, 1 = motion detected
+    if (data.length >= 8) {
+      var motion = (data[7] & 0x01) ? 1 : 0;
+      values.push({ name: "MotionDetection", channel: 5, value: motion, unit: null });
+    }
+
+    // Channel 6: Occupancy (BinaryInputObject) — 0 = unoccupied, 1 = occupied
+    if (data.length >= 9) {
+      var occupancy = (data[7] & 0x02) ? 1 : 0;
+      values.push({ name: "Occupancy", channel: 6, value: occupancy, unit: null });
+    }
+
+    // Channel 7: Battery Voltage (millivolts) — uint16, big-endian
+    if (data.length >= 11) {
+      var battery = (data[9] << 8) | data[10];
+      values.push({ name: "BatteryVoltage", channel: 7, value: battery, unit: "millivolts" });
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+datatype:
+  "1":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    channel: 1
+  "2":
+    name: Relative Humidity
+    type: AnalogInputObject
+    units: percent
+    channel: 2
+  "3":
+    name: CO2
+    type: AnalogInputObject
+    units: partsPerMillion
+    channel: 3
+  "4":
+    name: Brightness
+    type: AnalogInputObject
+    units: lux
+    channel: 4
+  "5":
+    name: Motion Detection
+    type: BinaryInputObject
+    channel: 5
+  "6":
+    name: Occupancy
+    type: BinaryInputObject
+    channel: 6
+  "7":
+    name: Battery Voltage
+    type: AnalogInputObject
+    units: millivolts
+    channel: 7
