@@ -1,0 +1,77 @@
+codec: |
+  var DigitalOutputEncode = function(value){ return value ? [1] : [0] };
+  var DigitalOutputDecode = function(data, size){ return data[0] == 0 ? 0 : 1};
+  var FuncDict = {1:{ encoder: DigitalOutputEncode, decoder: DigitalOutputDecode, size: 1}}
+  var ChanDict = {209: { type: 1, name: "DO1", unit:""},210: { type: 1, name: "DO2", unit:""},211: { type: 1, name: "DO3", unit:""},212: { type: 1, name: "DO4", unit:""}}
+
+  function Decode(fPort, data, variables) {
+      var values = [];
+      var idx = 0;
+      while(idx < data.length) {
+          var channel = data[idx];
+          var chanUnit = ChanDict[channel];
+          var type = data[idx + 1];
+          var Obj = FuncDict[type];
+          var size = Obj.size;
+          if(size == 0){
+            size = data[idx + 2] + 1;
+          }
+          var value = Obj.decoder(data.slice(idx + 2, idx + 2 + size), size);
+          values.push({name: chanUnit.name, channel: channel, value: value, unit: chanUnit.unit});
+          idx += (2 + size);
+      }
+      return values;
+  }
+
+  function Encode(data, variables) {
+    // Reserved for future use
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+
+datatype:
+  "209":
+    name: DO1
+    type: BinaryValueObject
+    updateInterval: 10
+    channel: 209
+  "210":
+    name: DO2
+    type: BinaryValueObject
+    updateInterval: 10
+    channel: 210
+  "211":
+    name: DO3
+    type: BinaryValueObject
+    updateInterval: 10
+    channel: 211
+  "212":
+    name: DO4
+    type: BinaryValueObject
+    updateInterval: 10
+    channel: 212
+
+lorawan:
+  adrAlgorithm: LoRa Only # Optional Default: LoRa Only
+  classCDownlinkTimeout: 0 # Optional Default: 5
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: A # Optional Default: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true # Optional Default: true
+
+profileVersion: 1.0.0
+model: RAKwireless-RAK2461
+name: RAK2461
+vendor: RAKwireless

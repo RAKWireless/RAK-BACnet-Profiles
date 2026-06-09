@@ -1,9 +1,25 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-05-08",
-  "totalProfiles": 21,
+  "lastUpdate": "2026-06-09",
+  "totalProfiles": 22,
   "profiles": [
+    {
+      "id": "rakwireless-rak2461",
+      "vendor": "RAKwireless",
+      "model": "RAKwireless-RAK2461",
+      "version": "1.0.0",
+      "path": "profiles/RAKwireless/RAKwireless-RAK2461.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "RAKwireless RAKwireless-RAK2461 Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "944daf09ec67f0b744f93dc9f6a5c8f7ae7552b8f23f01698d65584188dfc9c3",
+      "lastUpdate": "2026-05-14"
+    },
     {
       "id": "rakwireless-rak7201",
       "vendor": "RAKwireless",
@@ -193,8 +209,8 @@
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "f632a328a905a73b42b7c140c6d92d3cdd5cc6253b39e03392af582201851474",
-      "lastUpdate": "2025-12-18"
+      "contentSha256": "4885105c6a327efb2c6104ba28b6b2cab2916646c6b1a2df23637f6d714be225",
+      "lastUpdate": "2026-06-09"
     },
     {
       "id": "senso8-lrs10701",
@@ -343,7 +359,7 @@
   ],
   "statistics": {
     "byVendor": {
-      "RAKwireless": 1,
+      "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
       "Milesight": 2,
@@ -352,6 +368,6 @@
       "Senso8": 9
     },
     "withTests": 0,
-    "withoutTests": 21
+    "withoutTests": 22
   }
 }
