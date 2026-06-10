@@ -112,11 +112,25 @@ codec: |
 
   function Encode(data, variables) {
     // Encode LoRaWAN downlink data
+    // data.channel : channel number of the BACnet Output object that was written
+    // data.value   : value written to the BACnet Output object by the BMS
+    var channel = data.channel;
+    var value = data.value;
     var bytes = [];
-    // ... encode data
+    // ... build downlink payload based on channel and value
     return bytes;
   }
+
+  function decodeUplink(input) {
+    return { data: Decode(input.fPort, input.bytes, input.variables) };
+  }
+
+  function encodeDownlink(input) {
+    return { bytes: Encode(input.data, input.variables) };
+  }
 ```
+
+> **Note:** `Encode` is only required when the device supports downlink control (i.e., the Profile contains `AnalogOutputObject`, `BinaryOutputObject`, or similar Output/Value objects). The `data` object passed to `Encode` always contains `channel` and `value` properties that identify which BACnet object was written and what value was set.
 
 ### 2. Datatype (BACnet Object Definition)
 
@@ -124,14 +138,26 @@ Defines BACnet object types, properties, and mapping relationships:
 
 ```yaml
 datatype:
-  "1":                              # Channel ID
-    name: Temperature               # Object name
+  # --- Uplink (sensor readings) ---
+  "1":                              # Channel ID (matches channel returned by Decode)
+    name: Temperature               # BACnet object name
     type: AnalogInputObject         # BACnet object type
-    units: degreesCelsius          # Units
-    covIncrement: 0.1              # COV increment
-    updateInterval: 600            # Update interval (seconds)
-    channel: 1                     # LoRaWAN channel number
+    units: degreesCelsius           # Units
+    covIncrement: 0.1               # COV increment
+    updateInterval: 600             # Update interval (seconds)
+    channel: 1                      # LoRaWAN channel number
+
+  # --- Downlink (actuator / control) ---
+  "11":                             # Channel ID (passed as data.channel to Encode)
+    name: Set Temperature           # BACnet object name
+    type: AnalogOutputObject        # Output object – writable by BMS
+    units: degreesCelsius
+    updateInterval: 60
+    fport: 85                       # LoRaWAN fPort used for the downlink frame
+    channel: 11                     # Passed to Encode as data.channel
 ```
+
+The `fport` field is **required** for all downlink-capable objects (`AnalogOutputObject`, `BinaryOutputObject`, `AnalogValueObject`, `BinaryValueObject`). When the BMS writes to the BACnet object, the gateway calls `Encode({ channel, value })` and sends the returned bytes on the specified `fport`.
 
 **Supported BACnet Object Types:**
 - `AnalogInputObject` - Analog input (sensor readings)

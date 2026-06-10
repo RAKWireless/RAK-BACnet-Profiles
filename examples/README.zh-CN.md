@@ -65,19 +65,50 @@ cp examples/standard-profile/standard-temp-humidity-sensor.yaml profiles/YourVen
 ```yaml
 # Codec 编解码函数
 codec: |
-  function Decode(fPort, data, variables) { ... }
-  function Encode(data, variables) { ... }
-  function decodeUplink(input) { ... }
-  function encodeDownlink(input) { ... }
+  function Decode(fPort, data, variables) {
+    var values = [];
+    // ... 解析上行字节，push 对象：{ name, channel, value, unit }
+    return values;
+  }
+
+  # 仅当设备支持下行控制时才需要
+  function Encode(data, variables) {
+    # data.channel : BMS 写入的 BACnet Output 对象对应的通道号
+    # data.value   : BMS 写入该 BACnet Output 对象的数值
+    var channel = data.channel;
+    var value = data.value;
+    var bytes = [];
+    // ... 根据 channel 和 value 构建下行字节数组
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return { data: Decode(input.fPort, input.bytes, input.variables) };
+  }
+
+  function encodeDownlink(input) {
+    return { bytes: Encode(input.data, input.variables) };
+  }
 
 # 数据类型和 BACnet 对象映射
 datatype:
+  # 上行通道 —— 由 Decode 填充
   "1":
     name: Temperature
     type: AnalogInputObject
     units: degreesCelsius
     covIncrement: 0.1
     updateInterval: 600
+    channel: 1
+
+  # 下行通道 —— BMS 可写，触发 Encode
+  "11":
+    name: Set Temperature
+    type: AnalogOutputObject        # 或 BinaryOutputObject 等
+    units: degreesCelsius
+    updateInterval: 60
+    fport: 85                       # 下行帧使用的 LoRaWAN fPort（必填）
+    channel: 11
 
 # LoRaWAN 配置
 lorawan:
@@ -137,7 +168,7 @@ vendor: YourVendor
 - `decodeUplink(input)` - 标准上行解码接口
 
 如果设备支持下行控制，还需要：
-- `Encode(data, variables)` - 核心编码函数  
+- `Encode(data, variables)` - 核心编码函数。传入的 `data` 参数固定包含 `data.channel`（BMS 写入的 BACnet Output 对象通道号）和 `data.value`（写入的数值），根据这两个字段构建设备专用的下行字节数组。
 - `encodeDownlink(input)` - 标准下行编码接口
 
 ### Q2: channel 是什么？如何分配？

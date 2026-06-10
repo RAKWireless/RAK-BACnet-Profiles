@@ -193,11 +193,75 @@ cp examples/standard-profile/standard-temp-humidity-sensor.yaml profiles/YourVen
 4. **fPort 遗漏** - 忘记处理某些 fPort 的数据
 5. **位操作错误** - 位移和掩码操作要仔细验证
 
+## 🔽 下行控制
+
+如果设备支持下行命令（如设置目标值或控制继电器），需要在 Codec 中添加 `Encode` 函数，并在 `datatype` 中定义 Output 类型的 BACnet 对象。
+
+### 1. Encode 函数
+
+每当 BMS 向可写 BACnet 对象写入数值时，网关会调用 `Encode(data, variables)`：
+
+```javascript
+function Encode(data, variables) {
+    // data.channel : 被 BMS 写入的 BACnet Output 对象所对应的通道号
+    // data.value   : BMS 写入该对象的数值
+    var channel = data.channel;
+    var value = data.value;
+    var bytes = [];
+
+    // 示例：通道 11 = "设置温度设定值"
+    if (channel === 11) {
+        bytes.push(0x01);           // 命令类型
+        bytes.push(value & 0xFF);   // 数值低字节
+    }
+    // 根据需要添加更多通道逻辑 ...
+
+    return bytes;
+}
+
+function encodeDownlink(input) {
+    return { bytes: Encode(input.data, input.variables) };
+}
+```
+
+### 2. datatype 中的 Output 对象
+
+每个可控通道需要定义一个带有 `fport` 字段的 Output/Value 类型 BACnet 对象：
+
+```yaml
+datatype:
+  # ... 上行对象（AnalogInputObject、BinaryInputObject 等）...
+
+  "11":
+    name: Set Temperature Setpoint
+    type: AnalogOutputObject    # BMS 可写
+    units: degreesCelsius
+    updateInterval: 60
+    fport: 85                   # 下行帧使用的 LoRaWAN fPort
+    channel: 11                 # 传入 Encode 的 data.channel
+```
+
+### 3. 下行控制端到端流程
+
+```
+BMS 向 BACnet 对象写入数值（AnalogOutputObject，通道 11）
+    ↓
+网关调用 Encode({ channel: 11, value: 22.5 })
+    ↓
+Encode 构建设备专用字节数组
+    ↓
+网关通过 fport: 85 发送 LoRaWAN 下行帧
+    ↓
+设备接收并应用新的设定值
+```
+
+> **参考：** 查看 `profiles/Becasmart/Becasmart-BAC006.yaml`，这是一个包含多个可控通道的完整双向通信 Profile 真实案例。
+
 ## 🚀 进阶学习
 
 掌握本示例后，可以：
 1. 查看仓库中真实的 Profile 文件
-2. 学习下行控制命令的实现
+2. 参考 `profiles/Becasmart/Becasmart-BAC006.yaml` 学习完整的下行控制实现
 3. 了解更复杂的数据格式（如 TLV、Protocol Buffers）
 
 ---

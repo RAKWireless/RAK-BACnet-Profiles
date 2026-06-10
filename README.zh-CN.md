@@ -112,11 +112,25 @@ codec: |
 
   function Encode(data, variables) {
     // 编码 LoRaWAN 下行数据
+    // data.channel : 被 BMS 写入的 BACnet Output 对象所对应的通道号
+    // data.value   : BMS 写入该 BACnet Output 对象的数值
+    var channel = data.channel;
+    var value = data.value;
     var bytes = [];
-    // ... 编码数据
+    // ... 根据 channel 和 value 构建下行字节数组
     return bytes;
   }
+
+  function decodeUplink(input) {
+    return { data: Decode(input.fPort, input.bytes, input.variables) };
+  }
+
+  function encodeDownlink(input) {
+    return { bytes: Encode(input.data, input.variables) };
+  }
 ```
+
+> **注意：** 只有当设备支持下行控制时（即 Profile 中包含 `AnalogOutputObject`、`BinaryOutputObject` 等 Output/Value 类型对象），才需要实现 `Encode` 函数。传入 `Encode` 的 `data` 对象始终包含 `channel`（通道号）和 `value`（写入值）两个属性。
 
 ### 2. Datatype（BACnet 对象定义）
 
@@ -124,14 +138,26 @@ codec: |
 
 ```yaml
 datatype:
-  "1":                              # 通道 ID
-    name: Temperature               # 对象名称
+  # --- 上行（传感器读数）---
+  "1":                              # 通道 ID（与 Decode 返回的 channel 对应）
+    name: Temperature               # BACnet 对象名称
     type: AnalogInputObject         # BACnet 对象类型
-    units: degreesCelsius          # 单位
-    covIncrement: 0.1              # COV 增量
-    updateInterval: 600            # 更新间隔（秒）
-    channel: 1                     # LoRaWAN 通道号
+    units: degreesCelsius           # 单位
+    covIncrement: 0.1               # COV 增量
+    updateInterval: 600             # 更新间隔（秒）
+    channel: 1                      # LoRaWAN 通道号
+
+  # --- 下行（执行器 / 控制）---
+  "11":                             # 通道 ID（作为 data.channel 传入 Encode）
+    name: Set Temperature           # BACnet 对象名称
+    type: AnalogOutputObject        # Output 对象 —— BMS 可写
+    units: degreesCelsius
+    updateInterval: 60
+    fport: 85                       # 下行帧使用的 LoRaWAN fPort
+    channel: 11                     # 传入 Encode 的 data.channel
 ```
+
+`fport` 字段对所有支持下行控制的对象（`AnalogOutputObject`、`BinaryOutputObject`、`AnalogValueObject`、`BinaryValueObject`）均为**必填项**。当 BMS 向 BACnet 对象写入数值时，网关会调用 `Encode({ channel, value })`，并将返回的字节数组通过指定的 `fport` 发送给设备。
 
 **支持的 BACnet 对象类型：**
 - `AnalogInputObject` - 模拟输入（传感器读数）

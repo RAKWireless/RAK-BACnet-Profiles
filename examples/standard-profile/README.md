@@ -193,11 +193,75 @@ cp examples/standard-profile/standard-temp-humidity-sensor.yaml profiles/YourVen
 4. **Missing fPort** - Forgetting to handle certain fPort data
 5. **Bit Operation Error** - Carefully verify bit shift and mask operations
 
+## 🔽 Downlink Control
+
+If your device supports downlink commands (e.g., setting a setpoint or toggling a relay), add an `Encode` function to the Codec and define Output-type BACnet objects in `datatype`.
+
+### 1. Encode Function
+
+The gateway calls `Encode(data, variables)` whenever the BMS writes to a writable BACnet object:
+
+```javascript
+function Encode(data, variables) {
+    // data.channel : channel number of the BACnet Output object that was written
+    // data.value   : value written to that object by the BMS
+    var channel = data.channel;
+    var value = data.value;
+    var bytes = [];
+
+    // Example: channel 11 = "Set Temperature Setpoint"
+    if (channel === 11) {
+        bytes.push(0x01);           // command type
+        bytes.push(value & 0xFF);   // value low byte
+    }
+    // Add more channels as needed ...
+
+    return bytes;
+}
+
+function encodeDownlink(input) {
+    return { bytes: Encode(input.data, input.variables) };
+}
+```
+
+### 2. Output Objects in datatype
+
+Each controllable channel needs an Output/Value BACnet object with an `fport` field:
+
+```yaml
+datatype:
+  # ... uplink objects (AnalogInputObject, BinaryInputObject, etc.) ...
+
+  "11":
+    name: Set Temperature Setpoint
+    type: AnalogOutputObject    # writable by BMS
+    units: degreesCelsius
+    updateInterval: 60
+    fport: 85                   # LoRaWAN fPort for the downlink frame
+    channel: 11                 # passed as data.channel to Encode
+```
+
+### 3. End-to-End Downlink Flow
+
+```
+BMS writes value to BACnet object (AnalogOutputObject, channel 11)
+    ↓
+Gateway calls Encode({ channel: 11, value: 22.5 })
+    ↓
+Encode builds device-specific byte array
+    ↓
+Gateway sends downlink frame on fport: 85 (LoRaWAN)
+    ↓
+Device receives and applies the new setpoint
+```
+
+> **Reference:** See `profiles/Becasmart/Becasmart-BAC006.yaml` for a real-world example of a fully bidirectional Profile with multiple controllable channels.
+
 ## 🚀 Advanced Learning
 
 After mastering this example, you can:
 1. View actual Profile files in the repository
-2. Learn downlink control command implementation
+2. Study `profiles/Becasmart/Becasmart-BAC006.yaml` for a complete downlink implementation reference
 3. Understand more complex data formats (e.g., TLV, Protocol Buffers)
 
 ---

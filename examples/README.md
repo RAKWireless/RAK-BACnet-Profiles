@@ -65,19 +65,50 @@ Ensure your Profile:
 ```yaml
 # Codec encode/decode functions
 codec: |
-  function Decode(fPort, data, variables) { ... }
-  function Encode(data, variables) { ... }
-  function decodeUplink(input) { ... }
-  function encodeDownlink(input) { ... }
+  function Decode(fPort, data, variables) {
+    var values = [];
+    // ... parse uplink bytes and push objects: { name, channel, value, unit }
+    return values;
+  }
+
+  # Only needed when the device supports downlink control
+  function Encode(data, variables) {
+    # data.channel : channel of the BACnet Output object written by BMS
+    # data.value   : value written to that BACnet Output object
+    var channel = data.channel;
+    var value = data.value;
+    var bytes = [];
+    // ... build downlink payload based on channel and value
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return { data: Decode(input.fPort, input.bytes, input.variables) };
+  }
+
+  function encodeDownlink(input) {
+    return { bytes: Encode(input.data, input.variables) };
+  }
 
 # Data types and BACnet object mapping
 datatype:
+  # Uplink channel – populated by Decode
   "1":
     name: Temperature
     type: AnalogInputObject
     units: degreesCelsius
     covIncrement: 0.1
     updateInterval: 600
+    channel: 1
+
+  # Downlink channel – writable by BMS; triggers Encode
+  "11":
+    name: Set Temperature
+    type: AnalogOutputObject        # or BinaryOutputObject, etc.
+    units: degreesCelsius
+    updateInterval: 60
+    fport: 85                       # LoRaWAN fPort for the downlink frame (required)
+    channel: 11
 
 # LoRaWAN configuration
 lorawan:
@@ -137,7 +168,7 @@ At minimum, you need to implement:
 - `decodeUplink(input)` - Standard uplink decode interface
 
 If the device supports downlink control, you also need:
-- `Encode(data, variables)` - Core encode function
+- `Encode(data, variables)` - Core encode function. The `data` argument always has `data.channel` (the channel number of the BACnet Output object written by BMS) and `data.value` (the value written). Use these to build the device-specific downlink byte array.
 - `encodeDownlink(input)` - Standard downlink encode interface
 
 ### Q2: What is channel? How to assign it?
