@@ -72,6 +72,22 @@ function extractDescription(vendor, model, yamlContent, profileData) {
 }
 
 /**
+ * Normalize model names for test-data matching
+ */
+function normalizeModelName(model) {
+  return String(model || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Extract model name from profile filename (Vendor-Model.yaml -> Model)
+ */
+function extractModelFromFilename(yamlFile) {
+  const filename = path.basename(yamlFile, path.extname(yamlFile));
+  const match = filename.match(/^[^-]+-(.+)$/);
+  return match ? match[1] : filename;
+}
+
+/**
  * Get models that have test data from vendor's test directory
  */
 function getModelsWithTests(vendorDir) {
@@ -91,9 +107,9 @@ function getModelsWithTests(vendorDir) {
         if (testData.testCases && Array.isArray(testData.testCases)) {
           for (const testCase of testData.testCases) {
             if (testCase.model) {
-              // Normalize model name (remove hyphens, convert to lowercase)
-              const normalizedModel = testCase.model.toLowerCase().replace(/[-_]/g, '');
-              modelsWithTests.add(normalizedModel);
+              modelsWithTests.add(normalizeModelName(testCase.model));
+            } else {
+              modelsWithTests.add('*');
             }
           }
         }
@@ -190,11 +206,17 @@ function scanProfiles() {
       // Generate ID from model field (lowercased, non-alphanumeric replaced with -)
       const id = modelClean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-      // Normalize model name for comparison with test data
-      const normalizedModel = modelClean.toLowerCase().replace(/[-_]/g, '');
+      // Normalize both YAML model and filename model for comparison with test data.
+      // Some profiles keep the vendor prefix in YAML model, while test data uses
+      // the shorter filename-derived model (e.g. Thermokon-NOVOS3 vs NOVOS3).
+      const normalizedModels = new Set([
+        normalizeModelName(modelClean),
+        normalizeModelName(extractModelFromFilename(yamlFile))
+      ]);
       
       // Check if this specific model has test data
-      const hasTests = modelsWithTests.has(normalizedModel);
+      const hasTests = modelsWithTests.has('*') ||
+        [...normalizedModels].some(model => modelsWithTests.has(model));
       
       // Extract version from filename or default to 1.0.0
       const versionMatch = yamlFile.match(/v(\d+)/i);

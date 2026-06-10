@@ -1,8 +1,8 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-06-09",
-  "totalProfiles": 22,
+  "lastUpdate": "2026-06-10",
+  "totalProfiles": 23,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -355,6 +355,22 @@
       ],
       "contentSha256": "41a2da70ef277b483935b70286c2778a25a1e392b53a6d3d4f168dc66f142d94",
       "lastUpdate": "2025-12-12"
+    },
+    {
+      "id": "thermokon-novos3-occlumco2temprh",
+      "vendor": "Thermokon",
+      "model": "Thermokon-NOVOS3-OccLumCO2TempRH",
+      "version": "1.0.0",
+      "path": "profiles/Thermokon/Thermokon-NOVOS3-OccLumCO2TempRH.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Thermokon Thermokon-NOVOS3-OccLumCO2TempRH Temperature Sensor",
+      "deviceType": "Temperature Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "0e6c46ba477f1182ddf650b98dd31d8487ed2542a2d4bccd156af87dca3ffd2f",
+      "lastUpdate": "2026-06-10"
     }
   ],
   "statistics": {
@@ -365,9 +381,10 @@
       "Milesight": 2,
       "Moko": 1,
       "Sensedge": 1,
-      "Senso8": 9
+      "Senso8": 9,
+      "Thermokon": 1
     },
     "withTests": 0,
-    "withoutTests": 22
+    "withoutTests": 23
   }
 }

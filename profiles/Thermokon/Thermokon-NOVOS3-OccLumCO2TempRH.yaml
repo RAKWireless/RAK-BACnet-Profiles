@@ -1,0 +1,173 @@
+codec: |
+  function readInt16(value) {
+    value = value & 0xffff;
+    return value & 0x8000 ? value - 0x10000 : value;
+  }
+
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    if (fPort !== 2) {
+      return values;
+    }
+
+    var offset = 0;
+    while (offset < data.length) {
+      var lpp;
+
+      if (data[offset] <= 0x7f) {
+        lpp = data[offset];
+        offset += 1;
+      } else {
+        if (offset + 1 >= data.length) {
+          break;
+        }
+        lpp = (data[offset] << 8) | data[offset + 1];
+        offset += 2;
+      }
+
+      switch (lpp) {
+        case 0x0010:
+          if (offset + 1 >= data.length) return values;
+          values.push({
+            name: "Temperature",
+            channel: 1,
+            value: readInt16((data[offset] << 8) | data[offset + 1]) / 10,
+            unit: "degreesCelsius"
+          });
+          offset += 2;
+          break;
+
+        case 0x0011:
+          if (offset >= data.length) return values;
+          values.push({
+            name: "RelativeHumidity",
+            channel: 2,
+            value: data[offset],
+            unit: "percent"
+          });
+          offset += 1;
+          break;
+
+        case 0x0012:
+          if (offset + 1 >= data.length) return values;
+          values.push({
+            name: "CO2",
+            channel: 3,
+            value: (data[offset] << 8) | data[offset + 1],
+            unit: "partsPerMillion"
+          });
+          offset += 2;
+          break;
+
+        case 0x0040:
+          if (offset + 1 >= data.length) return values;
+          values.push({
+            name: "Brightness",
+            channel: 4,
+            value: (data[offset] << 8) | data[offset + 1],
+            unit: "luxes"
+          });
+          offset += 2;
+          break;
+
+        case 0x0041:
+          if (offset >= data.length) return values;
+          var occupied = data[offset] & 0x01;
+          var movementCount = data[offset] >> 1;
+          var motionDetected = movementCount > 0 ? 1 : 0;
+          values.push({ name: "MotionDetected", channel: 5, value: motionDetected, unit: null });
+          values.push({ name: "Occupancy", channel: 6, value: occupied, unit: null });
+          offset += 1;
+          break;
+
+        case 0x0054:
+          if (offset >= data.length) return values;
+          values.push({
+            name: "BatteryVoltage",
+            channel: 7,
+            value: data[offset] * 20,
+            unit: "millivolts"
+          });
+          offset += 1;
+          break;
+
+        default:
+          return values;
+      }
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.1
+    channel: 1
+  "2":
+    name: Relative Humidity
+    type: AnalogInputObject
+    units: percent
+    covIncrement: 1
+    channel: 2
+  "3":
+    name: CO2
+    type: AnalogInputObject
+    units: partsPerMillion
+    covIncrement: 10
+    channel: 3
+  "4":
+    name: Brightness
+    type: AnalogInputObject
+    units: luxes
+    covIncrement: 1
+    channel: 4
+  "5":
+    name: Motion Detection
+    type: BinaryInputObject
+    channel: 5
+  "6":
+    name: Occupancy
+    type: BinaryInputObject
+    channel: 6
+  "7":
+    name: Battery Voltage
+    type: AnalogInputObject
+    units: millivolts
+    covIncrement: 20
+    channel: 7
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_4
+  regionalParametersRevision: RP002_1_0_3
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+
+model: Thermokon-NOVOS3-OccLumCO2TempRH
+profileVersion: 1.0.0
+name: NOVOS3-OccLumCO2TempRH
+vendor: Thermokon
+id: e4694108-dea3-41f0-b676-7620ac2df054
