@@ -118,24 +118,20 @@ body:
       label: Downlink Command Examples (Only if Downlink Support is Yes)
       description: |
         If the device supports downlink, provide command examples from the manual or real device testing.
-        Include the command name, LoRaWAN fPort, BACnet channel/value if known, and expected downlink payload in hexadecimal.
+        Include the command name, LoRaWAN fPort, control value if applicable, and expected downlink payload in hexadecimal.
       placeholder: |
         Set Power ON:
         fPort: 85
-        channel: 11
-        value: 1
+        control value: 1
         downlink payload: 55 01 00 02 01 01 5A
 
         Set Temperature:
         fPort: 85
-        channel: 15
-        value: 22.5
+        control value: 22.5
         downlink payload: 55 01 00 02 05 2D 8A
 
         Inquiry All:
         fPort: 85
-        channel: 20
-        value: 1
         downlink payload: 55 02 00 01 0F 67
       render: text
     validations:
@@ -146,27 +142,22 @@ body:
     attributes:
       label: Encode Function (Optional, only if Downlink Support is Yes)
       description: |
-        If you have a payload encoding function, provide it here. The preferred JavaScript shape is Encode(data, variables), where data.channel is the writable BACnet object channel and data.value is the value written by BMS.
-        You may also provide encodeDownlink(input) or logic in another language if that is what the vendor supplies.
+        If you have a payload encoding function, provide it here. Vendor-provided encodeDownlink(input), Encode(data, variables), or logic in another language is accepted.
+        Please include enough comments or examples to show how each downlink command is generated.
       placeholder: |
-        function Encode(data, variables) {
-          var channel = data.channel;
-          var value = data.value;
+        function encodeDownlink(input) {
+          var command = input.data.command;
+          var value = input.data.value;
           var bytes = [];
 
-          // Build the downlink payload based on channel and value.
-          // Example: channel 11 = Set Power
-          if (channel === 11) {
+          // Example: Set Power
+          if (command === "setPower") {
             bytes.push(0x55, 0x01, 0x00, 0x02, 0x01, value);
             var checksum = bytes.reduce((sum, b) => sum + b, 0) % 256;
             bytes.push(checksum);
           }
 
-          return bytes;
-        }
-
-        function encodeDownlink(input) {
-          return { bytes: Encode(input.data, input.variables) };
+          return { bytes: bytes };
         }
       render: code
     validations:
