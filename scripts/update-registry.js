@@ -142,8 +142,13 @@ function hashProfileContent(yamlContent) {
 }
 
 /**
- * Preserve per-profile lastUpdate when YAML content unchanged vs existing registry.
- * First run after adding contentSha256: keep old lastUpdate (migration).
+ * Preserve per-profile lastUpdate and verified when merging with existing registry.
+ *
+ * - lastUpdate: kept when YAML content is unchanged (content hash match), otherwise
+ *   refreshed from file mtime.
+ * - verified: always preserved from the existing registry so manual approvals
+ *   (verified: true) survive re-runs. New profiles that don't exist yet default
+ *   to false.
  */
 function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
   const byPath = new Map();
@@ -155,12 +160,22 @@ function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
   for (const profile of profiles) {
     const absPath = path.join(__dirname, '..', profile.path);
     const old = byPath.get(profile.path);
+
+    // Preserve lastUpdate when content is unchanged
     if (old && old.contentSha256 === profile.contentSha256) {
       profile.lastUpdate = old.lastUpdate;
     } else if (old && old.contentSha256 === undefined) {
+      // Migration: registry predates contentSha256 field
       profile.lastUpdate = old.lastUpdate;
     } else {
       profile.lastUpdate = getLastUpdateDate(absPath);
+    }
+
+    // Preserve manually-set verified flag; only default to false for brand-new profiles
+    if (old && typeof old.verified === 'boolean') {
+      profile.verified = old.verified;
+    } else {
+      profile.verified = false;
     }
   }
 }
@@ -233,7 +248,7 @@ function scanProfiles() {
         model: modelClean,
         version,
         path: `profiles/${vendor}/${yamlFile}`,
-        verified: hasTests,
+        verified: false,
         hasTests,
         description,
         deviceType,

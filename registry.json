@@ -1,8 +1,8 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-06-10",
-  "totalProfiles": 23,
+  "lastUpdate": "2026-06-17",
+  "totalProfiles": 24,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -179,6 +179,22 @@
       ],
       "contentSha256": "203a38a53e7763c900b24e203732bb26f43993ba71ce963f03b89020c2e0e999",
       "lastUpdate": "2026-04-24"
+    },
+    {
+      "id": "milesight-wt304",
+      "vendor": "Milesight",
+      "model": "Milesight-WT304",
+      "version": "1.0.0",
+      "path": "profiles/Milesight/Milesight-WT304.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "Milesight Milesight-WT304 Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "2fa9a5d190391499712e7230047a2cbc6ae743d9169ec31728258038cc5b5470",
+      "lastUpdate": "2026-06-17"
     },
     {
       "id": "moko-lw013sb",
@@ -362,8 +378,8 @@
       "model": "Thermokon-NOVOS3-OccLumCO2TempRH",
       "version": "1.0.0",
       "path": "profiles/Thermokon/Thermokon-NOVOS3-OccLumCO2TempRH.yaml",
-      "verified": false,
-      "hasTests": false,
+      "verified": true,
+      "hasTests": true,
       "description": "Thermokon Thermokon-NOVOS3-OccLumCO2TempRH Temperature Sensor",
       "deviceType": "Temperature Sensor",
       "lorawanClass": [
@@ -378,13 +394,13 @@
       "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
-      "Milesight": 2,
+      "Milesight": 3,
       "Moko": 1,
       "Sensedge": 1,
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 0,
-    "withoutTests": 23
+    "withTests": 2,
+    "withoutTests": 22
   }
 }

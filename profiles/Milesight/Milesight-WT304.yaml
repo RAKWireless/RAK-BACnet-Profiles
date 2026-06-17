@@ -1,0 +1,439 @@
+codec: |
+  // Helper: read an unsigned 8-bit integer
+  function readUInt8(bytes, idx) {
+    return bytes[idx] & 0xff;
+  }
+
+  // Helper: read a signed 16-bit little-endian integer
+  function readInt16LE(bytes, idx) {
+    var val = (bytes[idx] & 0xff) | ((bytes[idx + 1] & 0xff) << 8);
+    return val & 0x8000 ? val - 0x10000 : val;
+  }
+
+  // Helper: read an unsigned 16-bit little-endian integer
+  function readUInt16LE(bytes, idx) {
+    return (bytes[idx] & 0xff) | ((bytes[idx + 1] & 0xff) << 8);
+  }
+
+  // Helper: read an unsigned 32-bit little-endian integer
+  function readUInt32LE(bytes, idx) {
+    return (
+      (bytes[idx] & 0xff) |
+      ((bytes[idx + 1] & 0xff) << 8) |
+      ((bytes[idx + 2] & 0xff) << 16) |
+      ((bytes[idx + 3] & 0xff) << 24)
+    ) >>> 0;
+  }
+
+  // Helper: write a signed 16-bit little-endian integer into a byte array
+  function writeInt16LE(bytes, val) {
+    var v = val & 0xffff;
+    bytes.push(v & 0xff);
+    bytes.push((v >> 8) & 0xff);
+  }
+
+  function Decode(fPort, data, variables) {
+    var values = [];
+    var i = 0;
+
+    while (i < data.length) {
+      var cmdId = readUInt8(data, i++);
+
+      switch (cmdId) {
+        // Temperature: signed 16-bit LE, unit 0.01°C
+        case 0x01:
+          values.push({
+            name: "Temperature",
+            channel: 1,
+            value: readInt16LE(data, i) / 100,
+            unit: "°C"
+          });
+          i += 2;
+          break;
+
+        // Humidity: unsigned 16-bit LE, unit 0.1%
+        case 0x02:
+          values.push({
+            name: "Humidity",
+            channel: 2,
+            value: readUInt16LE(data, i) / 10,
+            unit: "%"
+          });
+          i += 2;
+          break;
+
+        // Target Temperature: signed 16-bit LE, unit 0.01°C
+        case 0x03:
+          values.push({
+            name: "Target Temperature",
+            channel: 3,
+            value: readInt16LE(data, i) / 100,
+            unit: "°C"
+          });
+          i += 2;
+          break;
+
+        // Data Source: 0=Internal, 1=External NTC, 2=LoRaWAN Reception, 3=D2D Reception
+        case 0x04:
+          values.push({
+            name: "Data Source",
+            channel: 4,
+            value: readUInt8(data, i),
+            unit: null
+          });
+          i += 1;
+          break;
+
+        // Temperature Control Info: high nibble=mode, low nibble=status
+        // mode: 0=Ventilation, 1=Heat, 2=Cool
+        // status: 0=Standby, 1=Heat, 2=Cool
+        case 0x05: {
+          var bits = readUInt8(data, i++);
+          values.push({
+            name: "Temperature Control Mode",
+            channel: 5,
+            value: (bits >> 4) & 0x0f,
+            unit: null
+          });
+          values.push({
+            name: "Temperature Control Status",
+            channel: 6,
+            value: bits & 0x0f,
+            unit: null
+          });
+          break;
+        }
+
+        // Valve Status: 0–100%
+        case 0x06:
+          values.push({
+            name: "Valve Status",
+            channel: 7,
+            value: readUInt8(data, i),
+            unit: "%"
+          });
+          i += 1;
+          break;
+
+        // Fan Control Info: high nibble=mode, low nibble=status
+        // mode: 0=Auto, 1=Low, 2=Medium, 3=High
+        // status: 0=Off, 1=Low, 2=Medium, 3=High
+        case 0x07: {
+          var bits = readUInt8(data, i++);
+          values.push({
+            name: "Fan Mode",
+            channel: 8,
+            value: (bits >> 4) & 0x0f,
+            unit: null
+          });
+          values.push({
+            name: "Fan Status",
+            channel: 9,
+            value: bits & 0x0f,
+            unit: null
+          });
+          break;
+        }
+
+        // Execution Plan ID: 0-15=Schedule1-16, 255=Not executed
+        case 0x08:
+          i += 1;
+          break;
+
+        // Relay/Valve Status: 4 bytes, bits 0-4 are low/mid/high fan and valve1/2
+        case 0x10: {
+          var bits32 = readUInt32LE(data, i);
+          i += 4;
+          values.push({ name: "Fan Relay Low",   channel: 10, value: (bits32 >> 0) & 0x01, unit: null });
+          values.push({ name: "Fan Relay Mid",   channel: 11, value: (bits32 >> 1) & 0x01, unit: null });
+          values.push({ name: "Fan Relay High",  channel: 12, value: (bits32 >> 2) & 0x01, unit: null });
+          values.push({ name: "Valve 1 Status",  channel: 13, value: (bits32 >> 3) & 0x01, unit: null });
+          values.push({ name: "Valve 2 Status",  channel: 14, value: (bits32 >> 4) & 0x01, unit: null });
+          break;
+        }
+
+        // System On/Off: 0=Off, 1=On
+        case 0x67:
+          values.push({
+            name: "System Status",
+            channel: 15,
+            value: readUInt8(data, i),
+            unit: null
+          });
+          i += 1;
+          break;
+
+        // Device Status: 0=Off, 1=On (read-only report)
+        case 0xc8:
+          values.push({
+            name: "Device Status",
+            channel: 16,
+            value: readUInt8(data, i),
+            unit: null
+          });
+          i += 1;
+          break;
+
+        // LoRaWAN Work Mode: 0=ClassA, 1=ClassB, 2=ClassC, 3=ClassC to B
+        case 0xcf: {
+          var subCmd = readUInt8(data, i++);
+          if (subCmd === 0x00) {
+            i += 1; // skip mode byte, configuration-only
+          }
+          break;
+        }
+
+        // TSL Version: 2 bytes
+        case 0xdf:
+          i += 2;
+          break;
+
+        // Product SN: 8 bytes
+        case 0xdb:
+          i += 8;
+          break;
+
+        // Hardware + Firmware version: 8 bytes total
+        case 0xda:
+          i += 8;
+          break;
+
+        // OEM ID: 2 bytes
+        case 0xd9:
+          i += 2;
+          break;
+
+        // Temperature Alarm: 1 byte type, optional 2 bytes temperature
+        case 0x09: {
+          var alarmType = readUInt8(data, i++);
+          // types 0x10–0x33 carry an additional 2-byte temperature value
+          if (alarmType >= 0x10) {
+            i += 2;
+          }
+          break;
+        }
+
+        // Humidity Alarm: 1 byte type (no extra data)
+        case 0x0a:
+          i += 1;
+          break;
+
+        // Target Temperature Alarm: 1 byte type
+        case 0x0b:
+          i += 1;
+          break;
+
+        default:
+          // Unknown command — stop parsing to avoid misalignment
+          i = data.length;
+          break;
+      }
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var channel = data.channel;
+    var value = data.value;
+    var bytes = [];
+
+    switch (channel) {
+      // Set System On/Off: 0=Off, 1=On  (cmd 0x67)
+      case 20:
+        bytes.push(0x67);
+        bytes.push(value & 0xff);
+        break;
+
+      // Set Temperature Control Mode: 0=Ventilation, 1=Heat, 2=Cool  (cmd 0x68)
+      case 21:
+        bytes.push(0x68);
+        bytes.push(value & 0xff);
+        break;
+
+      // Set Fan Mode: 0=Auto, 1=Low, 2=Medium, 3=High  (cmd 0x72)
+      case 22:
+        bytes.push(0x72);
+        bytes.push(value & 0xff);
+        break;
+
+      // Set Heating Target Temperature (5–35°C, 0.01 resolution)  (cmd 0x6b)
+      case 23:
+        bytes.push(0x6b);
+        writeInt16LE(bytes, Math.round(value * 100));
+        break;
+
+      // Set Cooling Target Temperature (5–35°C, 0.01 resolution)  (cmd 0x6c)
+      case 24:
+        bytes.push(0x6c);
+        writeInt16LE(bytes, Math.round(value * 100));
+        break;
+
+      default:
+        break;
+    }
+
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  # ── Uplink (sensor readings) ──────────────────────────────────────────────
+  "1":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.1
+    updateInterval: 600
+    channel: 1
+  "2":
+    name: Humidity
+    type: AnalogInputObject
+    units: percent
+    covIncrement: 1
+    updateInterval: 600
+    channel: 2
+  "3":
+    name: Target Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.5
+    updateInterval: 600
+    channel: 3
+  "4":
+    name: Data Source
+    type: AnalogInputObject
+    # 0=Internal, 1=External NTC, 2=LoRaWAN Reception, 3=D2D Reception
+    updateInterval: 600
+    channel: 4
+  "5":
+    name: Temperature Control Mode
+    type: AnalogInputObject
+    # 0=Ventilation, 1=Heat, 2=Cool
+    updateInterval: 600
+    channel: 5
+  "6":
+    name: Temperature Control Status
+    type: AnalogInputObject
+    # 0=Standby, 1=Heat, 2=Cool
+    updateInterval: 600
+    channel: 6
+  "7":
+    name: Valve Status
+    type: AnalogInputObject
+    units: percent
+    covIncrement: 1
+    updateInterval: 600
+    channel: 7
+  "8":
+    name: Fan Mode
+    type: AnalogInputObject
+    # 0=Auto, 1=Low, 2=Medium, 3=High
+    updateInterval: 600
+    channel: 8
+  "9":
+    name: Fan Status
+    type: AnalogInputObject
+    # 0=Off, 1=Low, 2=Medium, 3=High
+    updateInterval: 600
+    channel: 9
+  "10":
+    name: Fan Relay Low
+    type: BinaryInputObject
+    # 0=Open, 1=Close
+    updateInterval: 600
+    channel: 10
+  "11":
+    name: Fan Relay Mid
+    type: BinaryInputObject
+    # 0=Open, 1=Close
+    updateInterval: 600
+    channel: 11
+  "12":
+    name: Fan Relay High
+    type: BinaryInputObject
+    # 0=Open, 1=Close
+    updateInterval: 600
+    channel: 12
+  "13":
+    name: Valve 1 Status
+    type: BinaryInputObject
+    # 0=Open, 1=Close
+    updateInterval: 600
+    channel: 13
+  "14":
+    name: Valve 2 Status
+    type: BinaryInputObject
+    # 0=Open, 1=Close
+    updateInterval: 600
+    channel: 14
+  "15":
+    name: System Status
+    type: BinaryInputObject
+    # 0=Off, 1=On
+    updateInterval: 600
+    channel: 15
+  "16":
+    name: Device Status
+    type: BinaryInputObject
+    # 0=Off, 1=On
+    updateInterval: 600
+    channel: 16
+
+  # ── Downlink (control commands) ───────────────────────────────────────────
+  "20":
+    name: Set System On/Off
+    type: BinaryOutputObject
+    # 0=Off, 1=On
+    fport: 85
+    channel: 20
+  "21":
+    name: Set Temperature Control Mode
+    type: AnalogOutputObject
+    # 0=Ventilation, 1=Heat, 2=Cool
+    fport: 85
+    channel: 21
+  "22":
+    name: Set Fan Mode
+    type: AnalogOutputObject
+    # 0=Auto, 1=Low, 2=Medium, 3=High
+    fport: 85
+    channel: 22
+  "23":
+    name: Set Heating Target Temperature
+    type: AnalogOutputObject
+    units: degreesCelsius
+    fport: 85
+    channel: 23
+  "24":
+    name: Set Cooling Target Temperature
+    type: AnalogOutputObject
+    units: degreesCelsius
+    fport: 85
+    channel: 24
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: true
+  supportOTAA: true
+
+model: Milesight-WT304
+profileVersion: 1.0.0
+name: WT304
+vendor: Milesight
+id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
