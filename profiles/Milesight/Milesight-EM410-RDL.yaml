@@ -1,0 +1,219 @@
+codec: |
+  // Helper: read an unsigned 8-bit integer
+  function readUInt8(bytes, idx) {
+    return bytes[idx] & 0xff;
+  }
+
+  // Helper: read a signed 16-bit little-endian integer
+  function readInt16LE(bytes, idx) {
+    var val = (bytes[idx] & 0xff) | ((bytes[idx + 1] & 0xff) << 8);
+    return val & 0x8000 ? val - 0x10000 : val;
+  }
+
+  // Helper: read an unsigned 16-bit little-endian integer
+  function readUInt16LE(bytes, idx) {
+    return (bytes[idx] & 0xff) | ((bytes[idx + 1] & 0xff) << 8);
+  }
+
+  // Helper: read an unsigned 32-bit little-endian integer
+  function readUInt32LE(bytes, idx) {
+    return (
+      (bytes[idx] & 0xff) |
+      ((bytes[idx + 1] & 0xff) << 8) |
+      ((bytes[idx + 2] & 0xff) << 16) |
+      ((bytes[idx + 3] & 0xff) << 24)
+    ) >>> 0;
+  }
+
+  function Decode(fPort, data, variables) {
+    var values = [];
+    var i = 0;
+
+    while (i + 1 < data.length) {
+      var channel_id = data[i++];
+      var channel_type = data[i++];
+
+      // IPSO VERSION
+      if (channel_id === 0xff && channel_type === 0x01) {
+        i += 1;
+      }
+      // HARDWARE VERSION
+      else if (channel_id === 0xff && channel_type === 0x09) {
+        i += 2;
+      }
+      // FIRMWARE VERSION
+      else if (channel_id === 0xff && channel_type === 0x0a) {
+        i += 2;
+      }
+      // TSL VERSION
+      else if (channel_id === 0xff && channel_type === 0xff) {
+        i += 2;
+      }
+      // SERIAL NUMBER
+      else if (channel_id === 0xff && channel_type === 0x16) {
+        i += 8;
+      }
+      // LORAWAN CLASS TYPE
+      else if (channel_id === 0xff && channel_type === 0x0f) {
+        i += 1;
+      }
+      // RESET EVENT
+      else if (channel_id === 0xff && channel_type === 0xfe) {
+        i += 1;
+      }
+      // DEVICE STATUS
+      else if (channel_id === 0xff && channel_type === 0x0b) {
+        i += 1;
+      }
+      // BATTERY
+      else if (channel_id === 0x01 && channel_type === 0x75) {
+        var battery = readUInt8(data, i);
+        values.push({ name: "BatteryLevel", channel: 1, value: battery, unit: "%" });
+        i += 1;
+      }
+      // TEMPERATURE
+      else if (channel_id === 0x03 && channel_type === 0x67) {
+        var temperature = readInt16LE(data, i) / 10;
+        values.push({ name: "Temperature", channel: 8, value: temperature, unit: "°C" });
+        i += 2;
+      }
+      // DISTANCE / LIQUID LEVEL
+      else if (channel_id === 0x04 && channel_type === 0x82) {
+        var distance = readInt16LE(data, i);
+        values.push({ name: "Distance", channel: 2, value: distance, unit: "mm" });
+        i += 2;
+      }
+      // DEVICE POSITION
+      else if (channel_id === 0x05 && channel_type === 0x00) {
+        var position = readUInt8(data, i);
+        values.push({ name: "DevicePosition", channel: 3, value: position, unit: null });
+        i += 1;
+      }
+      // RADAR SIGNAL STRENGTH
+      else if (channel_id === 0x06 && channel_type === 0xc7) {
+        var rssi = readInt16LE(data, i) / 100;
+        values.push({ name: "RadarSignalStrength", channel: 4, value: rssi, unit: "dBm" });
+        i += 2;
+      }
+      // DISTANCE THRESHOLD ALARM
+      else if (channel_id === 0x84 && channel_type === 0x82) {
+        var alarmDistance = readInt16LE(data, i);
+        var alarmStatus = readUInt8(data, i + 2);
+        values.push({ name: "Distance", channel: 2, value: alarmDistance, unit: "mm" });
+        values.push({ name: "DistanceAlarm", channel: 5, value: alarmStatus, unit: null });
+        i += 3;
+      }
+      // DISTANCE SHIFTS THRESHOLD ALARM
+      else if (channel_id === 0x94 && channel_type === 0x82) {
+        var shiftDistance = readInt16LE(data, i);
+        var shiftValue = readInt16LE(data, i + 2);
+        var shiftAlarm = readUInt8(data, i + 4);
+        values.push({ name: "Distance", channel: 2, value: shiftDistance, unit: "mm" });
+        values.push({ name: "DistanceShift", channel: 6, value: shiftValue, unit: "mm" });
+        values.push({ name: "DistanceAlarm", channel: 5, value: shiftAlarm, unit: null });
+        i += 5;
+      }
+      // BLIND ZONE / DISTANCE EXCEPTION ALARM
+      else if (channel_id === 0xb4 && channel_type === 0x82) {
+        var blindRaw = readUInt16LE(data, i);
+        var blindDistance = readInt16LE(data, i);
+        var blindStatus = readUInt8(data, i + 2);
+        // Skip distance when no target (0xfffd) or sensor exception (0xffff)
+        if (blindRaw !== 0xfffd && blindRaw !== 0xffff) {
+          values.push({ name: "Distance", channel: 2, value: blindDistance, unit: "mm" });
+        }
+        values.push({ name: "BlindZoneAlarm", channel: 7, value: blindStatus, unit: null });
+        i += 3;
+      }
+      // HISTORY DATA
+      else if (channel_id === 0x20 && channel_type === 0xce) {
+        // timestamp(4) + distance(2) + temperature(2) + mutation(2) + event(1)
+        i += 11;
+      }
+      else {
+        break;
+      }
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  # ── Uplink (sensor readings) ──────────────────────────────────────────────
+  "1":
+    name: Battery Level
+    type: AnalogInputObject
+    units: percent
+    covIncrement: 1
+    channel: 1
+  "2":
+    name: Distance
+    type: AnalogInputObject
+    units: millimeters
+    covIncrement: 10
+    channel: 2
+  "3":
+    name: Device Position
+    type: BinaryInputObject
+    # 0: Normal, 1: Tilt (horizontal offset angle >= 15 degrees)
+    channel: 3
+  "4":
+    name: Radar Signal Strength
+    type: AnalogInputObject
+    units: decibels
+    covIncrement: 0.1
+    channel: 4
+  "5":
+    name: Distance Alarm
+    type: BinaryInputObject
+    # 0: Threshold Alarm Release, 1: Threshold Alarm, 2: Mutation Alarm
+    channel: 5
+  "6":
+    name: Distance Shift
+    type: AnalogInputObject
+    units: millimeters
+    covIncrement: 10
+    channel: 6
+  "7":
+    name: Blind Zone Alarm
+    type: BinaryInputObject
+    # 0: Alarm Release, 1: Blind Spot Alarm, 2: No Target, 3: Sensor Exception
+    channel: 7
+  "8":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.1
+    channel: 8
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+
+model: Milesight-EM410-RDL
+profileVersion: 1.0.0
+name: EM410-RDL
+vendor: Milesight
+id: e4a3b1c2-d5f6-4789-abcd-1234567890ab

@@ -1,8 +1,8 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-06-17",
-  "totalProfiles": 24,
+  "lastUpdate": "2026-06-23",
+  "totalProfiles": 25,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -147,6 +147,22 @@
       ],
       "contentSha256": "ec6bd00b66f02bbc08dc5b9f9a929d0622355b89ee95e8bca4a2ce817c853c65",
       "lastUpdate": "2026-04-24"
+    },
+    {
+      "id": "milesight-em410-rdl",
+      "vendor": "Milesight",
+      "model": "Milesight-EM410-RDL",
+      "version": "1.0.0",
+      "path": "profiles/Milesight/Milesight-EM410-RDL.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "Milesight Milesight-EM410-RDL Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "9ac8bcbb5f25c8613544ccd5d01b899ccf0cf27c5b5f7cdc96d20b45763d68fc",
+      "lastUpdate": "2026-06-23"
     },
     {
       "id": "milesight-uc300",
@@ -394,13 +410,13 @@
       "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
-      "Milesight": 3,
+      "Milesight": 4,
       "Moko": 1,
       "Sensedge": 1,
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 2,
+    "withTests": 3,
     "withoutTests": 22
   }
 }
