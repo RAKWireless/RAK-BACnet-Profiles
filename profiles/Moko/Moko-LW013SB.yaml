@@ -5,20 +5,20 @@
 codec: |
   function Decode(fPort, data, variables) {
     var values = [];
-    
+
     function getUint32BE(bytes, start) {
-      return (bytes[start] << 24) | (bytes[start+1] << 16) | (bytes[start+2] << 8) | bytes[start+3];
+      return (((bytes[start] * 256 + bytes[start + 1]) * 256 + bytes[start + 2]) * 256 + bytes[start + 3]);
     }
-    
+
     function getInt8(bytes, pos) {
       var v = bytes[pos];
       return (v & 0x80) ? v - 256 : v;
     }
-    
+
     function getUint16BE(bytes, pos) {
-      return (bytes[pos] << 8) | bytes[pos+1];
+      return bytes[pos] * 256 + bytes[pos + 1];
     }
-    
+
     function parseFirmwareVersion(byte) {
       return {
         major: (byte >> 6) & 0x03,
@@ -26,122 +26,128 @@ codec: |
         patch: byte & 0x0F
       };
     }
-    
+
     function parseHardwareVersion(byte) {
       return {
         major: (byte >> 4) & 0x0F,
         patch: byte & 0x0F
       };
     }
-    
-    // Common fields for fPort 1-5
+
+    function pushCommonFields() {
+      var timestamp = getUint32BE(data, 0);
+      var timezone = getInt8(data, 4) / 2;
+      var temperature = getInt8(data, 5);
+      var voltage = getUint16BE(data, 6);
+
+      values.push({ name: "Timestamp", channel: 1, value: timestamp, unit: null });
+      values.push({ name: "Timezone", channel: 2, value: timezone, unit: "h" });
+      values.push({ name: "Temperature", channel: 3, value: temperature, unit: "°C" });
+      values.push({ name: "Voltage", channel: 4, value: voltage, unit: "mV" });
+    }
+
+    // fPort 1-5 share timestamp, timezone, temperature and voltage fields.
     if (fPort >= 1 && fPort <= 5) {
       if (data.length < 8) {
         return values;
       }
-      
-      // Timestamp (4 bytes, UNIX epoch seconds)
-      var timestamp = getUint32BE(data, 0);
-      
-      // Timezone (1 byte, signed)
-      var timezone = getInt8(data, 4);
-      
-      // Temperature (1 byte, signed, degrees Celsius)
-      var temperature = getInt8(data, 5);
-      
-      // Voltage (2 bytes, millivolts)
-      var voltage = getUint16BE(data, 6);
-      
-      values.push({ name: "Timestamp", channel: 1, value: timestamp, unit: null });
-      values.push({ name: "Timezone", channel: 2, value: timezone, unit: null });
-      values.push({ name: "Temperature", channel: 3, value: temperature, unit: '°C' });
-      values.push({ name: "Voltage", channel: 4, value: voltage, unit: 'mV' });
-      
-      // fPort 1: Heartbeat
-      if (fPort == 1 && data.length >= 11) {
-        var fwByte = data[8];
-        var hwByte = data[9];
-        var eventType = data[10];
-        
-        var fw = parseFirmwareVersion(fwByte);
-        var hw = parseHardwareVersion(hwByte);
-        
+
+      pushCommonFields();
+
+      // Heartbeat: event type 0=no event, 1/2/3=event 1/2/3 triggered.
+      if (fPort === 1 && data.length === 11) {
+        var fw = parseFirmwareVersion(data[8]);
+        var hw = parseHardwareVersion(data[9]);
+
         values.push({ name: "FirmwareMajor", channel: 5, value: fw.major, unit: null });
         values.push({ name: "FirmwareMinor", channel: 6, value: fw.minor, unit: null });
         values.push({ name: "FirmwarePatch", channel: 7, value: fw.patch, unit: null });
         values.push({ name: "HardwareMajor", channel: 8, value: hw.major, unit: null });
         values.push({ name: "HardwarePatch", channel: 9, value: hw.patch, unit: null });
-        values.push({ name: "EventType", channel: 10, value: eventType, unit: null });
-      }
-      
-      // fPort 2: Alarm
-      if (fPort == 2 && data.length >= 9) {
-        var eventType = data[8];
-        values.push({ name: "EventType", channel: 10, value: eventType, unit: null });
-      }
-
-      // fPort 3: Low Power
-      if (fPort == 3 && data.length >= 9) {
-        var batteryPercent = data[8];
-        values.push({ name: "BatteryPercent", channel: 28, value: batteryPercent, unit: null });
-      }
-      
-      
-      // fPort 4: Shutdown
-      if (fPort == 4 && data.length >= 9) {
-        var shutdownType = data[8];
-        values.push({ name: "ShutdownType", channel: 11, value: shutdownType, unit: null });
+        values.push({ name: "EventType", channel: 10, value: data[10], unit: null });
+      } else if (fPort === 2 && data.length === 9) {
+        // Alarm: event type 1/2/3=event 1/2/3 triggered.
+        values.push({ name: "EventType", channel: 10, value: data[8], unit: null });
+      } else if (fPort === 3 && data.length === 9) {
+        // Low power: battery percentage, 1-99%.
+        values.push({ name: "BatteryPercent", channel: 28, value: data[8], unit: "%" });
+      } else if (fPort === 4 && data.length === 9) {
+        // Shutdown type: 0=APP, 1=downlink command, 2=magnet.
+        values.push({ name: "ShutdownType", channel: 11, value: data[8], unit: null });
+      } else if (fPort === 5 && data.length === 9) {
+        // Event type: 0=downlink trigger, 1/2/3/4/5/6=event 1/1 exit/2/2 exit/3/3 exit.
+        values.push({ name: "Event Type(port 5)", channel: 29, value: data[8], unit: null });
       }
 
-      // fPort 5: Event (Downlink triggered)
-      if (fPort == 4 && data.length >= 9) {
-        var eventType = data[8];
-        values.push({ name: "EventType", channel: 29, value: eventType, unit: null });
-      }
+      return values;
     }
-    
-    // fPort 6: Power Consumption Statistics
-    if (fPort == 6 && data.length >= 64) {
-      var deviceWorkTime = getUint32BE(data, 0);
-      var bleBroadcastTimes = getUint32BE(data, 4);
-      var ledRedTime = getUint32BE(data, 8);
-      var ledGreenTime = getUint32BE(data, 12);
-      var ledBlueTime = getUint32BE(data, 16);
-      var buzzerNormalTime = getUint32BE(data, 20);
-      var buzzerAlarmTime = getUint32BE(data, 24);
-      var event1TriggerTimes = getUint32BE(data, 28);
-      var event1ReportTimes = getUint32BE(data, 32);
-      var event2TriggerTimes = getUint32BE(data, 36);
-      var event2ReportTimes = getUint32BE(data, 40);
-      var event3TriggerTimes = getUint32BE(data, 44);
-      var event3ReportTimes = getUint32BE(data, 48);
-      var loraSendTimes = getUint32BE(data, 52);
-      var loraPower = getUint32BE(data, 56);
-      var batteryConsumption = getUint32BE(data, 60);
-      
-      values.push({ name: "DeviceWorkTime", channel: 12, value: deviceWorkTime, unit: 's' });
-      values.push({ name: "BLEBroadcastTimes", channel: 13, value: bleBroadcastTimes, unit: null });
-      values.push({ name: "LEDRedTime", channel: 14, value: ledRedTime, unit: 's' });
-      values.push({ name: "LEDGreenTime", channel: 15, value: ledGreenTime, unit: 's' });
-      values.push({ name: "LEDBlueTime", channel: 16, value: ledBlueTime, unit: 's' });
-      values.push({ name: "BuzzerNormalTime", channel: 17, value: buzzerNormalTime, unit: 's' });
-      values.push({ name: "BuzzerAlarmTime", channel: 18, value: buzzerAlarmTime, unit: 's' });
-      values.push({ name: "Event1TriggerTimes", channel: 19, value: event1TriggerTimes, unit: null });
-      values.push({ name: "Event1ReportTimes", channel: 20, value: event1ReportTimes, unit: null });
-      values.push({ name: "Event2TriggerTimes", channel: 21, value: event2TriggerTimes, unit: null });
-      values.push({ name: "Event2ReportTimes", channel: 22, value: event2ReportTimes, unit: null });
-      values.push({ name: "Event3TriggerTimes", channel: 23, value: event3TriggerTimes, unit: null });
-      values.push({ name: "Event3ReportTimes", channel: 24, value: event3ReportTimes, unit: null });
-      values.push({ name: "LoRaSendTimes", channel: 25, value: loraSendTimes, unit: null });
-      values.push({ name: "LoRaPower", channel: 26, value: loraPower, unit: null });
-      values.push({ name: "BatteryConsumption", channel: 27, value: batteryConsumption, unit: null });
+
+    // Power consumption statistics: sixteen uint32 fields, big-endian.
+    if (fPort === 6 && data.length === 64) {
+      values.push({ name: "DeviceWorkTime", channel: 12, value: getUint32BE(data, 0), unit: "s" });
+      values.push({ name: "BLEBroadcastTimes", channel: 13, value: getUint32BE(data, 4), unit: null });
+      values.push({ name: "LEDRedTime", channel: 14, value: getUint32BE(data, 8), unit: "s" });
+      values.push({ name: "LEDGreenTime", channel: 15, value: getUint32BE(data, 12), unit: "s" });
+      values.push({ name: "LEDBlueTime", channel: 16, value: getUint32BE(data, 16), unit: "s" });
+      values.push({ name: "BuzzerNormalTime", channel: 17, value: getUint32BE(data, 20), unit: "s" });
+      values.push({ name: "BuzzerAlarmTime", channel: 18, value: getUint32BE(data, 24), unit: "s" });
+      values.push({ name: "Event1TriggerTimes", channel: 19, value: getUint32BE(data, 28), unit: null });
+      values.push({ name: "Event1ReportTimes", channel: 20, value: getUint32BE(data, 32), unit: null });
+      values.push({ name: "Event2TriggerTimes", channel: 21, value: getUint32BE(data, 36), unit: null });
+      values.push({ name: "Event2ReportTimes", channel: 22, value: getUint32BE(data, 40), unit: null });
+      values.push({ name: "Event3TriggerTimes", channel: 23, value: getUint32BE(data, 44), unit: null });
+      values.push({ name: "Event3ReportTimes", channel: 24, value: getUint32BE(data, 48), unit: null });
+      values.push({ name: "LoRaSendTimes", channel: 25, value: getUint32BE(data, 52), unit: null });
+      values.push({ name: "LoRaPowerConsumption", channel: 26, value: getUint32BE(data, 56), unit: "mAs" });
+      values.push({ name: "BatteryConsumption", channel: 27, value: getUint32BE(data, 60), unit: "mAh" });
     }
-    
+
     return values;
   }
 
   function Encode(data, variables) {
+    var channel = data.channel;
+    var value = data.value;
     var bytes = [];
+
+    // Control commands: [HEAD=0x00, CMD] — no LEN or DATA
+    // Example: Turn off = [0x00, 0x00]
+    var ctrlMap = {
+      30: 0x00,  // Turn off device
+      31: 0x11,  // Reboot device
+      32: 0x06,  // Factory reset
+      33: 0x08,  // Exit alarm status
+      34: 0x09,  // Enter event 1 alarm status
+      35: 0x0A,  // Enter event 2 alarm status
+      36: 0x0B   // Enter event 3 alarm status
+    };
+
+    if (ctrlMap.hasOwnProperty(String(channel))) {
+      bytes.push(0x00);
+      bytes.push(ctrlMap[String(channel)]);
+      return bytes;
+    }
+
+    // Write parameter commands: [HEAD=0x02, CMD_H, CMD_L, LEN, DATA...]
+    if (channel === 37) {
+      // Set heartbeat report interval — unit: minutes, uint16 big-endian
+      // Example: 100 min → [0x02, 0x00, 0x22, 0x02, 0x00, 0x64]
+      var v = Math.max(0, Math.round(value)) & 0xFFFF;
+      bytes.push(0x02, 0x00, 0x22, 0x02);
+      bytes.push((v >> 8) & 0xFF, v & 0xFF);
+    } else if (channel === 38) {
+      // Set event 1 buzzer switch — 0: off, 1: normal, 2: alarm
+      // Example: alarm mode → [0x02, 0x06, 0x01, 0x01, 0x02]
+      bytes.push(0x02, 0x06, 0x01, 0x01);
+      bytes.push(value & 0xFF);
+    } else if (channel === 39) {
+      // Set event 1 report interval — unit: seconds, uint16 big-endian
+      // Example: 10 s → [0x02, 0x06, 0x03, 0x02, 0x00, 0x0A]
+      var v = Math.max(0, Math.round(value)) & 0xFFFF;
+      bytes.push(0x02, 0x06, 0x03, 0x02);
+      bytes.push((v >> 8) & 0xFF, v & 0xFF);
+    }
+
     return bytes;
   }
 
@@ -280,6 +286,74 @@ datatype:
   "28":
     name: Battery Percent
     type: AnalogInputObject
+    units: percent
+
+  "29":
+    name: Event Type(port 5)
+    type: AnalogInputObject
+
+  # Downlink control commands (fPort 10)
+  "30":
+    name: Turn Off Device
+    type: BinaryOutputObject
+    fport: 10
+    channel: 30
+
+  "31":
+    name: Reboot Device
+    type: BinaryOutputObject
+    fport: 10
+    channel: 31
+
+  "32":
+    name: Factory Reset
+    type: BinaryOutputObject
+    fport: 10
+    channel: 32
+
+  "33":
+    name: Exit Alarm Status
+    type: BinaryOutputObject
+    fport: 10
+    channel: 33
+
+  "34":
+    name: Enter Event 1 Alarm
+    type: BinaryOutputObject
+    fport: 10
+    channel: 34
+
+  "35":
+    name: Enter Event 2 Alarm
+    type: BinaryOutputObject
+    fport: 10
+    channel: 35
+
+  "36":
+    name: Enter Event 3 Alarm
+    type: BinaryOutputObject
+    fport: 10
+    channel: 36
+
+  "37":
+    name: Heartbeat Interval
+    type: AnalogOutputObject
+    units: minutes
+    fport: 10
+    channel: 37
+
+  "38":
+    name: Event 1 Buzzer Switch
+    type: AnalogOutputObject
+    fport: 10
+    channel: 38
+
+  "39":
+    name: Event 1 Report Interval
+    type: AnalogOutputObject
+    units: seconds
+    fport: 10
+    channel: 39
 
 lorawan:
   adrAlgorithm: LoRa Only

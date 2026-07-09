@@ -1,7 +1,7 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-06-23",
+  "lastUpdate": "2026-07-09",
   "totalProfiles": 25,
   "profiles": [
     {
@@ -225,8 +225,8 @@
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "ad5019b9b3a4bb09f98d98b05154e275cdeba6fdfa476fecba5a1c200388813f",
-      "lastUpdate": "2026-01-16"
+      "contentSha256": "6c25300e8851d85d9f5ff8980bcc7772e63ec65b804725f22dbebe01d97a7484",
+      "lastUpdate": "2026-07-07"
     },
     {
       "id": "sensedge-se300",
