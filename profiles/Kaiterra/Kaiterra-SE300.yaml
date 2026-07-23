@@ -2,16 +2,15 @@ codec: |
   const STANDARD_ATMOSPHERIC_PRESSURE_PA = 101325;
 
   function Decode(fPort, data, variables) {
-    var values = [];
+    var date = new Date();
+    var values = [{ name: "Timestamp", channel: 99, value: date.getTime(), unit: null }];
 
     if (fPort != 10) {
       return values;
     }
 
-    // Bit positions (from header.go in airqualityv2 package)
     var READING_VERSION_POS              = 14;
 
-    // Version 0/1
     var READING_V01_HAS_CO2_POS          = 13;
     var READING_V01_HAS_TEMP_HUMID_POS   = 12;
     var READING_V01_HAS_EXT_TEMP_HUMID_POS = 11;
@@ -28,7 +27,6 @@ codec: |
     var READING_V01_HAS_PM1_VARIANT_POS  = 1;
     var READING_V01_HAS_TVOC_RAW_POS     = 0;
 
-    // Version 2
     var READING_V2_HAS_CO2_POS           = 13;
     var READING_V2_HAS_TEMP_HUMID_POS    = 12;
     var READING_V2_HAS_EXT_TEMP_HUMID_POS = 11;
@@ -64,43 +62,12 @@ codec: |
       return { value: zigzagDecoded, offset: result.offset };
     }
 
-    // ----- Wire-format prefix to skip before the air-quality event stream -----
-    //
-    // Sensor uplinks come in on LoRaWAN fPort 10. The bytes received here are the
-    // raw FRMPayload, which the cloud server feeds through SCHC reassembly +
-    // protobuf unmarshalling before passing to airqualityv2.Parse(). This codec
-    // has neither library available, so it walks the prefix manually.
-    //
-    // SCHC framing (rule on fport 10: NO_ACK, WinBits=3, FcnBits=5, RCSBits=16):
-    //   [0]      SCHC fragment header (1 byte) = (window_id << 5) | FCN
-    //            For typical single-fragment uplinks this is 0x01 (W=0, FCN=1,
-    //            "All-1" i.e. last fragment). Multi-fragment messages cannot be
-    //            reassembled by this codec — only the cloud (libschc) can.
-    //   [1..2]   SCHC RCS / CRC-16 (little-endian). Present only on the All-1
-    //            fragment.
-    //
-    // Protobuf-encoded Exchange message (proto/transport.proto):
-    //   [3..4]   field 1 (Exchange.message_type) = 0x08 0x0F
-    //              0x08 = (field 1 << 3) | wire-type 0 (varint)
-    //              0x0F = varint value 15 = MESSAGE_TYPE__SENSOR_READINGS_V2
-    //            Other message types on fport 10 are theoretically possible but
-    //            currently unused; values >= 128 would consume more bytes.
-    //   [5]      field 7 tag (Exchange.payload) = 0x3A = (7 << 3) | wire-type 2
-    //            (LEN-delimited)
-    //   [6..]    payload length VARINT (1 byte if < 128, 2+ bytes for larger
-    //            payloads e.g. 0x96 0x01 = 150). Hardcoding offset=7 broke for
-    //            uplinks larger than 128 bytes that needed a 2-byte length varint.
-    //
-    // After that, the byte stream is exactly what airqualityv2.Parse() in
-    // parser.go operates on: a sequence of events, each starting with a 16-bit
-    // big-endian header + 16-bit little-endian timestamp + version-specific fields.
     var offset = 5;
     if (bytes[offset] === 0x3A) {
       offset++;
       var lenRes = readVarint(offset);
       offset = lenRes.offset;
     } else {
-      // Fallback: assume legacy 7-byte prefix (1-byte length varint case)
       offset = 7;
     }
 
@@ -115,24 +82,20 @@ codec: |
 
         var version = (header >> READING_VERSION_POS) & 0x03;
 
-        // Skip 2-byte timestamp
         offset += 2;
 
         if (version === 2) {
-          // PIR (BinaryInput)
           if (header & (1 << READING_V2_HAS_PIR_POS)) {
             var pirValue = (header & (1 << READING_V2_PIR_VALUE_POS)) ? 1 : 0;
             channelMap[4] = { name: "PIR", channel: 4, value: pirValue, unit: null };
           }
 
-          // CO2
           if (header & (1 << READING_V2_HAS_CO2_POS)) {
             var res = readSvarint(offset);
             channelMap[1] = { name: "CO2", channel: 1, value: res.value + 464, unit: "partsPerMillion" };
             offset = res.offset;
           }
 
-          // Temp / Humid
           if (header & (1 << READING_V2_HAS_TEMP_HUMID_POS)) {
             var tRes = readSvarint(offset);
             channelMap[2] = { name: "Temperature", channel: 2, value: (tRes.value + 230) / 10, unit: "degreesCelsius" };
@@ -143,7 +106,6 @@ codec: |
             offset = hRes.offset;
           }
 
-          // Ext Temp / Humid (dm600 by default, dm601 if DP also present)
           if (header & (1 << READING_V2_HAS_EXT_TEMP_HUMID_POS)) {
             var hasDP = (header & (1 << READING_V2_HAS_DP_POS)) !== 0;
             var extName = hasDP ? "dm601" : "dm600";
@@ -157,7 +119,6 @@ codec: |
             offset = hRes.offset;
           }
 
-          // Light (lux)
           if (header & (1 << READING_V2_HAS_LIGHT_POS)) {
             var res = readVarint(offset);
             var red = res.value;
@@ -185,7 +146,6 @@ codec: |
             channelMap[9] = { name: "Clear", channel: 9, value: clear, unit: "luxes" };
           }
 
-          // TVOC (raw is hidden — read but not exposed as a BACnet object)
           if (header & (1 << READING_V2_HAS_TVOC_POS)) {
             var res = readVarint(offset);
             var val = Math.max(0, Math.min(500, res.value));
@@ -193,12 +153,10 @@ codec: |
             var ppb = (Math.log(501 - val) - 6.24) * (-221.54);
             channelMap[10] = { name: "TVOC", channel: 10, value: Number(ppb.toFixed(2)), unit: "partsPerBillion" };
 
-            // Consume raw varint to keep offset aligned, but don't expose it
             res = readVarint(offset);
             offset = res.offset;
           }
 
-          // NOX — index and raw both consumed to keep offset aligned, not exposed
           if (header & (1 << READING_V2_HAS_NOX_POS)) {
             var res = readVarint(offset);
             offset = res.offset;
@@ -206,7 +164,6 @@ codec: |
             offset = res.offset;
           }
 
-          // PM (gt03, gt25, pm25, pm10, pm1)
           if (header & (1 << READING_V2_HAS_PM_POS)) {
             var res = readVarint(offset);
             channelMap[15] = { name: "PM_Count_0_3", channel: 15, value: res.value, unit: "noUnits" };
@@ -229,7 +186,6 @@ codec: |
             offset = res.offset;
           }
 
-          // Pressure (hectopascals = Pa / 100)
           if (header & (1 << READING_V2_HAS_PRESSURE_POS)) {
             var res = readSvarint(offset);
             var pressure = res.value * 10 + STANDARD_ATMOSPHERIC_PRESSURE_PA;
@@ -237,14 +193,12 @@ codec: |
             channelMap[11] = { name: "Pressure", channel: 11, value: Number((pressure / 100).toFixed(2)), unit: "hectopascals" };
           }
 
-          // CO
           if (header & (1 << READING_V2_HAS_CO_POS)) {
             var res = readVarint(offset);
             channelMap[17] = { name: "CO", channel: 17, value: res.value / 10, unit: "partsPerMillion" };
             offset = res.offset;
           }
 
-          // O3 raw — captured locally for correction below; raw not exposed
           var o3Raw = null;
           if (header & (1 << READING_V2_HAS_O3_POS)) {
             var res = readVarint(offset);
@@ -252,7 +206,6 @@ codec: |
             offset = res.offset;
           }
 
-          // NO2 raw — captured locally for correction below; raw not exposed
           var no2Raw = null;
           if (header & (1 << READING_V2_HAS_NO2_POS)) {
             var res = readVarint(offset);
@@ -260,12 +213,6 @@ codec: |
             offset = res.offset;
           }
 
-          // Cross-sensitivity correction for O3 / NO2.
-          // Ratio = log2(O3/NO2)^2 expresses how far apart the two raw readings are.
-          // Ratio >= R_O3 -> attribute all signal to O3.
-          // Ratio <= R_NO2 -> attribute all signal to NO2.
-          // NO2_New is O3 * NO2_fraction (per spec; raw readings share the same
-          // electrochemical signal so the O3-raw value is split between outputs).
           if (o3Raw !== null && no2Raw !== null) {
             var R_O3 = 4;
             var R_NO2 = 2;
@@ -283,7 +230,6 @@ codec: |
             channelMap[19] = { name: "NO2", channel: 19, value: Number((o3Raw * no2Fraction).toFixed(2)), unit: "partsPerBillion" };
           }
 
-          // Differential Pressure (dm601)
           if (header & (1 << READING_V2_HAS_DP_POS)) {
             var res = readSvarint(offset);
             channelMap[22] = { name: "dm601 Differential Pressure", channel: 22, value: res.value / 10, unit: "pascals" };
@@ -295,14 +241,12 @@ codec: |
           }
 
         } else if (version === 0 || version === 1) {
-          // CO2
           if (header & (1 << READING_V01_HAS_CO2_POS)) {
             var result = readSvarint(offset);
             channelMap[1] = { name: "CO2", channel: 1, value: result.value + 464, unit: "partsPerMillion" };
             offset = result.offset;
           }
 
-          // RH/T
           if (header & (1 << READING_V01_HAS_TEMP_HUMID_POS)) {
             var result = readSvarint(offset);
             channelMap[2] = { name: "Temperature", channel: 2, value: (result.value + 230) / 10, unit: "degreesCelsius" };
@@ -313,7 +257,6 @@ codec: |
             offset = result.offset;
           }
 
-          // Ext RH/T (dm600 in V0/V1)
           if (header & (1 << READING_V01_HAS_EXT_TEMP_HUMID_POS)) {
             var result = readSvarint(offset);
             channelMap[20] = { name: "dm600 Temperature", channel: 20, value: (result.value + 230) / 10, unit: "degreesCelsius" };
@@ -324,13 +267,11 @@ codec: |
             offset = result.offset;
           }
 
-          // PIR (BinaryInput)
           if (header & (1 << READING_V01_HAS_PIR_POS)) {
             var pirValue = (header & (1 << READING_V01_PIR_VALUE_POS)) ? 1 : 0;
             channelMap[4] = { name: "PIR", channel: 4, value: pirValue, unit: null };
           }
 
-          // Light (lux)
           if (header & (1 << READING_V01_HAS_LIGHT_POS)) {
             var result = readVarint(offset);
             var red = result.value;
@@ -358,7 +299,6 @@ codec: |
             channelMap[9] = { name: "Clear", channel: 9, value: clear, unit: "luxes" };
           }
 
-          // TVOC (formula matches parser.go)
           if (header & (1 << READING_V01_HAS_TVOC_POS)) {
             var result = readVarint(offset);
             var val = Math.max(0, Math.min(500, result.value));
@@ -367,19 +307,16 @@ codec: |
             channelMap[10] = { name: "TVOC", channel: 10, value: Number(ppb.toFixed(2)), unit: "partsPerBillion" };
           }
 
-          // NOX — consumed to keep offset aligned, not exposed
           if (header & (1 << READING_V01_HAS_NOX_POS)) {
             var result = readVarint(offset);
             offset = result.offset;
           }
 
-          // TVOC raw (bit 0) — consume but hide
           if (header & (1 << READING_V01_HAS_TVOC_RAW_POS)) {
             var result = readVarint(offset);
             offset = result.offset;
           }
 
-          // PM
           if (header & (1 << READING_V01_HAS_PM_VARINT_POS)) {
             var result = readVarint(offset);
             channelMap[12] = { name: "PM2_5", channel: 12, value: result.value, unit: "microgramsPerCubicMeter" };
@@ -395,7 +332,6 @@ codec: |
             offset += 1;
           }
 
-          // V1 only: PM counts (reuses V0's POWER bit)
           if (version === 1 && (header & (1 << READING_V1_HAS_PM_COUNTS_POS))) {
             var result = readVarint(offset);
             channelMap[15] = { name: "PM_Count_0_3", channel: 15, value: result.value, unit: "noUnits" };
@@ -406,14 +342,12 @@ codec: |
             offset = result.offset;
           }
 
-          // PM1
           if (header & (1 << READING_V01_HAS_PM1_VARIANT_POS)) {
             var result = readVarint(offset);
             channelMap[14] = { name: "PM1", channel: 14, value: result.value, unit: "microgramsPerCubicMeter" };
             offset = result.offset;
           }
 
-          // Pressure (hectopascals = Pa / 100)
           if (header & (1 << READING_V01_HAS_PRESSURE_POS)) {
             var result = readSvarint(offset);
             var pressure = result.value * 10 + STANDARD_ATMOSPHERIC_PRESSURE_PA;
@@ -421,9 +355,6 @@ codec: |
             channelMap[11] = { name: "Pressure", channel: 11, value: Number((pressure / 100).toFixed(2)), unit: "hectopascals" };
           }
 
-          // V0 only: Power (3 svarints) — consumed but not exposed
-          // Mixed-version V2 firmware can emit stale V0 events here with bit 2 set,
-          // producing meaningless battery/current/MCU readings. Hide them from BACnet.
           if (version === 0 && (header & (1 << READING_V0_HAS_POWER_POS))) {
             var result = readSvarint(offset);
             offset = result.offset;
@@ -439,26 +370,22 @@ codec: |
         values.push(channelMap[channel]);
       }
     } catch (error) {
-      // Return whatever was decoded before the error
     }
 
     return values;
   }
 
   function Encode(data, variables) {
-    // This device does not support downlink commands
     var bytes = [];
     return bytes;
   }
 
-  // Standard uplink decode interface (LoRaWAN standard format)
   function decodeUplink(input) {
     return {
       data: Decode(input.fPort, input.bytes, input.variables)
     };
   }
 
-  // Standard downlink encode interface (LoRaWAN standard format)
   function encodeDownlink(input) {
     return {
       bytes: Encode(input.data, input.variables)
@@ -466,153 +393,130 @@ codec: |
   }
 
 datatype:
-  # Channel 1: CO2
   "1":
     name: CO2
     type: AnalogInputObject
     units: partsPerMillion
 
-  # Channel 2: Temperature
   "2":
     name: Temperature
     type: AnalogInputObject
     units: degreesCelsius
 
-  # Channel 3: Humidity
   "3":
     name: Humidity
     type: AnalogInputObject
     units: percentRelativeHumidity
 
-  # Channel 4: PIR (Passive Infrared Sensor)
   "4":
     name: PIR
     type: BinaryInputObject
 
-  # Channel 5: Red Light
   "5":
     name: Red Light
     type: AnalogInputObject
     units: luxes
 
-  # Channel 6: Green Light
   "6":
     name: Green Light
     type: AnalogInputObject
     units: luxes
 
-  # Channel 7: Blue Light
   "7":
     name: Blue Light
     type: AnalogInputObject
     units: luxes
 
-  # Channel 8: IR Light
   "8":
     name: IR Light
     type: AnalogInputObject
     units: luxes
 
-  # Channel 9: Clear Light
   "9":
     name: Clear Light
     type: AnalogInputObject
     units: luxes
 
-  # Channel 10: TVOC (Total Volatile Organic Compounds)
   "10":
     name: TVOC
     type: AnalogInputObject
     units: partsPerBillion
 
-  # Channel 11: Pressure
   "11":
     name: Pressure
     type: AnalogInputObject
     units: hectopascals
 
-  # Channel 12: PM2_5
   "12":
     name: PM2_5
     type: AnalogInputObject
     units: microgramsPerCubicMeter
 
-  # Channel 13: PM10
   "13":
     name: PM10
     type: AnalogInputObject
     units: microgramsPerCubicMeter
 
-  # Channel 14: PM1
   "14":
     name: PM1
     type: AnalogInputObject
     units: microgramsPerCubicMeter
 
-  # Channel 15: PM_Count_0_3 (dimensionless particle count)
   "15":
     name: PM_Count_0_3
     type: AnalogInputObject
     units: noUnits
 
-  # Channel 16: PM_Count_2_5 (dimensionless particle count)
   "16":
     name: PM_Count_2_5
     type: AnalogInputObject
     units: noUnits
 
-  # Channel 17: CO (Carbon Monoxide)
   "17":
     name: CO
     type: AnalogInputObject
     units: partsPerMillion
 
-  # Channel 18: O3 (corrected, after O3/NO2 cross-sensitivity correction)
   "18":
     name: O3
     type: AnalogInputObject
     units: partsPerBillion
 
-  # Channel 19: NO2 (corrected, after O3/NO2 cross-sensitivity correction)
   "19":
     name: NO2
     type: AnalogInputObject
     units: partsPerBillion
 
-  # Channel 20: External Temperature (dm600/dm601)
   "20":
     name: External Temperature
     type: AnalogInputObject
     units: degreesCelsius
 
-  # Channel 21: External Humidity (dm600/dm601)
   "21":
     name: External Humidity
     type: AnalogInputObject
     units: percentRelativeHumidity
 
-  # Channel 22: Differential Pressure (dm601)
   "22":
     name: Differential Pressure
     type: AnalogInputObject
     units: pascals
 
-  # Channel 23: Flow Speed Pressure (dm601)
   "23":
     name: Flow Speed Pressure
     type: AnalogInputObject
     units: pascals
 
 lorawan:
-  adrAlgorithm: LoRa Only # Optional Default: LoRa Only
-  classCDownlinkTimeout: 5 # Optional Default: 5
-  macVersion: LORAWAN_1_0_3
-  regionalParametersRevision: A # Optional Default: A
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_4
+  regionalParametersRevision: A
   supportClassB: false
-  supportClassC: false
-  supportOTAA: true # Optional Default: true
+  supportClassC: true
+  supportOTAA: true
 
-model: Sensedge-SE300
-profileVersion: 1.6.0
-vendor: Sensedge
-name: Sensedge Go SE300
+model: Kaiterra-SE-300
+profileVersion: 1.6.2
+vendor: Kaiterra
+name: Kaiterra Sensedge Go SE300
