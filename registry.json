@@ -1,7 +1,7 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-07-09",
+  "lastUpdate": "2026-07-23",
   "totalProfiles": 25,
   "profiles": [
     {
@@ -149,6 +149,22 @@
       "lastUpdate": "2026-04-24"
     },
     {
+      "id": "kaiterra-se-300",
+      "vendor": "Kaiterra",
+      "model": "Kaiterra-SE-300",
+      "version": "1.0.0",
+      "path": "profiles/Kaiterra/Kaiterra-SE300.yaml",
+      "verified": false,
+      "hasTests": false,
+      "description": "Kaiterra Kaiterra-SE-300 CO2 Sensor",
+      "deviceType": "CO2 Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "31a47ef20e68821c1be5d58d6be824ac0409b146f1386299eb7d8b8c163f2297",
+      "lastUpdate": "2026-07-23"
+    },
+    {
       "id": "milesight-em410-rdl",
       "vendor": "Milesight",
       "model": "Milesight-EM410-RDL",
@@ -227,22 +243,6 @@
       ],
       "contentSha256": "6c25300e8851d85d9f5ff8980bcc7772e63ec65b804725f22dbebe01d97a7484",
       "lastUpdate": "2026-07-07"
-    },
-    {
-      "id": "sensedge-se300",
-      "vendor": "Sensedge",
-      "model": "Sensedge-SE300",
-      "version": "1.0.0",
-      "path": "profiles/Sensedge/Sensedge-SE300.yaml",
-      "verified": false,
-      "hasTests": false,
-      "description": "Sensedge Sensedge-SE300 CO2 Sensor",
-      "deviceType": "CO2 Sensor",
-      "lorawanClass": [
-        "A"
-      ],
-      "contentSha256": "4885105c6a327efb2c6104ba28b6b2cab2916646c6b1a2df23637f6d714be225",
-      "lastUpdate": "2026-06-09"
     },
     {
       "id": "senso8-lrs10701",
@@ -410,9 +410,9 @@
       "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
+      "Kaiterra": 1,
       "Milesight": 4,
       "Moko": 1,
-      "Sensedge": 1,
       "Senso8": 9,
       "Thermokon": 1
     },
