@@ -5,6 +5,26 @@ const path = require('path');
 const yaml = require('js-yaml');
 const { WORKSPACE_ROOT } = require('./config');
 
+const CANONICAL_PROFILE_PATH = path.join(
+  WORKSPACE_ROOT,
+  'automation',
+  'examples',
+  'canonical',
+  'profiles',
+  'AutomationTest',
+  'AutomationTest-TH100.yaml'
+);
+const CANONICAL_FIXTURE_PATH = path.join(
+  WORKSPACE_ROOT,
+  'automation',
+  'examples',
+  'canonical',
+  'profiles',
+  'AutomationTest',
+  'tests',
+  'AutomationTest-TH100.test.json'
+);
+
 function tokens(value) {
   return new Set(String(value || '').toLowerCase().match(/[a-z0-9]+/g) || []);
 }
@@ -28,7 +48,7 @@ function selectReference(bacnetMapping) {
       try {
         const profile = yaml.load(fs.readFileSync(path.join(vendorPath, file), 'utf8'));
         const score = scoreProfile(profile, requestedTokens);
-        if (!best || score > best.score) {
+        if (score > 0 && (!best || score > best.score)) {
           best = {
             score,
             path: `profiles/${vendor.name}/${file}`,
@@ -44,4 +64,13 @@ function selectReference(bacnetMapping) {
   return best;
 }
 
-module.exports = { selectReference };
+function loadCanonicalExample() {
+  return {
+    profilePath: path.relative(WORKSPACE_ROOT, CANONICAL_PROFILE_PATH),
+    fixturePath: path.relative(WORKSPACE_ROOT, CANONICAL_FIXTURE_PATH),
+    profileYaml: fs.readFileSync(CANONICAL_PROFILE_PATH, 'utf8'),
+    fixture: JSON.parse(fs.readFileSync(CANONICAL_FIXTURE_PATH, 'utf8'))
+  };
+}
+
+module.exports = { selectReference, loadCanonicalExample };

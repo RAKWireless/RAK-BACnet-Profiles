@@ -18,7 +18,20 @@ function isUuid(value) {
 
 function matchingRule(name) {
   const normalized = normalize(name);
-  return mappingRules.rules.find(rule => rule.keywords.some(keyword => normalized.includes(normalize(keyword))));
+  const matches = mappingRules.rules.flatMap((rule, index) => {
+    const keywordLengths = rule.keywords
+      .map(keyword => normalize(keyword))
+      .filter(keyword => keyword && normalized.includes(keyword))
+      .map(keyword => keyword.length);
+    if (keywordLengths.length === 0) return [];
+    return [{ rule, index, keywordLength: Math.max(...keywordLengths) }];
+  });
+  matches.sort((left, right) => (
+    (right.rule.priority || 0) - (left.rule.priority || 0) ||
+    right.keywordLength - left.keywordLength ||
+    left.index - right.index
+  ));
+  return matches.length > 0 ? matches[0].rule : null;
 }
 
 function validateProfileSemantics(profile, filePath, options = {}) {

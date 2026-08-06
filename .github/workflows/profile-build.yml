@@ -95,8 +95,7 @@ jobs:
           PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
           PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
           PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
-          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          PROFILE_MODEL_TIMEOUT_MS: ${{ vars.PROFILE_MODEL_TIMEOUT_MS }}
         run: node automation/src/cli.js generate --bundle automation/.work/source-bundle.json --attempt 1 --output automation/.work/candidate-1
       - uses: actions/upload-artifact@v7
         with:
@@ -144,8 +143,7 @@ jobs:
           PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
           PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
           PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
-          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          PROFILE_MODEL_TIMEOUT_MS: ${{ vars.PROFILE_MODEL_TIMEOUT_MS }}
         run: node automation/src/cli.js repair --candidate automation/.work/candidate-1 --report automation/.work/validation-1/combined.json --attempt 2 --output automation/.work/candidate-2
       - uses: actions/upload-artifact@v7
         with:
@@ -194,8 +192,7 @@ jobs:
           PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
           PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
           PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
-          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          PROFILE_MODEL_TIMEOUT_MS: ${{ vars.PROFILE_MODEL_TIMEOUT_MS }}
         run: node automation/src/cli.js repair --candidate automation/.work/candidate-2 --report automation/.work/validation-2/combined.json --attempt 3 --output automation/.work/candidate-3
       - uses: actions/upload-artifact@v7
         with:

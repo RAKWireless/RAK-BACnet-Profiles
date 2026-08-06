@@ -209,10 +209,13 @@ async function commandCandidateMetadata(args) {
 
 async function commandBlockedReport(args) {
   const manifest = readJson(path.join(path.resolve(args.candidate), 'manifest.json'));
+  const stage = ['intake', 'source', 'evidence', 'generation', 'repair', 'normalization', 'review'].includes(manifest.stage)
+    ? manifest.stage
+    : (manifest.status === 'evidence-blocked' ? 'evidence' : 'generation');
   writeJson(args.output, {
     valid: false,
     checks: {
-      evidence: {
+      [stage]: {
         valid: false,
         errors: [manifest.reason || 'Candidate is not publishable', ...(manifest.details || [])],
         warnings: []

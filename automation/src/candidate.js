@@ -7,9 +7,12 @@ const yaml = require('js-yaml');
 const { completeJson } = require('./model-client');
 const { loadPrompt } = require('./prompt-loader');
 const { buildEvidence } = require('./evidence');
-const { selectReference } = require('./reference-selector');
+const { selectReference, loadCanonicalExample } = require('./reference-selector');
 const { normalizeHex } = require('./issue-parser');
 const { writeJson, writeText } = require('./io');
+const { compileCodec } = require('../../scripts/lib/codec-sandbox');
+
+const REQUIRED_CODEC_FUNCTIONS = ['Decode', 'decodeUplink'];
 
 function outputPaths(outputDir, intake) {
   const relativeProfile = path.join('profiles', intake.vendor, `${intake.profileName}.yaml`);
@@ -35,11 +38,71 @@ function profileIdentity(intake, previousProfile) {
   };
 }
 
+function normalizeCodecSource(value) {
+  let source = String(value || '').trim();
+  source = source
+    .replace(/^```(?:javascript|js)?\s*(?:\r?\n)?/i, '')
+    .replace(/(?:\r?\n)?```\s*$/i, '')
+    .trim();
+  source = source
+    .replace(/^(?:javascript|js)\s+(?=function\b)/i, '')
+    .trim();
+  return source;
+}
+
+function validateCodecPreflight(codec) {
+  const errors = [];
+  if (!codec) errors.push('codec is empty');
+  if (/```/.test(codec)) errors.push('codec contains a Markdown code fence');
+  for (const functionName of REQUIRED_CODEC_FUNCTIONS) {
+    const declaration = new RegExp(`\\bfunction\\s+${functionName}\\s*\\(`);
+    if (!declaration.test(codec)) errors.push(`codec must declare function ${functionName}`);
+  }
+  if (errors.length === 0) {
+    try {
+      compileCodec(codec);
+    } catch (error) {
+      errors.push(`codec does not compile: ${error.message}`);
+    }
+  }
+  return { valid: errors.length === 0, errors, requiredFunctions: REQUIRED_CODEC_FUNCTIONS };
+}
+
+function candidatePreflight(profileYaml) {
+  const profile = yaml.load(profileYaml);
+  const codec = validateCodecPreflight(profile && profile.codec);
+  return {
+    valid: codec.valid,
+    checks: {
+      codec,
+      rootKeys: profile && typeof profile === 'object' ? Object.keys(profile) : [],
+      datatypeChannels: profile && profile.datatype ? Object.keys(profile.datatype).length : 0
+    }
+  };
+}
+
+async function runStage(stage, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!error.stage) error.stage = stage;
+    throw error;
+  }
+}
+
 function normalizeProfileYaml(rawYaml, intake, previousProfile = null) {
   const parsed = yaml.load(String(rawYaml || ''));
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Generated profileYaml must contain one YAML object');
   if (typeof parsed.codec !== 'string') throw new Error('Generated profileYaml is missing a codec string');
   if (!parsed.datatype || typeof parsed.datatype !== 'object') throw new Error('Generated profileYaml is missing datatype mappings');
+
+  const codec = normalizeCodecSource(parsed.codec);
+  const codecPreflight = validateCodecPreflight(codec);
+  if (!codecPreflight.valid) {
+    const error = new Error(`Generated codec preflight failed: ${codecPreflight.errors.join('; ')}`);
+    error.code = 'INVALID_GENERATED_CODEC';
+    throw error;
+  }
 
   const lorawan = {
     adrAlgorithm: 'LoRa Only',
@@ -52,7 +115,7 @@ function normalizeProfileYaml(rawYaml, intake, previousProfile = null) {
     supportClassC: /Class C/i.test(intake.lorawanClass)
   };
   const ordered = {
-    codec: parsed.codec,
+    codec,
     datatype: parsed.datatype,
     lorawan,
     ...profileIdentity(intake, previousProfile)
@@ -115,6 +178,7 @@ function generationUserContent(context) {
     officialDocument: { ...context.source, text: context.source.text },
     evidence: context.evidence,
     mappingReference: context.reference,
+    canonicalExample: context.canonicalExample,
     authorizedMaintainerFeedback: context.feedback || ''
   });
 }
@@ -123,7 +187,7 @@ async function generateRawCandidate(model, context) {
   return completeJson(model, [
     { role: 'system', content: loadPrompt('generate-profile') },
     { role: 'user', content: generationUserContent(context) }
-  ]);
+  ], { maxTokens: 12000 });
 }
 
 async function repairRawCandidate(model, context, previous, validationReport, feedback) {
@@ -135,13 +199,15 @@ async function repairRawCandidate(model, context, previous, validationReport, fe
         evidence: context.evidence,
         issue: context.intake,
         officialDocument: context.source,
+        mappingReference: context.reference,
+        canonicalExample: context.canonicalExample || loadCanonicalExample(),
         previousProfileYaml: previous.profileYaml,
         previousFixture: previous.fixture,
         validationReport,
         authorizedMaintainerFeedback: feedback || ''
       })
     }
-  ]);
+  ], { maxTokens: 12000 });
 }
 
 function normalizeReview(value) {
@@ -169,17 +235,18 @@ async function reviewCandidate(models, context, profileYaml, fixture) {
     officialDocument: context.source,
     evidence: context.evidence,
     profileYaml,
-    fixture
+    fixture,
+    machinePreflight: candidatePreflight(profileYaml)
   });
   const reviewerModel = models.secondary || models.primary;
   const review = normalizeReview(await completeJson(reviewerModel, [
     { role: 'system', content: loadPrompt('review-profile') },
     { role: 'user', content: payload }
-  ]));
+  ], { maxTokens: 6000 }));
   const adversarial = normalizeReview(await completeJson(models.primary, [
     { role: 'system', content: loadPrompt('adversarial-review') },
     { role: 'user', content: payload }
-  ]));
+  ], { maxTokens: 6000 }));
   return { review, adversarial, approved: review.approved && adversarial.approved };
 }
 
@@ -241,12 +308,18 @@ function writeGenerationError(outputDir, intake, source, attempt, error) {
   };
   const paths = outputPaths(outputDir, pathIntake);
   const nonRetryableCodes = new Set(['OCR_UNSUPPORTED', 'INTAKE_NOT_READY', 'SOURCE_UNAVAILABLE']);
+  const stage = error.stage || (
+    error.code === 'INTAKE_NOT_READY'
+      ? 'intake'
+      : (error.code === 'OCR_UNSUPPORTED' || error.code === 'SOURCE_UNAVAILABLE' ? 'source' : 'generation')
+  );
   const manifest = {
     issueNumber: intake.issueNumber,
     attempt,
     status: 'generation-error',
     retryable: !nonRetryableCodes.has(error.code),
     code: error.code || null,
+    stage,
     reason: error.message,
     details: [],
     generatedAt: new Date().toISOString()
@@ -263,13 +336,14 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
   if (previous) {
     context = previous.context;
   } else {
-    const evidenceResult = await buildEvidence(models, intake, source);
+    const evidenceResult = await runStage('evidence', () => buildEvidence(models, intake, source));
     context = {
       intake,
       source,
       evidence: evidenceResult.consolidated,
       evidenceReviews: evidenceResult.extractions,
       reference: selectReference(intake.bacnetMapping),
+      canonicalExample: loadCanonicalExample(),
       feedback
     };
     if (!evidenceResult.approved || !evidenceResult.consolidated) {
@@ -277,13 +351,15 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
     }
   }
 
-  const raw = previous
-    ? await repairRawCandidate(models.primary, context, previous, validationReport, feedback)
-    : await generateRawCandidate(models.primary, context);
+  const raw = await runStage(previous ? 'repair' : 'generation', () => (
+    previous
+      ? repairRawCandidate(models.primary, context, previous, validationReport, feedback)
+      : generateRawCandidate(models.primary, context)
+  ));
   const previousProfile = previous ? yaml.load(previous.profileYaml) : null;
-  const profileYaml = normalizeProfileYaml(raw.profileYaml, context.intake, previousProfile);
-  const fixture = normalizeFixture(raw.fixture, context.intake, context.evidence, reviewMode, context.source);
-  const reviews = await reviewCandidate(models, context, profileYaml, fixture);
+  const profileYaml = await runStage('normalization', () => normalizeProfileYaml(raw.profileYaml, context.intake, previousProfile));
+  const fixture = await runStage('normalization', () => normalizeFixture(raw.fixture, context.intake, context.evidence, reviewMode, context.source));
+  const reviews = await runStage('review', () => reviewCandidate(models, context, profileYaml, fixture));
   const paths = outputPaths(outputDir, context.intake);
   const manifest = {
     issueNumber: context.intake.issueNumber,
@@ -315,4 +391,15 @@ function readCandidate(candidateDir) {
   return { manifest, context, profileYaml, fixture };
 }
 
-module.exports = { buildCandidate, readCandidate, outputPaths, normalizeProfileYaml, normalizeFixture, buildReviewMarkdown, writeGenerationError };
+module.exports = {
+  buildCandidate,
+  readCandidate,
+  outputPaths,
+  normalizeCodecSource,
+  validateCodecPreflight,
+  candidatePreflight,
+  normalizeProfileYaml,
+  normalizeFixture,
+  buildReviewMarkdown,
+  writeGenerationError
+};

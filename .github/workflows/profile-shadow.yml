@@ -82,8 +82,7 @@ jobs:
           PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
           PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
           PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
-          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          PROFILE_MODEL_TIMEOUT_MS: ${{ vars.PROFILE_MODEL_TIMEOUT_MS }}
         run: node automation/src/cli.js generate --bundle automation/.work/shadow-${{ matrix.issue_number }}/source-bundle.json --attempt 1 --output automation/.work/shadow-${{ matrix.issue_number }}/candidate-1
       - name: Read attempt 1 metadata
         if: steps.intake.outputs.eligible == 'true'

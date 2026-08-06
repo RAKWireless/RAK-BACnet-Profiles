@@ -74,7 +74,7 @@ async function extractEvidence(model, intake, source) {
   const value = await completeJson(model, [
     { role: 'system', content: loadPrompt('extract-evidence') },
     { role: 'user', content: JSON.stringify(evidencePayload(intake, source)) }
-  ]);
+  ], { maxTokens: 8000 });
   return normalizeEvidence(value);
 }
 
@@ -92,7 +92,7 @@ async function buildEvidence(models, intake, source) {
   const reconciliation = await completeJson(models.primary, [
     { role: 'system', content: loadPrompt('reconcile-evidence') },
     { role: 'user', content: JSON.stringify({ source: evidencePayload(intake, source), primary, secondary }) }
-  ]);
+  ], { maxTokens: 6000 });
   const consolidated = reconciliation.consolidated ? normalizeEvidence(reconciliation.consolidated) : null;
   const consolidatedAmbiguities = consolidated ? validateEvidence(consolidated, intake) : ['Evidence reconciliation did not return a consolidated protocol'];
   const conflicts = [

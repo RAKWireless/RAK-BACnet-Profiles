@@ -13,10 +13,20 @@ const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
 const { validateProfileSemantics } = require('./lib/validation/profile-semantics');
 const { validateTestFixture } = require('./lib/validation/test-fixture');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
-const { buildCandidate, readCandidate, normalizeFixture } = require('../automation/src/candidate');
+const {
+  buildCandidate,
+  readCandidate,
+  normalizeProfileYaml,
+  normalizeFixture,
+  candidatePreflight,
+  writeGenerationError
+} = require('../automation/src/candidate');
 const { validateEvidence } = require('../automation/src/evidence');
 const { GitHubClient } = require('../automation/src/github-client');
 const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
+const { modelConfiguration } = require('../automation/src/config');
+const { loadCanonicalExample } = require('../automation/src/reference-selector');
+const { DEFAULT_TIMEOUT_MS, completeJson, isRetryableStatus } = require('../automation/src/model-client');
 const { validateRequestedMapping } = require('./lib/validation/requested-mapping');
 const { getModelsWithTests } = require('./update-registry');
 
@@ -126,7 +136,7 @@ function testNetworkBoundaryRules() {
   assert.equal(isPrivateAddress('8.8.8.8'), false);
 }
 
-function testPinnedDnsLookupSupportsNode20() {
+function testPinnedDnsLookupSupportsModernNode() {
   const lookup = createPinnedLookup({ address: '203.0.113.10', family: 4 });
   let allResult;
   lookup('example.com', { all: true }, (error, addresses) => {
@@ -140,6 +150,43 @@ function testPinnedDnsLookupSupportsNode20() {
     singleResult = { error, address, family };
   });
   assert.deepEqual(singleResult, { error: null, address: '203.0.113.10', family: 4 });
+}
+
+function testUnifiedModelConfiguration() {
+  const environmentNames = [
+    'PROFILE_MODEL_1_API_KEY',
+    'PROFILE_MODEL_1_BASE_URL',
+    'PROFILE_MODEL_1_NAME',
+    'PROFILE_MODEL_2_API_KEY',
+    'PROFILE_MODEL_2_BASE_URL',
+    'PROFILE_MODEL_2_NAME'
+  ];
+  const original = Object.fromEntries(environmentNames.map(name => [name, process.env[name]]));
+  try {
+    for (const name of environmentNames) delete process.env[name];
+    assert.throws(() => modelConfiguration(), /No primary model configured/);
+
+    process.env.PROFILE_MODEL_1_API_KEY = 'primary-key';
+    process.env.PROFILE_MODEL_1_BASE_URL = 'https://models.example.test/v1/';
+    process.env.PROFILE_MODEL_1_NAME = 'test-model';
+    assert.deepEqual(modelConfiguration(), {
+      primary: {
+        apiKey: 'primary-key',
+        name: 'test-model',
+        baseUrl: 'https://models.example.test/v1',
+        label: 'profile_model_1:test-model'
+      },
+      secondary: null
+    });
+
+    process.env.PROFILE_MODEL_2_API_KEY = 'incomplete-secondary-key';
+    assert.throws(() => modelConfiguration(), /PROFILE_MODEL_2 configuration is incomplete/);
+  } finally {
+    for (const name of environmentNames) {
+      if (original[name] === undefined) delete process.env[name];
+      else process.env[name] = original[name];
+    }
+  }
 }
 
 function testRegistryUsesCommittedFixtureFormatOnly() {
@@ -251,12 +298,107 @@ function testEvidenceGates() {
 function testRequestedBacnetMapping() {
   const profile = {
     datatype: {
-      '1': { name: 'Temperature', type: 'AnalogInputObject', units: 'degreesCelsius' }
+      '1': { name: 'Temperature', type: 'AnalogInputObject', units: 'degreesCelsius' },
+      '2': { name: 'High Temperature Alarm', type: 'BinaryInputObject' },
+      '3': { name: 'Low Battery Alarm', type: 'BinaryInputObject' }
     }
   };
   assert.equal(validateRequestedMapping(profile, '- Temperature → AnalogInputObject (degreesCelsius)').valid, true);
+  assert.equal(validateRequestedMapping(profile, '- High Temperature Alarm → BinaryInputObject').valid, true);
+  assert.equal(validateRequestedMapping(profile, '- Low Battery Alarm → BinaryInputObject').valid, true);
   assert.equal(validateRequestedMapping(profile, '- Temperature → BinaryInputObject').valid, false);
   assert.equal(validateRequestedMapping(profile, '- Humidity → AnalogInputObject (percent)').valid, false);
+}
+
+function testAlarmSemanticRulePrecedence() {
+  const profile = {
+    codec: SAFE_CODEC,
+    datatype: {
+      '1': { name: 'Temperature', type: 'AnalogInputObject', units: 'degreesCelsius' },
+      '2': { name: 'High Temperature Alarm', type: 'BinaryInputObject' },
+      '3': { name: 'Low Battery Alarm', type: 'BinaryInputObject' },
+      '4': { name: 'Humidity High Alert', type: 'BinaryInputObject' }
+    },
+    vendor: 'Acme',
+    name: 'T100'
+  };
+  assert.deepEqual(validateProfileSemantics(profile, null, { strict: false }).errors, []);
+}
+
+function testCanonicalAutomationExample() {
+  const example = loadCanonicalExample();
+  assert.match(example.profileYaml, /function Decode\(/);
+  assert.match(example.profileYaml, /function decodeUplink\(/);
+  assert.equal(example.fixture.profile, 'AutomationTest-TH100');
+  assert.equal(runGeneratedProfileCI(
+    path.join(__dirname, '..', example.profilePath),
+    path.join(__dirname, '..', example.fixturePath)
+  ).valid, true);
+}
+
+function testGeneratedCodecNormalization() {
+  const intake = parseIssue(syntheticIssue(), { allowExisting: true });
+  const rawProfile = {
+    codec: `javascript\n${SAFE_CODEC}`,
+    datatype: { '1': { name: 'Temperature', type: 'AnalogInputObject', units: 'degreesCelsius' } },
+    lorawan: {}
+  };
+  const normalized = normalizeProfileYaml(yaml.dump(rawProfile, { lineWidth: -1 }), intake);
+  const profile = yaml.load(normalized);
+  assert.match(profile.codec, /^function Decode\(/);
+  assert.equal(candidatePreflight(normalized).valid, true);
+
+  rawProfile.codec = `\`\`\`javascript\n${SAFE_CODEC}\n\`\`\``;
+  const fenced = yaml.load(normalizeProfileYaml(yaml.dump(rawProfile, { lineWidth: -1 }), intake));
+  assert.equal(fenced.codec.includes('```'), false);
+
+  rawProfile.codec = 'javascript';
+  assert.throws(
+    () => normalizeProfileYaml(yaml.dump(rawProfile, { lineWidth: -1 }), intake),
+    /Generated codec preflight failed/
+  );
+}
+
+function testGenerationErrorStageReporting() {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rak-profile-error-'));
+  const intake = parseIssue(syntheticIssue(), { allowExisting: true });
+  const error = new Error('Generated codec preflight failed');
+  error.code = 'INVALID_GENERATED_CODEC';
+  error.stage = 'normalization';
+  const manifest = writeGenerationError(outputDir, intake, null, 1, error);
+  assert.equal(manifest.stage, 'normalization');
+  assert.equal(manifest.retryable, true);
+}
+
+async function testTransientModelRequestRetry() {
+  let requests = 0;
+  const server = http.createServer((request, response) => {
+    requests += 1;
+    if (requests === 1) {
+      response.writeHead(429, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ error: 'rate limited' }));
+      return;
+    }
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    const result = await completeJson(
+      { apiKey: 'test', name: 'mock', baseUrl: `http://127.0.0.1:${address.port}`, label: 'mock:model' },
+      [{ role: 'user', content: 'test' }],
+      { maxRetries: 1, retryDelayMs: 0, timeoutMs: 1000 }
+    );
+    assert.deepEqual(result, { ok: true });
+    assert.equal(requests, 2);
+    assert.equal(DEFAULT_TIMEOUT_MS, 300000);
+    assert.equal(isRetryableStatus(429), true);
+    assert.equal(isRetryableStatus(503), true);
+    assert.equal(isRetryableStatus(400), false);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 }
 
 function testGeneratedProfileContract() {
@@ -377,6 +519,7 @@ async function testEndToEndCandidateBuild() {
     const candidate = readCandidate(outputDir);
     assert.equal(candidate.fixture.reviewMode, 'single-model');
     assert.equal(candidate.fixture.evidenceLevel, 'known-answer');
+    assert.match(candidate.context.canonicalExample.profileYaml, /function decodeUplink\(/);
     assert.equal(runGeneratedProfileCI(path.join(outputDir, manifest.profilePath), path.join(outputDir, manifest.fixturePath)).valid, true);
   });
 }
@@ -386,14 +529,20 @@ async function main() {
   testPiiScrubbingDoesNotCorruptPayloads();
   testSafetyRules();
   testNetworkBoundaryRules();
-  testPinnedDnsLookupSupportsNode20();
+  testPinnedDnsLookupSupportsModernNode();
+  testUnifiedModelConfiguration();
   testRegistryUsesCommittedFixtureFormatOnly();
   await testStateLabelsReplacePreviousState();
   testIntakeDirectlyStartsBuild();
   testScriptLayout();
   testEvidenceGates();
   testRequestedBacnetMapping();
+  testAlarmSemanticRulePrecedence();
+  testCanonicalAutomationExample();
+  testGeneratedCodecNormalization();
+  testGenerationErrorStageReporting();
   testGeneratedProfileContract();
+  await testTransientModelRequestRetry();
   await testEndToEndCandidateBuild();
   console.log('Profile Automation tests: PASS');
 }

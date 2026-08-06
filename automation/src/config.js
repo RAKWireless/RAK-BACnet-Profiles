@@ -25,21 +25,8 @@ function configuredModel(index) {
     };
   }
 
-  if (index === 1 && process.env.QWEN_API_KEY) {
-    return {
-      apiKey: process.env.QWEN_API_KEY,
-      name: process.env.QWEN_MODEL || 'qwen-plus',
-      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-      label: `qwen:${process.env.QWEN_MODEL || 'qwen-plus'}`
-    };
-  }
-  if (index === 2 && process.env.DEEPSEEK_API_KEY) {
-    return {
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      name: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
-      label: `deepseek:${process.env.DEEPSEEK_MODEL || 'deepseek-chat'}`
-    };
+  if (explicitKey || explicitName || explicitBaseUrl) {
+    throw new Error(`${prefix} configuration is incomplete. Set ${prefix}_API_KEY, ${prefix}_BASE_URL, and ${prefix}_NAME together.`);
   }
   return null;
 }
@@ -47,7 +34,7 @@ function configuredModel(index) {
 function modelConfiguration() {
   const primary = configuredModel(1);
   if (!primary) {
-    throw new Error('No primary model configured. Set PROFILE_MODEL_1_* or QWEN_API_KEY.');
+    throw new Error('No primary model configured. Set PROFILE_MODEL_1_API_KEY, PROFILE_MODEL_1_BASE_URL, and PROFILE_MODEL_1_NAME.');
   }
   return { primary, secondary: configuredModel(2) };
 }

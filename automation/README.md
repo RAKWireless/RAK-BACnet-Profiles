@@ -14,6 +14,8 @@ Profile Automation turns a complete GitHub Profile Request into an uplink-only D
 
 The official document is downloaded and parsed in a separate job that has no model-provider secrets. Generated codec code is executed only in the isolated validation job.
 
+Generation receives the complete, machine-validated uplink-only Profile and fixture under `automation/examples/canonical/` as its structural reference. It also receives the closest historical Profile's BACnet datatype and LoRaWAN metadata as a mapping reference; legacy codec code is intentionally not copied.
+
 ## Scope
 
 - New Profiles only.
@@ -34,7 +36,9 @@ Configure one primary OpenAI-compatible model:
 
 An optional independent reviewer uses `PROFILE_MODEL_2_API_KEY`, `PROFILE_MODEL_2_BASE_URL`, and `PROFILE_MODEL_2_NAME`.
 
-For compatibility, `QWEN_API_KEY` defaults to `qwen-plus`, and `DEEPSEEK_API_KEY` defaults to `deepseek-chat` as the second model.
+Each configured model must provide all three values. If the optional second model is omitted, the primary model performs both generation and review.
+
+Model requests time out after 300 seconds and retry transient timeouts, HTTP 429, and HTTP 5xx responses up to two times. Set the optional repository variable `PROFILE_MODEL_TIMEOUT_MS` to override the per-request timeout in milliseconds.
 
 Optional repository variable `PROFILE_APPROVERS` is a comma-separated GitHub login allowlist for automated `Request changes` handling. If omitted, collaborators with write, maintain, or admin permission are accepted.
 

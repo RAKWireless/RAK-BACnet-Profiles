@@ -26,7 +26,7 @@ function findDatatypeEntry(profile, requestedName) {
   return Object.values(profile.datatype || {}).find(config => {
     if (!config || typeof config !== 'object') return false;
     const actual = normalize(config.name);
-    return Boolean(actual && requested && (actual === requested || actual.includes(requested) || requested.includes(actual)));
+    return Boolean(actual && requested && actual === requested);
   });
 }
 
