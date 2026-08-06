@@ -1,0 +1,76 @@
+Automation Test AQ200 Uplink Protocol
+Document version: 1.0
+
+This document describes a fictional indoor air-quality device used only to test the RAK BACnet Profile Automation workflow. It is not a commercial product specification.
+
+Device identity
+
+- Vendor: AutomationTest
+- Model: AQ200
+- LoRaWAN class: Class A
+- LoRaWAN MAC version: 1.0.3
+- Supported direction: uplink only
+- Uplink fPort: 12
+
+Payload format
+
+Every uplink payload is exactly 9 bytes long. Multi-byte integers use big-endian byte order.
+
+| Byte offset | Length | Field | Encoding |
+| 0 | 1 | Message type | Unsigned integer. The supported value is 0xA1. |
+| 1 | 2 | CO2 concentration | Unsigned 16-bit integer in parts per million. |
+| 3 | 2 | Temperature | Signed 16-bit integer. Divide the raw value by 100 to obtain degrees Celsius. |
+| 5 | 2 | Relative humidity | Unsigned 16-bit integer. Divide the raw value by 100 to obtain percent. |
+| 7 | 1 | Battery level | Unsigned integer from 0 through 100 percent. |
+| 8 | 1 | Status flags | Bit 0 is occupancy. Bit 1 is sensor fault. Other bits are reserved and must be ignored. |
+
+Decoder behavior
+
+- A payload on any fPort other than 12 is unsupported and must return no BACnet values.
+- A payload shorter or longer than 9 bytes is invalid and must return no BACnet values.
+- A message type other than 0xA1 is unsupported and must return no BACnet values.
+- Occupancy and Sensor Fault values are 1 when the corresponding bit is set and 0 otherwise.
+
+BACnet output fields
+
+1. CO2: AnalogInputObject, unit partsPerMillion.
+2. Temperature: AnalogInputObject, unit degreesCelsius.
+3. Humidity: AnalogInputObject, unit percent.
+4. Battery Level: AnalogInputObject, unit percent.
+5. Occupancy: BinaryInputObject, no unit.
+6. Sensor Fault: BinaryInputObject, no unit.
+
+Known-answer examples
+
+Example 1
+
+- fPort: 12
+- Payload: A1 01 F4 08 FC 11 94 5C 01
+- CO2: 500 partsPerMillion
+- Temperature: 23.00 degreesCelsius
+- Humidity: 45.00 percent
+- Battery Level: 92 percent
+- Occupancy: 1
+- Sensor Fault: 0
+
+Example 2
+
+- fPort: 12
+- Payload: A1 04 B0 FF 38 1B 58 14 02
+- CO2: 1200 partsPerMillion
+- Temperature: -2.00 degreesCelsius
+- Humidity: 70.00 percent
+- Battery Level: 20 percent
+- Occupancy: 0
+- Sensor Fault: 1
+
+Example 3
+
+- fPort: 12
+- Payload: A1 02 EE 0C 80 0D AC 50 00
+- CO2: 750 partsPerMillion
+- Temperature: 32.00 degreesCelsius
+- Humidity: 35.00 percent
+- Battery Level: 80 percent
+- Occupancy: 0
+- Sensor Fault: 0
