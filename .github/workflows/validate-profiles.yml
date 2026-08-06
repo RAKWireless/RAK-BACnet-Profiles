@@ -1,0 +1,58 @@
+name: Validate BACnet Profiles
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'profiles/**'
+      - 'scripts/**'
+      - 'automation/**'
+      - '.github/workflows/profile-*.yml'
+      - '.github/workflows/validate-profiles.yml'
+      - 'Dockerfile'
+      - 'registry.json'
+      - 'registry-schema.json'
+  push:
+    branches: [main]
+    paths:
+      - 'profiles/**'
+      - 'scripts/**'
+      - 'automation/**'
+      - 'registry.json'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install validation dependencies
+        run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+
+      - name: Test Profile Automation
+        run: node scripts/test-profile-automation.js
+
+      - name: Validate all profile YAML files
+        run: node scripts/validate-all.js
+
+      - name: Validate committed Profile Automation fixtures
+        run: node scripts/validate-committed-fixtures.js
+
+      - name: Validate registry
+        run: node scripts/validate-registry.js
+
+      - name: Verify registry is generated
+        run: |
+          node scripts/update-registry.js
+          git diff --exit-code -- registry.json

@@ -42,7 +42,8 @@ RAK-BACnet-Profiles/
 ├── scripts/                   # Validation scripts
 │   ├── validate-profile.js    # Profile validator
 │   ├── test-codec.js          # Codec tester
-│   └── utils/                 # Utilities
+│   ├── lib/                   # Internal JavaScript modules
+│   └── schemas/               # Validation schemas and mapping rules
 ├── docs/                      # Documentation
 ├── .github/                   # GitHub templates
 ├── registry.json              # Profile registry 🆕
@@ -241,6 +242,8 @@ Downlink data sent (LoRaWAN)
 
 Contributions of new device configuration files are welcome!
 
+Complete uplink-only requests can be processed by [Profile Automation](automation/README.md). The automation creates a Draft PR with an evidence report and committed per-profile test fixture; a CODEOWNER must still approve and merge it.
+
 ### Adding New Device Profiles
 
 1. **Fork this repository**
@@ -265,9 +268,8 @@ Contributions of new device configuration files are welcome!
    # Create test directory
    mkdir -p profiles/YourVendor/tests
    
-   # Add test input data
-   # Create profiles/YourVendor/tests/test-data.json
-   # Create profiles/YourVendor/tests/expected-output.json
+   # Add one committed fixture per Profile
+   # Create profiles/YourVendor/tests/YourVendor-Model.test.json
    ```
    
    Run validation:
@@ -277,7 +279,7 @@ Contributions of new device configuration files are welcome!
    cd scripts && npm install && cd ..
    
    # Run full validation (including output verification)
-   node scripts/validate-profile.js profiles/YourVendor/YourVendor-Model.yaml
+   node scripts/run-profile-ci.js profiles/YourVendor/YourVendor-Model.yaml
    ```
    
    Ensure all tests pass:

@@ -1,0 +1,56 @@
+name: Profile Automation - Review Changes
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: profile-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      authorized: ${{ steps.authorization.outputs.authorized }}
+      issue_number: ${{ steps.authorization.outputs.issue_number }}
+      feedback: ${{ steps.authorization.outputs.feedback }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Profile Automation dependencies
+        run: npm ci --prefix automation --omit=dev --ignore-scripts
+
+      - name: Authorize requested changes
+        id: authorization
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PROFILE_APPROVERS: ${{ vars.PROFILE_APPROVERS }}
+        run: node automation/src/cli.js authorize-review --event "$GITHUB_EVENT_PATH"
+
+  rebuild:
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    uses: ./.github/workflows/profile-build.yml
+    with:
+      issue_number: ${{ fromJSON(needs.authorize.outputs.issue_number) }}
+      feedback: ${{ needs.authorize.outputs.feedback }}
+    secrets: inherit

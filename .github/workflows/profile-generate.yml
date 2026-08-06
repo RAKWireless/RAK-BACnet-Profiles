@@ -1,0 +1,24 @@
+name: Profile Automation - Generate
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: profile-author-${{ github.event.issue.user.login }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.label.name == 'profile:ready'
+    uses: ./.github/workflows/profile-build.yml
+    with:
+      issue_number: ${{ github.event.issue.number }}
+      feedback: ''
+    secrets: inherit

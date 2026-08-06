@@ -95,6 +95,16 @@ function getModelsWithTests(vendorDir) {
   const modelsWithTests = new Set();
   
   if (fs.existsSync(testsDir)) {
+    for (const file of fs.readdirSync(testsDir).filter(name => name.endsWith('.test.json'))) {
+      try {
+        const fixture = JSON.parse(fs.readFileSync(path.join(testsDir, file), 'utf8'));
+        const fixtureProfile = fixture.profile || file.replace(/\.test\.json$/, '');
+        modelsWithTests.add(normalizeModelName(fixtureProfile));
+      } catch (error) {
+        console.warn(`⚠️  Warning: Failed to parse profile fixture: ${path.join(testsDir, file)}`);
+      }
+    }
+
     const testDataFile = path.join(testsDir, 'test-data.json');
     const expectedOutputFile = path.join(testsDir, 'expected-output.json');
     

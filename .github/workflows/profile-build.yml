@@ -1,0 +1,343 @@
+name: Profile Automation - Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: number
+      feedback:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: profile-build-${{ inputs.issue_number }}
+  cancel-in-progress: true
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Mark generation started
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --state generating
+
+  collect:
+    needs: start
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Download and extract the official document without model secrets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js collect-source --issue-number "${{ inputs.issue_number }}" --output automation/.work/source-bundle.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-bundle
+          path: automation/.work/source-bundle.json
+          retention-days: 7
+
+  generate_1:
+    needs: collect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: source-bundle
+          path: automation/.work
+      - name: Generate candidate
+        env:
+          PROFILE_REVIEW_FEEDBACK: ${{ inputs.feedback }}
+          PROFILE_MODEL_1_API_KEY: ${{ secrets.PROFILE_MODEL_1_API_KEY }}
+          PROFILE_MODEL_1_BASE_URL: ${{ vars.PROFILE_MODEL_1_BASE_URL }}
+          PROFILE_MODEL_1_NAME: ${{ vars.PROFILE_MODEL_1_NAME }}
+          PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
+          PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
+          PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: node automation/src/cli.js generate --bundle automation/.work/source-bundle.json --attempt 1 --output automation/.work/candidate-1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-1
+          path: automation/.work/candidate-1
+          retention-days: 7
+
+  validate_1:
+    needs: generate_1
+    uses: ./.github/workflows/profile-validate-candidate.yml
+    with:
+      candidate_artifact: candidate-1
+      candidate_directory: candidate-1
+      attempt: 1
+
+  generate_2:
+    needs: validate_1
+    if: needs.validate_1.outputs.valid != 'true' && needs.validate_1.outputs.retryable == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-1
+          path: automation/.work/candidate-1
+      - uses: actions/download-artifact@v4
+        with:
+          name: validation-1
+          path: automation/.work/validation-1
+      - name: Repair candidate
+        env:
+          PROFILE_REVIEW_FEEDBACK: ${{ inputs.feedback }}
+          PROFILE_MODEL_1_API_KEY: ${{ secrets.PROFILE_MODEL_1_API_KEY }}
+          PROFILE_MODEL_1_BASE_URL: ${{ vars.PROFILE_MODEL_1_BASE_URL }}
+          PROFILE_MODEL_1_NAME: ${{ vars.PROFILE_MODEL_1_NAME }}
+          PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
+          PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
+          PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: node automation/src/cli.js repair --candidate automation/.work/candidate-1 --report automation/.work/validation-1/combined.json --attempt 2 --output automation/.work/candidate-2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-2
+          path: automation/.work/candidate-2
+          retention-days: 7
+
+  validate_2:
+    needs: generate_2
+    if: needs.generate_2.result == 'success'
+    uses: ./.github/workflows/profile-validate-candidate.yml
+    with:
+      candidate_artifact: candidate-2
+      candidate_directory: candidate-2
+      attempt: 2
+
+  generate_3:
+    needs: validate_2
+    if: needs.validate_2.outputs.valid != 'true' && needs.validate_2.outputs.retryable == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-2
+          path: automation/.work/candidate-2
+      - uses: actions/download-artifact@v4
+        with:
+          name: validation-2
+          path: automation/.work/validation-2
+      - name: Repair candidate
+        env:
+          PROFILE_REVIEW_FEEDBACK: ${{ inputs.feedback }}
+          PROFILE_MODEL_1_API_KEY: ${{ secrets.PROFILE_MODEL_1_API_KEY }}
+          PROFILE_MODEL_1_BASE_URL: ${{ vars.PROFILE_MODEL_1_BASE_URL }}
+          PROFILE_MODEL_1_NAME: ${{ vars.PROFILE_MODEL_1_NAME }}
+          PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
+          PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
+          PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: node automation/src/cli.js repair --candidate automation/.work/candidate-2 --report automation/.work/validation-2/combined.json --attempt 3 --output automation/.work/candidate-3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-3
+          path: automation/.work/candidate-3
+          retention-days: 7
+
+  validate_3:
+    needs: generate_3
+    if: needs.generate_3.result == 'success'
+    uses: ./.github/workflows/profile-validate-candidate.yml
+    with:
+      candidate_artifact: candidate-3
+      candidate_directory: candidate-3
+      attempt: 3
+
+  publish:
+    needs: [validate_1, validate_2, validate_3]
+    if: always() && (needs.validate_1.outputs.valid == 'true' || needs.validate_2.outputs.valid == 'true' || needs.validate_3.outputs.valid == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+      - if: needs.validate_1.outputs.valid == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-1
+          path: automation/.work/selected
+      - if: needs.validate_2.outputs.valid == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-2
+          path: automation/.work/selected
+      - if: needs.validate_3.outputs.valid == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-3
+          path: automation/.work/selected
+      - name: Copy reviewed files into the repository
+        id: prepare
+        run: node automation/src/cli.js prepare-publish --candidate automation/.work/selected
+      - name: Regenerate registry
+        run: node scripts/update-registry.js
+      - name: Validate generated registry
+        run: node scripts/validate-registry.js
+      - name: Create or update Draft PR
+        id: pull_request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          branch: ${{ steps.prepare.outputs.branch }}
+          delete-branch: true
+          draft: true
+          title: ${{ steps.prepare.outputs.title }}
+          body-path: ${{ steps.prepare.outputs.body_path }}
+          commit-message: Add BACnet profile for issue #${{ inputs.issue_number }}
+          add-paths: |
+            ${{ steps.prepare.outputs.profile_path }}
+            ${{ steps.prepare.outputs.fixture_path }}
+            registry.json
+      - name: Dispatch branch validation for the generated PR head
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js dispatch-validation --ref "${{ steps.prepare.outputs.branch }}"
+      - name: Mark Draft PR ready for human review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --state review --pr-url "${{ steps.pull_request.outputs.pull-request-url }}"
+
+  blocked:
+    needs: [validate_1, validate_2, validate_3]
+    if: always() && needs.validate_1.outputs.valid != 'true' && needs.validate_2.outputs.valid != 'true' && needs.validate_3.outputs.valid != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - if: needs.validate_3.result == 'success'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: validation-3
+          path: automation/.work/selected-validation
+      - if: needs.validate_3.result != 'success' && needs.validate_2.result == 'success'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: validation-2
+          path: automation/.work/selected-validation
+      - if: needs.validate_3.result != 'success' && needs.validate_2.result != 'success'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: validation-1
+          path: automation/.work/selected-validation
+      - name: Report blocker without creating a PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --state blocked --message automation/.work/selected-validation/message.md
+
+  publish_failed:
+    needs: publish
+    if: always() && needs.publish.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Report Draft PR publication failure
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --state blocked --reason "The candidate passed generation checks, but publishing or validating the Draft PR failed. A maintainer should inspect the workflow run; the bot did not merge anything."

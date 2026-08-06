@@ -1,0 +1,89 @@
+name: Profile Automation - Validate Candidate
+
+on:
+  workflow_call:
+    inputs:
+      candidate_artifact:
+        required: true
+        type: string
+      candidate_directory:
+        required: true
+        type: string
+      attempt:
+        required: true
+        type: number
+    outputs:
+      valid:
+        value: ${{ jobs.validate.outputs.valid }}
+      retryable:
+        value: ${{ jobs.validate.outputs.retryable }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      valid: ${{ steps.status.outputs.valid }}
+      retryable: ${{ steps.status.outputs.retryable }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install validation dependencies
+        run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: automation/.work/${{ inputs.candidate_directory }}
+      - name: Read candidate metadata
+        id: metadata
+        run: node automation/src/cli.js candidate-metadata --candidate automation/.work/${{ inputs.candidate_directory }}
+      - name: Execute generated codec without secrets or network
+        if: steps.metadata.outputs.publishable == 'true'
+        continue-on-error: true
+        env:
+          PROFILE_PATH: automation/.work/${{ inputs.candidate_directory }}/${{ steps.metadata.outputs.profile_path }}
+          FIXTURE_PATH: automation/.work/${{ inputs.candidate_directory }}/${{ steps.metadata.outputs.fixture_path }}
+          REPORT_PATH: ${{ runner.temp }}/profile-ci-${{ inputs.attempt }}.json
+        run: |
+          set +e
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 256m \
+            --memory-swap 256m \
+            --cpus 1 \
+            --pids-limit 64 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            -w /workspace \
+            node:20-alpine \
+            node scripts/run-profile-ci.js "$PROFILE_PATH" --fixture "$FIXTURE_PATH" --json > "$REPORT_PATH"
+          set -e
+          test -s "$REPORT_PATH"
+      - name: Create report for an evidence-blocked candidate
+        if: steps.metadata.outputs.publishable != 'true'
+        run: node automation/src/cli.js blocked-report --candidate automation/.work/${{ inputs.candidate_directory }} --output "${{ runner.temp }}/profile-ci-${{ inputs.attempt }}.json"
+      - name: Combine machine and model review results
+        id: status
+        if: always()
+        run: node automation/src/cli.js candidate-status --candidate automation/.work/${{ inputs.candidate_directory }} --report "${{ runner.temp }}/profile-ci-${{ inputs.attempt }}.json" --output automation/.work/validation-${{ inputs.attempt }}/combined.json --message-output automation/.work/validation-${{ inputs.attempt }}/message.md
+      - name: Preserve validation report
+        if: always()
+        run: cp "${{ runner.temp }}/profile-ci-${{ inputs.attempt }}.json" automation/.work/validation-${{ inputs.attempt }}/ci-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ inputs.attempt }}
+          path: automation/.work/validation-${{ inputs.attempt }}
+          retention-days: 7

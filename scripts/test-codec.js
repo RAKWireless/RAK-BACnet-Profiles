@@ -6,9 +6,9 @@
  */
 
 const fs = require('fs');
-const vm = require('vm');
-const { hexToBytes, bytesToHex, formatHex } = require('./utils/hex-converter');
-const { loadYAML, extractCodec } = require('./utils/yaml-parser');
+const { hexToBytes, bytesToHex, formatHex } = require('./lib/hex-converter');
+const { loadYAML, extractCodec } = require('./lib/yaml-parser');
+const { invokeCodec } = require('./lib/codec-sandbox');
 
 /**
  * Test Codec functions in sandbox
@@ -17,49 +17,16 @@ const { loadYAML, extractCodec } = require('./utils/yaml-parser');
  * @param {string} uplinkData - Uplink data in hexadecimal format
  * @returns {object} Decode result
  */
-function testDecode(codecSource, fPort, uplinkData) {
-  // Create sandbox environment
-  const sandbox = {
-    console: console,
-    Uint8Array: Uint8Array,
-    DataView: DataView,
-    Array: Array,
-    parseInt: parseInt,
-    parseFloat: parseFloat,
-    Math: Math,
-    JSON: JSON,
-    Object: Object,
-    String: String,
-    Number: Number,
-    Boolean: Boolean
-  };
-  
-  // Execute codec code
-  try {
-    vm.createContext(sandbox);
-    // Execute codec code directly without wrapping (because we need to access defined functions in sandbox)
-    vm.runInContext(codecSource, sandbox);
-  } catch (error) {
-    throw new Error(`Codec syntax error: ${error.message}`);
-  }
-  
-  // Verify required functions exist
-  if (!sandbox.decodeUplink) {
-    throw new Error('decodeUplink function not found in codec');
-  }
-  
-  // Prepare input data
+function testDecode(codecSource, fPort, uplinkData, options = {}) {
   const bytes = hexToBytes(uplinkData);
   const input = {
     bytes: bytes,
     fPort: parseInt(fPort),
     variables: {}
   };
-  
-  // Call decodeUplink function
+
   try {
-    const result = sandbox.decodeUplink(input);
-    return result;
+    return invokeCodec(codecSource, 'decodeUplink', input, options.timeoutMs);
   } catch (error) {
     throw new Error(`Decode execution error: ${error.message}`);
   }
@@ -71,37 +38,9 @@ function testDecode(codecSource, fPort, uplinkData) {
  * @param {object} data - Data to encode
  * @returns {object} Encode result
  */
-function testEncode(codecSource, data) {
-  const sandbox = {
-    console: console,
-    Uint8Array: Uint8Array,
-    DataView: DataView,
-    Array: Array,
-    parseInt: parseInt,
-    parseFloat: parseFloat,
-    Math: Math,
-    JSON: JSON,
-    Object: Object,
-    String: String,
-    Number: Number,
-    Boolean: Boolean
-  };
-  
+function testEncode(codecSource, data, options = {}) {
   try {
-    vm.createContext(sandbox);
-    // Execute codec code directly without wrapping (because we need to access defined functions in sandbox)
-    vm.runInContext(codecSource, sandbox);
-  } catch (error) {
-    throw new Error(`Codec syntax error: ${error.message}`);
-  }
-  
-  if (!sandbox.encodeDownlink) {
-    throw new Error('encodeDownlink function not found in codec');
-  }
-  
-  try {
-    const result = sandbox.encodeDownlink({ data: data, variables: {} });
-    return result;
+    return invokeCodec(codecSource, 'encodeDownlink', { data, variables: {} }, options.timeoutMs);
   } catch (error) {
     throw new Error(`Encode execution error: ${error.message}`);
   }
@@ -130,12 +69,12 @@ function runBatchTest(profilePath, testDataPath) {
     
     try {
       const result = testDecode(codec, testCase.fPort, testCase.input);
+      const actual = result.data || [];
+      const matched = !Object.prototype.hasOwnProperty.call(testCase, 'expectedOutput') ||
+        JSON.stringify(actual) === JSON.stringify(testCase.expectedOutput);
+      if (!matched) throw new Error('Output does not match expectedOutput');
       results.passed++;
-      results.tests.push({
-        name: testCase.name,
-        status: 'PASS',
-        result: result
-      });
+      results.tests.push({ name: testCase.name, status: 'PASS', result, matched });
     } catch (error) {
       results.failed++;
       results.tests.push({
@@ -278,4 +217,3 @@ module.exports = {
   testEncode,
   runBatchTest
 };
-

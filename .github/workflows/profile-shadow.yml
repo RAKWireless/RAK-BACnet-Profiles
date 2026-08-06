@@ -1,0 +1,197 @@
+name: Profile Automation - Shadow Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_numbers:
+        description: 'JSON array of historical Issue numbers, for example [21,22,31]'
+        required: true
+        default: '[31]'
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: profile-shadow-evaluation
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        issue_number: ${{ fromJSON(inputs.issue_numbers) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Collect historical Issue and official source without model secrets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js collect-source --issue-number "${{ matrix.issue_number }}" --allow-existing --output automation/.work/shadow-source-${{ matrix.issue_number }}/source-bundle.json --intake-output automation/.work/shadow-source-${{ matrix.issue_number }}/intake.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: profile-source-${{ matrix.issue_number }}
+          path: automation/.work/shadow-source-${{ matrix.issue_number }}
+          retention-days: 7
+
+  shadow:
+    needs: collect
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        issue_number: ${{ fromJSON(inputs.issue_numbers) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: profile-source-${{ matrix.issue_number }}
+          path: automation/.work/shadow-${{ matrix.issue_number }}
+      - name: Read historical Issue eligibility
+        id: intake
+        run: node automation/src/cli.js intake-metadata --intake automation/.work/shadow-${{ matrix.issue_number }}/intake.json
+      - name: Record an ineligible historical Issue
+        if: steps.intake.outputs.eligible != 'true'
+        run: node automation/src/cli.js shadow-ineligible --intake automation/.work/shadow-${{ matrix.issue_number }}/intake.json --output automation/.work/shadow-${{ matrix.issue_number }}/shadow-result.json
+
+      - name: Generate shadow candidate attempt 1
+        if: steps.intake.outputs.eligible == 'true'
+        env: &model-env
+          PROFILE_MODEL_1_API_KEY: ${{ secrets.PROFILE_MODEL_1_API_KEY }}
+          PROFILE_MODEL_1_BASE_URL: ${{ vars.PROFILE_MODEL_1_BASE_URL }}
+          PROFILE_MODEL_1_NAME: ${{ vars.PROFILE_MODEL_1_NAME }}
+          PROFILE_MODEL_2_API_KEY: ${{ secrets.PROFILE_MODEL_2_API_KEY }}
+          PROFILE_MODEL_2_BASE_URL: ${{ vars.PROFILE_MODEL_2_BASE_URL }}
+          PROFILE_MODEL_2_NAME: ${{ vars.PROFILE_MODEL_2_NAME }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: node automation/src/cli.js generate --bundle automation/.work/shadow-${{ matrix.issue_number }}/source-bundle.json --attempt 1 --output automation/.work/shadow-${{ matrix.issue_number }}/candidate-1
+      - name: Read attempt 1 metadata
+        if: steps.intake.outputs.eligible == 'true'
+        id: metadata_1
+        run: node automation/src/cli.js candidate-metadata --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-1
+      - name: Validate attempt 1 in the isolated runtime
+        if: steps.intake.outputs.eligible == 'true' && steps.metadata_1.outputs.publishable == 'true'
+        env:
+          PROFILE_PATH: automation/.work/shadow-${{ matrix.issue_number }}/candidate-1/${{ steps.metadata_1.outputs.profile_path }}
+          FIXTURE_PATH: automation/.work/shadow-${{ matrix.issue_number }}/candidate-1/${{ steps.metadata_1.outputs.fixture_path }}
+        run: |
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 256m --memory-swap 256m --cpus 1 --pids-limit 64 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace node:20-alpine \
+            node scripts/run-profile-ci.js "$PROFILE_PATH" --fixture "$FIXTURE_PATH" --json \
+            > automation/.work/shadow-${{ matrix.issue_number }}/ci-report-1.json
+          set -e
+      - name: Record evidence-blocked attempt 1
+        if: steps.intake.outputs.eligible == 'true' && steps.metadata_1.outputs.publishable != 'true'
+        run: node automation/src/cli.js blocked-report --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-1 --output automation/.work/shadow-${{ matrix.issue_number }}/ci-report-1.json
+      - name: Combine attempt 1 results
+        if: steps.intake.outputs.eligible == 'true'
+        id: status_1
+        run: node automation/src/cli.js candidate-status --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-1 --report automation/.work/shadow-${{ matrix.issue_number }}/ci-report-1.json --output automation/.work/shadow-${{ matrix.issue_number }}/attempt-1.json --message-output automation/.work/shadow-${{ matrix.issue_number }}/message-1.md
+
+      - name: Repair shadow candidate attempt 2
+        if: steps.status_1.outputs.valid != 'true' && steps.status_1.outputs.retryable == 'true'
+        env: *model-env
+        run: node automation/src/cli.js repair --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-1 --report automation/.work/shadow-${{ matrix.issue_number }}/attempt-1.json --attempt 2 --output automation/.work/shadow-${{ matrix.issue_number }}/candidate-2
+      - name: Read attempt 2 metadata
+        if: steps.status_1.outputs.valid != 'true' && steps.status_1.outputs.retryable == 'true'
+        id: metadata_2
+        run: node automation/src/cli.js candidate-metadata --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-2
+      - name: Validate attempt 2 in the isolated runtime
+        if: steps.metadata_2.outputs.publishable == 'true'
+        env:
+          PROFILE_PATH: automation/.work/shadow-${{ matrix.issue_number }}/candidate-2/${{ steps.metadata_2.outputs.profile_path }}
+          FIXTURE_PATH: automation/.work/shadow-${{ matrix.issue_number }}/candidate-2/${{ steps.metadata_2.outputs.fixture_path }}
+        run: |
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 256m --memory-swap 256m --cpus 1 --pids-limit 64 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace node:20-alpine \
+            node scripts/run-profile-ci.js "$PROFILE_PATH" --fixture "$FIXTURE_PATH" --json \
+            > automation/.work/shadow-${{ matrix.issue_number }}/ci-report-2.json
+          set -e
+      - name: Record evidence-blocked attempt 2
+        if: steps.metadata_2.outputs.publishable != '' && steps.metadata_2.outputs.publishable != 'true'
+        run: node automation/src/cli.js blocked-report --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-2 --output automation/.work/shadow-${{ matrix.issue_number }}/ci-report-2.json
+      - name: Combine attempt 2 results
+        if: steps.metadata_2.outputs.publishable != ''
+        id: status_2
+        run: node automation/src/cli.js candidate-status --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-2 --report automation/.work/shadow-${{ matrix.issue_number }}/ci-report-2.json --output automation/.work/shadow-${{ matrix.issue_number }}/attempt-2.json --message-output automation/.work/shadow-${{ matrix.issue_number }}/message-2.md
+
+      - name: Repair shadow candidate attempt 3
+        if: steps.status_2.outputs.valid != 'true' && steps.status_2.outputs.retryable == 'true'
+        env: *model-env
+        run: node automation/src/cli.js repair --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-2 --report automation/.work/shadow-${{ matrix.issue_number }}/attempt-2.json --attempt 3 --output automation/.work/shadow-${{ matrix.issue_number }}/candidate-3
+      - name: Read attempt 3 metadata
+        if: steps.status_2.outputs.valid != 'true' && steps.status_2.outputs.retryable == 'true'
+        id: metadata_3
+        run: node automation/src/cli.js candidate-metadata --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-3
+      - name: Validate attempt 3 in the isolated runtime
+        if: steps.metadata_3.outputs.publishable == 'true'
+        env:
+          PROFILE_PATH: automation/.work/shadow-${{ matrix.issue_number }}/candidate-3/${{ steps.metadata_3.outputs.profile_path }}
+          FIXTURE_PATH: automation/.work/shadow-${{ matrix.issue_number }}/candidate-3/${{ steps.metadata_3.outputs.fixture_path }}
+        run: |
+          set +e
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 256m --memory-swap 256m --cpus 1 --pids-limit 64 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace node:20-alpine \
+            node scripts/run-profile-ci.js "$PROFILE_PATH" --fixture "$FIXTURE_PATH" --json \
+            > automation/.work/shadow-${{ matrix.issue_number }}/ci-report-3.json
+          set -e
+      - name: Record evidence-blocked attempt 3
+        if: steps.metadata_3.outputs.publishable != '' && steps.metadata_3.outputs.publishable != 'true'
+        run: node automation/src/cli.js blocked-report --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-3 --output automation/.work/shadow-${{ matrix.issue_number }}/ci-report-3.json
+      - name: Combine attempt 3 results
+        if: steps.metadata_3.outputs.publishable != ''
+        id: status_3
+        run: node automation/src/cli.js candidate-status --candidate automation/.work/shadow-${{ matrix.issue_number }}/candidate-3 --report automation/.work/shadow-${{ matrix.issue_number }}/ci-report-3.json --output automation/.work/shadow-${{ matrix.issue_number }}/attempt-3.json --message-output automation/.work/shadow-${{ matrix.issue_number }}/message-3.md
+
+      - name: Select final shadow result
+        if: steps.intake.outputs.eligible == 'true'
+        run: node automation/src/cli.js finalize-shadow --directory automation/.work/shadow-${{ matrix.issue_number }} --output automation/.work/shadow-${{ matrix.issue_number }}/combined.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow-${{ matrix.issue_number }}
+          path: automation/.work/shadow-${{ matrix.issue_number }}
+          retention-days: 14
+
+  summary:
+    needs: shadow
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shadow-*
+          path: automation/.work/shadow-results
+      - name: Evaluate 85 percent target
+        run: node scripts/evaluate-shadow-run.js automation/.work/shadow-results

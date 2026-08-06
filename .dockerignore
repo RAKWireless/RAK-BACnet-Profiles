@@ -1,0 +1,13 @@
+.git
+.gitignore
+.github
+.agents
+.claude
+.vscode
+.idea
+**/node_modules
+automation/.work
+test-output
+test-results
+coverage
+*.log

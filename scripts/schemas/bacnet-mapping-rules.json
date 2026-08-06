@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "rules": [
+    { "keywords": ["temperature", "temp"], "types": ["AnalogInputObject", "AnalogValueObject"], "units": ["degreesCelsius", "degreesFahrenheit", "kelvins"] },
+    { "keywords": ["humidity", "relativehumidity", "rh"], "types": ["AnalogInputObject", "AnalogValueObject"], "units": ["percent", "percentRelativeHumidity"] },
+    { "keywords": ["co2", "carbondioxide"], "types": ["AnalogInputObject"], "units": ["partsPerMillion"] },
+    { "keywords": ["battery", "batterylevel", "batterycapacity"], "types": ["AnalogInputObject"], "units": ["percent", "volts", "millivolts"] },
+    { "keywords": ["pressure"], "types": ["AnalogInputObject"], "units": ["pascals", "hectopascals", "kilopascals", "bars"] },
+    { "keywords": ["illuminance", "brightness", "light", "lux"], "types": ["AnalogInputObject"], "units": ["luxes"] },
+    { "keywords": ["distance"], "types": ["AnalogInputObject"], "units": ["millimeters", "centimeters", "meters"] },
+    { "keywords": ["occupancy", "motion", "door", "alarm", "status"], "types": ["BinaryInputObject", "AnalogInputObject"], "units": [] }
+  ]
+}
