@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/main/registry-schema.json",
   "version": "1.0.0",
   "lastUpdate": "2026-08-06",
-  "totalProfiles": 26,
+  "totalProfiles": 27,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -35,6 +35,22 @@
       ],
       "contentSha256": "31e381d0eb7ccccbdead1b0098593c7308343389589d4077a221a145e560f5c3",
       "lastUpdate": "2026-04-29"
+    },
+    {
+      "id": "automationtest-aq200",
+      "vendor": "AutomationTest",
+      "model": "AutomationTest-AQ200",
+      "version": "1.0.0",
+      "path": "profiles/AutomationTest/AutomationTest-AQ200.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "AutomationTest AutomationTest-AQ200 CO2 Sensor",
+      "deviceType": "CO2 Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "5f7ba56ba650bad5fda8cd42d3e3408265aed77493cd08e4181c8b736c9f2233",
+      "lastUpdate": "2026-08-06"
     },
     {
       "id": "becasmart-bac006",
@@ -424,6 +440,7 @@
   "statistics": {
     "byVendor": {
       "RAKwireless": 2,
+      "AutomationTest": 1,
       "Becasmart": 1,
       "Dragino": 6,
       "Kaiterra": 1,
@@ -433,7 +450,7 @@
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 4,
+    "withTests": 5,
     "withoutTests": 22
   }
 }

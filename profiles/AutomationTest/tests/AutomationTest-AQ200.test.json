@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "profile": "AutomationTest-AQ200",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/33",
+      "citation": "Uplink examples and requested BACnet mapping"
+    },
+    {
+      "type": "official-document",
+      "reference": "https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/develop/automation/examples/AutomationTest-AQ200-protocol.txt",
+      "citation": "Protocol documentation SHA-256: 3374e354b3540565b39fe7219e3ff482b1e8eda3c7200bedcfcfb91b44527a9b"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true
+  },
+  "testCases": [
+    {
+      "name": "Example 1",
+      "fPort": 12,
+      "input": "A101F408FC11945C01",
+      "description": "fPort 12: A1 01 F4 08 FC 11 94 5C 01",
+      "expectedOutput": [
+        {
+          "name": "CO2",
+          "channel": 1,
+          "value": 500,
+          "unit": "partsPerMillion"
+        },
+        {
+          "name": "Temperature",
+          "channel": 2,
+          "value": 23,
+          "unit": "degreesCelsius"
+        },
+        {
+          "name": "Humidity",
+          "channel": 3,
+          "value": 45,
+          "unit": "percent"
+        },
+        {
+          "name": "Battery Level",
+          "channel": 4,
+          "value": 92,
+          "unit": "percent"
+        },
+        {
+          "name": "Occupancy",
+          "channel": 5,
+          "value": 1,
+          "unit": null
+        },
+        {
+          "name": "Sensor Fault",
+          "channel": 6,
+          "value": 0,
+          "unit": null
+        }
+      ]
+    },
+    {
+      "name": "Example 2",
+      "fPort": 12,
+      "input": "A104B0FF381B581402",
+      "description": "fPort 12: A1 04 B0 FF 38 1B 58 14 02",
+      "expectedOutput": [
+        {
+          "name": "CO2",
+          "channel": 1,
+          "value": 1200,
+          "unit": "partsPerMillion"
+        },
+        {
+          "name": "Temperature",
+          "channel": 2,
+          "value": -2,
+          "unit": "degreesCelsius"
+        },
+        {
+          "name": "Humidity",
+          "channel": 3,
+          "value": 70,
+          "unit": "percent"
+        },
+        {
+          "name": "Battery Level",
+          "channel": 4,
+          "value": 20,
+          "unit": "percent"
+        },
+        {
+          "name": "Occupancy",
+          "channel": 5,
+          "value": 0,
+          "unit": null
+        },
+        {
+          "name": "Sensor Fault",
+          "channel": 6,
+          "value": 1,
+          "unit": null
+        }
+      ]
+    },
+    {
+      "name": "Example 3",
+      "fPort": 12,
+      "input": "A102EE0C800DAC5000",
+      "description": "fPort 12: A1 02 EE 0C 80 0D AC 50 00",
+      "expectedOutput": [
+        {
+          "name": "CO2",
+          "channel": 1,
+          "value": 750,
+          "unit": "partsPerMillion"
+        },
+        {
+          "name": "Temperature",
+          "channel": 2,
+          "value": 32,
+          "unit": "degreesCelsius"
+        },
+        {
+          "name": "Humidity",
+          "channel": 3,
+          "value": 35,
+          "unit": "percent"
+        },
+        {
+          "name": "Battery Level",
+          "channel": 4,
+          "value": 80,
+          "unit": "percent"
+        },
+        {
+          "name": "Occupancy",
+          "channel": 5,
+          "value": 0,
+          "unit": null
+        },
+        {
+          "name": "Sensor Fault",
+          "channel": 6,
+          "value": 0,
+          "unit": null
+        }
+      ]
+    }
+  ]
+}
