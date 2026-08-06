@@ -17,7 +17,7 @@ const yaml = require('js-yaml');
 
 const PROFILES_DIR = path.join(__dirname, '..', 'profiles');
 const REGISTRY_FILE = path.join(__dirname, '..', 'registry.json');
-const REGISTRY_SCHEMA_FILE = './registry-schema.json';
+const REGISTRY_SCHEMA_FILE = 'https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/main/registry-schema.json';
 
 /** Vendor whose profiles are listed first in registry.json */
 const PINNED_VENDOR_FIRST = 'RAKwireless';

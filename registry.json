@@ -1,8 +1,8 @@
 {
-  "$schema": "./registry-schema.json",
+  "$schema": "https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/main/registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-07-23",
-  "totalProfiles": 25,
+  "lastUpdate": "2026-08-06",
+  "totalProfiles": 26,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -245,6 +245,22 @@
       "lastUpdate": "2026-07-07"
     },
     {
+      "id": "qingping-cgp22clh",
+      "vendor": "QingPing",
+      "model": "QingPing-CGP22CLH",
+      "version": "1.0.0",
+      "path": "profiles/QingPing/QingPing-CGP22CLH.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "QingPing CGP22CLH Indoor CO2/Temperature/Humidity Monitor",
+      "deviceType": "CO2 Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "a6cb62646aa3bdc9ffcce0fbe6d6692a623c424bb57bf22c614c7260b38f18e3",
+      "lastUpdate": "2026-08-06"
+    },
+    {
       "id": "senso8-lrs10701",
       "vendor": "Senso8",
       "model": "Senso8-LRS10701",
@@ -413,10 +429,11 @@
       "Kaiterra": 1,
       "Milesight": 4,
       "Moko": 1,
+      "QingPing": 1,
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 3,
+    "withTests": 4,
     "withoutTests": 22
   }
 }

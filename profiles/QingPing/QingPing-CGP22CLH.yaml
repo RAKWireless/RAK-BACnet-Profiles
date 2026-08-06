@@ -1,0 +1,150 @@
+# Device: QingPing CGP22CLH Indoor CO2/Temperature/Humidity Monitor
+codec: |
+  function Decode(fPort, data, variables) {
+    var values = [];
+
+    // Minimum frame: address(1) + command(1) + length(1) + type(1)
+    if (!data || data.length < 4) {
+      return values;
+    }
+
+    var command = data[1];
+    var dataType = data[3];
+
+    // Only process data frames (command 0x41 = send data)
+    if (command !== 0x41) {
+      return values;
+    }
+
+    if (dataType === 0x01) {
+      // ── Real-time data (type 0x01) ──────────────────────────────────────
+      // Layout: addr(1) cmd(1) len(1) type(1) ts(4) tempHum(3) co2(2) batt(1) fwVer(5) crc(2)
+      // Minimum useful length: up to and including battery = 14 bytes
+      if (data.length < 14) {
+        return values;
+      }
+
+      // Temperature & Humidity packed into 3 bytes (24 bits)
+      //   high 12 bits → temperature raw, low 12 bits → humidity raw
+      //   temperature = (raw - 500) / 10  °C
+      //   humidity    = raw / 10            %
+      var tempHum = ((data[8] & 0xff) << 16) | ((data[9] & 0xff) << 8) | (data[10] & 0xff);
+      var temperature = ((tempHum >>> 12) - 500) / 10;
+      var humidity = (tempHum & 0xfff) / 10;
+
+      // CO2 (big-endian 2 bytes, ppm)
+      var co2 = ((data[11] & 0xff) << 8) | (data[12] & 0xff);
+
+      // Battery level (1 byte, percentage)
+      var battery = data[13] & 0xff;
+
+      values.push({ name: "Temperature", channel: 1, value: temperature, unit: "degreesCelsius" });
+      values.push({ name: "Humidity",    channel: 2, value: humidity,    unit: "percentRelativeHumidity" });
+      values.push({ name: "CO2",         channel: 3, value: co2,         unit: "partsPerMillion" });
+      values.push({ name: "Battery",     channel: 4, value: battery,     unit: "percent" });
+      values.push({ name: "Data Type",   channel: 5, value: 1,           unit: null });
+
+    } else if (dataType === 0x00) {
+      // ── History data (type 0x00) ────────────────────────────────────────
+      // Layout: addr(1) cmd(1) len(1) type(1) startTs(4) interval(2) records(6*n) crc(2)
+      // Each 6-byte record: tempHum(3) co2(2) batt(1)
+      // We publish the most recent (last) record so BACnet objects reflect
+      // the latest reading.
+      if (data.length < 12) {
+        return values;
+      }
+
+      var offset = 10;                       // first record starts at byte 10
+      var lastBoundary = data.length - 2;     // exclude 2-byte CRC trailer
+
+      var lastTemp, lastHum, lastCo2, lastBatt;
+
+      while (offset + 6 <= lastBoundary) {
+        var th = ((data[offset] & 0xff) << 16) | ((data[offset + 1] & 0xff) << 8) | (data[offset + 2] & 0xff);
+        lastTemp = ((th >>> 12) - 500) / 10;
+        lastHum = (th & 0xfff) / 10;
+        lastCo2 = ((data[offset + 3] & 0xff) << 8) | (data[offset + 4] & 0xff);
+        lastBatt = data[offset + 5] & 0xff;
+        offset += 6;
+      }
+
+      if (lastTemp !== undefined) {
+        values.push({ name: "Temperature", channel: 1, value: lastTemp, unit: "degreesCelsius" });
+        values.push({ name: "Humidity",    channel: 2, value: lastHum,  unit: "percentRelativeHumidity" });
+        values.push({ name: "CO2",         channel: 3, value: lastCo2,  unit: "partsPerMillion" });
+        values.push({ name: "Battery",     channel: 4, value: lastBatt,  unit: "percent" });
+        values.push({ name: "Data Type",   channel: 5, value: 0,         unit: null });
+      }
+    }
+
+    return values;
+  }
+
+  function Encode(data, variables) {
+    // QingPing CGP22CLH is uplink-only; no downlink control supported.
+    var bytes = [];
+    return bytes;
+  }
+
+  function decodeUplink(input) {
+    return {
+      data: Decode(input.fPort, input.bytes, input.variables)
+    };
+  }
+
+  function encodeDownlink(input) {
+    return {
+      bytes: Encode(input.data, input.variables)
+    };
+  }
+
+datatype:
+  "1":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.1
+    updateInterval: 600
+    channel: 1
+  "2":
+    name: Humidity
+    type: AnalogInputObject
+    units: percentRelativeHumidity
+    covIncrement: 0.1
+    updateInterval: 600
+    channel: 2
+  "3":
+    name: CO2
+    type: AnalogInputObject
+    units: partsPerMillion
+    covIncrement: 10
+    updateInterval: 600
+    channel: 3
+  "4":
+    name: Battery
+    type: AnalogInputObject
+    units: percent
+    covIncrement: 1
+    updateInterval: 600
+    channel: 4
+  "5":
+    name: Data Type
+    type: BinaryInputObject
+    # 0 = History data, 1 = Real-time data
+    updateInterval: 600
+    channel: 5
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+
+model: QingPing-CGP22CLH
+profileVersion: 1.0.0
+name: CGP22CLH
+vendor: QingPing
+id: f7a3e2b1-9c4d-4e8f-a6b5-1d2e3f4a5b6c
