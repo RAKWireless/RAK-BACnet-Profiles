@@ -28,18 +28,18 @@ jobs:
       valid: ${{ steps.status.outputs.valid }}
       retryable: ${{ steps.status.outputs.retryable }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Install validation dependencies
         run: |
           npm ci --prefix scripts --omit=dev --ignore-scripts
           npm ci --prefix automation --omit=dev --ignore-scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.candidate_artifact }}
           path: automation/.work/${{ inputs.candidate_directory }}
@@ -81,7 +81,7 @@ jobs:
       - name: Preserve validation report
         if: always()
         run: cp "${{ runner.temp }}/profile-ci-${{ inputs.attempt }}.json" automation/.work/validation-${{ inputs.attempt }}/ci-report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: validation-${{ inputs.attempt }}

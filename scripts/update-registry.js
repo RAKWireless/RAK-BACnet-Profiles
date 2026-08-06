@@ -104,29 +104,6 @@ function getModelsWithTests(vendorDir) {
         console.warn(`⚠️  Warning: Failed to parse profile fixture: ${path.join(testsDir, file)}`);
       }
     }
-
-    const testDataFile = path.join(testsDir, 'test-data.json');
-    const expectedOutputFile = path.join(testsDir, 'expected-output.json');
-    
-    // Both files must exist
-    if (fs.existsSync(testDataFile) && fs.existsSync(expectedOutputFile)) {
-      try {
-        const testData = JSON.parse(fs.readFileSync(testDataFile, 'utf8'));
-        
-        // Extract models from test cases
-        if (testData.testCases && Array.isArray(testData.testCases)) {
-          for (const testCase of testData.testCases) {
-            if (testCase.model) {
-              modelsWithTests.add(normalizeModelName(testCase.model));
-            } else {
-              modelsWithTests.add('*');
-            }
-          }
-        }
-      } catch (error) {
-        console.warn(`⚠️  Warning: Failed to parse test data for vendor directory: ${vendorDir}`);
-      }
-    }
   }
   
   return modelsWithTests;
@@ -408,5 +385,6 @@ module.exports = {
   mergeLastUpdatesFromRegistry,
   loadExistingRegistry,
   isSameRegistryData,
+  getModelsWithTests,
   PINNED_VENDOR_FIRST
 };

@@ -63,7 +63,7 @@ class GitHubClient {
     const current = (issue.labels || []).map(label => typeof label === 'string' ? label : label.name);
     const retained = current.filter(label => !stateLabels.includes(label) || label === activeLabel);
     if (!retained.includes(activeLabel)) retained.push(activeLabel);
-    await this.request('POST', `/issues/${issueNumber}/labels`, { labels: retained });
+    await this.request('PUT', `/issues/${issueNumber}/labels`, { labels: retained });
   }
 
   async addLabels(issueNumber, labels) {

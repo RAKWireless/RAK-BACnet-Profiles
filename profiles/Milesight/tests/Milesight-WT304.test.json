@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "profile": "Milesight-WT304",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "customer-data",
+      "reference": "Original WT304 profile request test vectors",
+      "citation": "Four uplink payloads and expected BACnet outputs migrated from the legacy local fixtures"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": false,
+    "checkUnknownFPort": false
+  },
+  "testCases": [
+    {
+      "name": "Full boot uplink with device info - from issue",
+      "fPort": 85,
+      "input": "df0100db6406f47376010025da0101010200000000d90000c801cf0002010f0902490203c409040005200600072208ff6701",
+      "description": "Boot uplink with device info. Temp=23.19C, Hum=58.5%, TargetTemp=25C, Source=Internal, TempCtrl=Cool/Standby, Valve=0%, Fan=Medium/Medium, SystemOn, DeviceOn",
+      "expectedOutput": [
+        { "name": "Device Status", "channel": 16, "value": 1, "unit": null },
+        { "name": "Temperature", "channel": 1, "value": 23.19, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 58.5, "unit": "percent" },
+        { "name": "Target Temperature", "channel": 3, "value": 25, "unit": "degreesCelsius" },
+        { "name": "Data Source", "channel": 4, "value": 0, "unit": null },
+        { "name": "Temperature Control Mode", "channel": 5, "value": 2, "unit": null },
+        { "name": "Temperature Control Status", "channel": 6, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 7, "value": 0, "unit": "percent" },
+        { "name": "Fan Mode", "channel": 8, "value": 2, "unit": null },
+        { "name": "Fan Status", "channel": 9, "value": 2, "unit": null },
+        { "name": "System Status", "channel": 15, "value": 1, "unit": null }
+      ]
+    },
+    {
+      "name": "Periodic uplink - from issue",
+      "fPort": 85,
+      "input": "01140902520203c409040005200600072208ff6701",
+      "description": "Periodic report: Temp=23.24C, Hum=59.4%, TargetTemp=25C, Source=Internal, TempCtrl=Cool/Standby, Valve=0%, Fan=Medium/Medium, SystemOn",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 23.24, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 59.4, "unit": "percent" },
+        { "name": "Target Temperature", "channel": 3, "value": 25, "unit": "degreesCelsius" },
+        { "name": "Data Source", "channel": 4, "value": 0, "unit": null },
+        { "name": "Temperature Control Mode", "channel": 5, "value": 2, "unit": null },
+        { "name": "Temperature Control Status", "channel": 6, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 7, "value": 0, "unit": "percent" },
+        { "name": "Fan Mode", "channel": 8, "value": 2, "unit": null },
+        { "name": "Fan Status", "channel": 9, "value": 2, "unit": null },
+        { "name": "System Status", "channel": 15, "value": 1, "unit": null }
+      ]
+    },
+    {
+      "name": "Heating mode with valve and fan active",
+      "fPort": 85,
+      "input": "01d00702f401039808040005110632071108046701",
+      "description": "Heating mode: Temp=20C, Hum=50%, TargetTemp=22C, Source=Internal, TempCtrl=Heat/Heat, Valve=50%, Fan=Low/Low, SystemOn",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 20, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 50, "unit": "percent" },
+        { "name": "Target Temperature", "channel": 3, "value": 22, "unit": "degreesCelsius" },
+        { "name": "Data Source", "channel": 4, "value": 0, "unit": null },
+        { "name": "Temperature Control Mode", "channel": 5, "value": 1, "unit": null },
+        { "name": "Temperature Control Status", "channel": 6, "value": 1, "unit": null },
+        { "name": "Valve Status", "channel": 7, "value": 50, "unit": "percent" },
+        { "name": "Fan Mode", "channel": 8, "value": 1, "unit": null },
+        { "name": "Fan Status", "channel": 9, "value": 1, "unit": null },
+        { "name": "System Status", "channel": 15, "value": 1, "unit": null }
+      ]
+    },
+    {
+      "name": "System off",
+      "fPort": 85,
+      "input": "01d00702f401039808040005000600070008006700",
+      "description": "System Off: Temp=20C, Hum=50%, TargetTemp=22C, Source=Internal, TempCtrl=Ventilation/Standby, Valve=0%, Fan=Auto/Off, SystemOff",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 20, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 50, "unit": "percent" },
+        { "name": "Target Temperature", "channel": 3, "value": 22, "unit": "degreesCelsius" },
+        { "name": "Data Source", "channel": 4, "value": 0, "unit": null },
+        { "name": "Temperature Control Mode", "channel": 5, "value": 0, "unit": null },
+        { "name": "Temperature Control Status", "channel": 6, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 7, "value": 0, "unit": "percent" },
+        { "name": "Fan Mode", "channel": 8, "value": 0, "unit": null },
+        { "name": "Fan Status", "channel": 9, "value": 0, "unit": null },
+        { "name": "System Status", "channel": 15, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "Relay and valve status bitmap",
+      "fPort": 85,
+      "input": "100f000000",
+      "description": "Synthetic uplink covering all five relay and valve status bits",
+      "expectedOutput": [
+        { "name": "Fan Relay Low", "channel": 10, "value": 1, "unit": null },
+        { "name": "Fan Relay Mid", "channel": 11, "value": 1, "unit": null },
+        { "name": "Fan Relay High", "channel": 12, "value": 1, "unit": null },
+        { "name": "Valve 1 Status", "channel": 13, "value": 1, "unit": null },
+        { "name": "Valve 2 Status", "channel": 14, "value": 0, "unit": null }
+      ]
+    }
+  ]
+}

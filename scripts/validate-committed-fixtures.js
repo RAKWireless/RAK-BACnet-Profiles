@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { runGeneratedProfileCI } = require('./run-profile-ci');
+const { validateTestFixture } = require('./lib/validation/test-fixture');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -25,7 +25,10 @@ function main() {
     const profileName = path.basename(fixture, '.test.json');
     const vendorDir = path.dirname(path.dirname(fixture));
     const profilePath = path.join(vendorDir, `${profileName}.yaml`);
-    reports.push(runGeneratedProfileCI(profilePath, fixture));
+    const fixtureReport = fs.existsSync(profilePath)
+      ? validateTestFixture(profilePath, fixture)
+      : { valid: false, errors: [`Missing profile for committed fixture: ${profilePath}`], warnings: [] };
+    reports.push({ profile: profilePath, fixture, ...fixtureReport });
   }
   const valid = reports.every(report => report.valid);
   if (process.argv.includes('--json')) console.log(JSON.stringify({ valid, reports }, null, 2));

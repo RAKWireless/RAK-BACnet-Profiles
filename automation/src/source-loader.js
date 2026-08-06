@@ -39,6 +39,17 @@ async function validateRemoteUrl(value) {
   return (await resolveRemoteUrl(value)).url;
 }
 
+function createPinnedLookup(selected) {
+  return (_hostname, options, callback) => {
+    const address = { address: selected.address, family: selected.family };
+    if (options && options.all) {
+      callback(null, [address]);
+      return;
+    }
+    callback(null, address.address, address.family);
+  };
+}
+
 function requestAddress(url, selected) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -50,7 +61,7 @@ function requestAddress(url, selected) {
     const request = https.request(url, {
       method: 'GET',
       headers: { 'User-Agent': 'RAK-BACnet-Profile-Automation/2.0' },
-      lookup: (_hostname, _options, callback) => callback(null, selected.address, selected.family)
+      lookup: createPinnedLookup(selected)
     }, response => {
       const declaredLength = Number(response.headers['content-length'] || 0);
       if (declaredLength > MAX_SOURCE_BYTES) {
@@ -154,4 +165,4 @@ async function loadOfficialSource(intake) {
   };
 }
 
-module.exports = { isPrivateAddress, validateRemoteUrl, fetchDocument, extractSourceText, loadOfficialSource };
+module.exports = { isPrivateAddress, validateRemoteUrl, fetchDocument, extractSourceText, loadOfficialSource, createPinnedLookup };

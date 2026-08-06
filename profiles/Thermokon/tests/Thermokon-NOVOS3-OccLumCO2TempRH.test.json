@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "profile": "Thermokon-NOVOS3-OccLumCO2TempRH",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/25",
+      "citation": "Three uplink payloads and their expected sensor values"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": false,
+    "checkUnknownFPort": false
+  },
+  "testCases": [
+    {
+      "name": "Unoccupied indoor reading",
+      "fPort": 2,
+      "input": "1000D7112D12032040015E4100544B",
+      "description": "Temperature=21.5C, RH=45%, CO2=800ppm, brightness=350lux, unoccupied, battery=1500mV",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 21.5, "unit": "degreesCelsius" },
+        { "name": "Relative Humidity", "channel": 2, "value": 45, "unit": "percent" },
+        { "name": "CO2", "channel": 3, "value": 800, "unit": "partsPerMillion" },
+        { "name": "Brightness", "channel": 4, "value": 350, "unit": "luxes" },
+        { "name": "Motion Detection", "channel": 5, "value": 0, "unit": null },
+        { "name": "Occupancy", "channel": 6, "value": 0, "unit": null },
+        { "name": "Battery Voltage", "channel": 7, "value": 1500, "unit": "millivolts" }
+      ]
+    },
+    {
+      "name": "Occupied indoor reading",
+      "fPort": 2,
+      "input": "1000EC11371204B04002EE4107544B",
+      "description": "Temperature=23.6C, RH=55%, CO2=1200ppm, brightness=750lux, occupied, battery=1500mV",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 23.6, "unit": "degreesCelsius" },
+        { "name": "Relative Humidity", "channel": 2, "value": 55, "unit": "percent" },
+        { "name": "CO2", "channel": 3, "value": 1200, "unit": "partsPerMillion" },
+        { "name": "Brightness", "channel": 4, "value": 750, "unit": "luxes" },
+        { "name": "Motion Detection", "channel": 5, "value": 1, "unit": null },
+        { "name": "Occupancy", "channel": 6, "value": 1, "unit": null },
+        { "name": "Battery Voltage", "channel": 7, "value": 1500, "unit": "millivolts" }
+      ]
+    },
+    {
+      "name": "Occupied high CO2 reading",
+      "fPort": 2,
+      "input": "1000C811321207D04013884119544B",
+      "description": "Temperature=20.0C, RH=50%, CO2=2000ppm, brightness=5000lux, occupied, battery=1500mV",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 20, "unit": "degreesCelsius" },
+        { "name": "Relative Humidity", "channel": 2, "value": 50, "unit": "percent" },
+        { "name": "CO2", "channel": 3, "value": 2000, "unit": "partsPerMillion" },
+        { "name": "Brightness", "channel": 4, "value": 5000, "unit": "luxes" },
+        { "name": "Motion Detection", "channel": 5, "value": 1, "unit": null },
+        { "name": "Occupancy", "channel": 6, "value": 1, "unit": null },
+        { "name": "Battery Voltage", "channel": 7, "value": 1500, "unit": "millivolts" }
+      ]
+    }
+  ]
+}

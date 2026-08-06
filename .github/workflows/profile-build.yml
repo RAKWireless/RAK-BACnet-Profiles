@@ -28,13 +28,13 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
       - name: Mark generation started
         env:
@@ -49,20 +49,20 @@ jobs:
       contents: read
       issues: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
       - name: Download and extract the official document without model secrets
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node automation/src/cli.js collect-source --issue-number "${{ inputs.issue_number }}" --output automation/.work/source-bundle.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: source-bundle
           path: automation/.work/source-bundle.json
@@ -74,15 +74,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: source-bundle
           path: automation/.work
@@ -98,7 +98,7 @@ jobs:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: node automation/src/cli.js generate --bundle automation/.work/source-bundle.json --attempt 1 --output automation/.work/candidate-1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-1
           path: automation/.work/candidate-1
@@ -119,19 +119,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-1
           path: automation/.work/candidate-1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: validation-1
           path: automation/.work/validation-1
@@ -147,7 +147,7 @@ jobs:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: node automation/src/cli.js repair --candidate automation/.work/candidate-1 --report automation/.work/validation-1/combined.json --attempt 2 --output automation/.work/candidate-2
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-2
           path: automation/.work/candidate-2
@@ -169,19 +169,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-2
           path: automation/.work/candidate-2
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: validation-2
           path: automation/.work/validation-2
@@ -197,7 +197,7 @@ jobs:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: node automation/src/cli.js repair --candidate automation/.work/candidate-2 --report automation/.work/validation-2/combined.json --attempt 3 --output automation/.work/candidate-3
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-3
           path: automation/.work/candidate-3
@@ -222,28 +222,28 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: |
           npm ci --prefix scripts --omit=dev --ignore-scripts
           npm ci --prefix automation --omit=dev --ignore-scripts
       - if: needs.validate_1.outputs.valid == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: candidate-1
           path: automation/.work/selected
       - if: needs.validate_2.outputs.valid == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: candidate-2
           path: automation/.work/selected
       - if: needs.validate_3.outputs.valid == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: candidate-3
           path: automation/.work/selected
@@ -288,28 +288,28 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
       - if: needs.validate_3.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: validation-3
           path: automation/.work/selected-validation
       - if: needs.validate_3.result != 'success' && needs.validate_2.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: validation-2
           path: automation/.work/selected-validation
       - if: needs.validate_3.result != 'success' && needs.validate_2.result != 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: validation-1
@@ -319,6 +319,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --state blocked --message automation/.work/selected-validation/message.md
+      - name: Fail generation after blocker is reported
+        run: exit 1
 
   publish_failed:
     needs: publish
@@ -328,13 +330,13 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
       - name: Report Draft PR publication failure
         env:

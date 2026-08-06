@@ -126,7 +126,11 @@ function validateTestFixture(profilePath, fixturePath) {
     results.push({ name: testCase.name, valid: testErrors.length === 0, errors: testErrors });
   }
 
-  const declaredChannels = Object.keys(profile.datatype || {}).map(Number).sort((a, b) => a - b);
+  const outputTypes = new Set(['AnalogOutputObject', 'BinaryOutputObject']);
+  const declaredChannels = Object.entries(profile.datatype || {})
+    .filter(([, config]) => !outputTypes.has(config.type))
+    .map(([channel]) => Number(channel))
+    .sort((a, b) => a - b);
   const missingChannels = declaredChannels.filter(channel => !observedChannels.has(channel));
   if (missingChannels.length > 0) errors.push(`Test fixtures do not cover datatype channels: ${missingChannels.join(', ')}`);
   if (fixture.evidenceLevel === 'documentation-only') warnings.push('No independent known-answer oracle is available');

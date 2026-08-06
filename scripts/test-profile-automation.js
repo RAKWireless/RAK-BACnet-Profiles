@@ -15,8 +15,10 @@ const { validateTestFixture } = require('./lib/validation/test-fixture');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { buildCandidate, readCandidate, normalizeFixture } = require('../automation/src/candidate');
 const { validateEvidence } = require('../automation/src/evidence');
-const { isPrivateAddress } = require('../automation/src/source-loader');
+const { GitHubClient } = require('../automation/src/github-client');
+const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
 const { validateRequestedMapping } = require('./lib/validation/requested-mapping');
+const { getModelsWithTests } = require('./update-registry');
 
 const SAFE_CODEC = `function Decode(fPort, data, variables) {
   if (data.length < 2) return [];
@@ -124,6 +126,63 @@ function testNetworkBoundaryRules() {
   assert.equal(isPrivateAddress('8.8.8.8'), false);
 }
 
+function testPinnedDnsLookupSupportsNode20() {
+  const lookup = createPinnedLookup({ address: '203.0.113.10', family: 4 });
+  let allResult;
+  lookup('example.com', { all: true }, (error, addresses) => {
+    allResult = { error, addresses };
+  });
+  assert.equal(allResult.error, null);
+  assert.deepEqual(allResult.addresses, [{ address: '203.0.113.10', family: 4 }]);
+
+  let singleResult;
+  lookup('example.com', {}, (error, address, family) => {
+    singleResult = { error, address, family };
+  });
+  assert.deepEqual(singleResult, { error: null, address: '203.0.113.10', family: 4 });
+}
+
+function testRegistryUsesCommittedFixtureFormatOnly() {
+  const vendorDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rak-registry-tests-'));
+  const testsDir = path.join(vendorDir, 'tests');
+  fs.mkdirSync(testsDir);
+  try {
+    fs.writeFileSync(path.join(testsDir, 'test-data.json'), JSON.stringify({ testCases: [{ model: 'Legacy' }] }));
+    fs.writeFileSync(path.join(testsDir, 'expected-output.json'), JSON.stringify({ testCases: [] }));
+    assert.deepEqual([...getModelsWithTests(vendorDir)], []);
+
+    fs.writeFileSync(path.join(testsDir, 'Acme-T100.test.json'), JSON.stringify({ profile: 'Acme-T100' }));
+    assert.deepEqual([...getModelsWithTests(vendorDir)], ['acmet100']);
+  } finally {
+    fs.rmSync(vendorDir, { recursive: true, force: true });
+  }
+}
+
+async function testStateLabelsReplacePreviousState() {
+  const client = new GitHubClient('example/repository', 'test-token');
+  const calls = [];
+  client.ensureLabel = async () => {};
+  client.getIssue = async () => ({
+    labels: [
+      { name: 'profile-request' },
+      { name: 'profile:ready' },
+      { name: 'profile:generating' },
+      { name: 'profile:unverified' }
+    ]
+  });
+  client.request = async (method, endpoint, body) => {
+    calls.push({ method, endpoint, body });
+    return {};
+  };
+
+  await client.setStateLabels(32, 'profile:blocked');
+  assert.deepEqual(calls, [{
+    method: 'PUT',
+    endpoint: '/issues/32/labels',
+    body: { labels: ['profile-request', 'profile:unverified', 'profile:blocked'] }
+  }]);
+}
+
 function testIntakeDirectlyStartsBuild() {
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'profile-intake.yml'), 'utf8');
   assert.match(workflow, /status:\s*\$\{\{ steps\.intake\.outputs\.status \}\}/);
@@ -131,6 +190,9 @@ function testIntakeDirectlyStartsBuild() {
   assert.match(workflow, /if:\s*needs\.intake\.outputs\.status == 'ready'/);
   assert.match(workflow, /uses:\s*\.\/\.github\/workflows\/profile-build\.yml/);
   assert.match(workflow, /issue_number:\s*\$\{\{ fromJSON\(needs\.intake\.outputs\.issue_number\) \}\}/);
+
+  const buildWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'profile-build.yml'), 'utf8');
+  assert.match(buildWorkflow, /- name: Fail generation after blocker is reported\s+run: exit 1/);
 }
 
 function testScriptLayout() {
@@ -155,6 +217,19 @@ function testScriptLayout() {
   assert.equal(fs.readdirSync(__dirname).some(name => name.endsWith('.py')), false);
   assert.equal(fs.existsSync(path.join(repositoryRoot, 'automation')), true);
   assert.equal(fs.existsSync(path.join(repositoryRoot, ['automation', 'v2'].join('-'))), false);
+
+  const workflowsDirectory = path.join(repositoryRoot, '.github', 'workflows');
+  const workflows = fs.readdirSync(workflowsDirectory)
+    .filter(name => /\.ya?ml$/.test(name))
+    .map(name => fs.readFileSync(path.join(workflowsDirectory, name), 'utf8'))
+    .join('\n');
+  assert.match(workflows, /actions\/checkout@v7/);
+  assert.match(workflows, /actions\/setup-node@v7/);
+  assert.match(workflows, /actions\/upload-artifact@v7/);
+  assert.match(workflows, /actions\/download-artifact@v8/);
+  assert.match(workflows, /node-version:\s*24/);
+  assert.doesNotMatch(workflows, /actions\/(?:checkout|setup-node|upload-artifact|download-artifact)@v4\b/);
+  assert.doesNotMatch(workflows, /node-version:\s*20\b/);
 }
 
 function testEvidenceGates() {
@@ -222,6 +297,16 @@ function testGeneratedProfileContract() {
   assert.equal(validateProfileSemantics(profile, profilePath, { strict: true }).valid, true);
   assert.equal(validateTestFixture(profilePath, fixturePath).valid, true);
   assert.equal(runGeneratedProfileCI(profilePath, fixturePath).valid, true);
+
+  const profileWithDownlinkChannel = {
+    ...profile,
+    datatype: {
+      ...profile.datatype,
+      '20': { name: 'Set Temperature', type: 'AnalogOutputObject', units: 'degreesCelsius', channel: 20, fport: 10 }
+    }
+  };
+  fs.writeFileSync(profilePath, yaml.dump(profileWithDownlinkChannel, { lineWidth: -1 }), 'utf8');
+  assert.equal(validateTestFixture(profilePath, fixturePath).valid, true);
 
   const unsafeTruncationProfile = {
     ...profile,
@@ -301,6 +386,9 @@ async function main() {
   testPiiScrubbingDoesNotCorruptPayloads();
   testSafetyRules();
   testNetworkBoundaryRules();
+  testPinnedDnsLookupSupportsNode20();
+  testRegistryUsesCommittedFixtureFormatOnly();
+  await testStateLabelsReplacePreviousState();
   testIntakeDirectlyStartsBuild();
   testScriptLayout();
   testEvidenceGates();

@@ -25,19 +25,19 @@ jobs:
         issue_number: ${{ fromJSON(inputs.issue_numbers) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
       - name: Collect historical Issue and official source without model secrets
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node automation/src/cli.js collect-source --issue-number "${{ matrix.issue_number }}" --allow-existing --output automation/.work/shadow-source-${{ matrix.issue_number }}/source-bundle.json --intake-output automation/.work/shadow-source-${{ matrix.issue_number }}/intake.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: profile-source-${{ matrix.issue_number }}
           path: automation/.work/shadow-source-${{ matrix.issue_number }}
@@ -52,17 +52,17 @@ jobs:
         issue_number: ${{ fromJSON(inputs.issue_numbers) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Install dependencies
         run: |
           npm ci --prefix scripts --omit=dev --ignore-scripts
           npm ci --prefix automation --omit=dev --ignore-scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: profile-source-${{ matrix.issue_number }}
           path: automation/.work/shadow-${{ matrix.issue_number }}
@@ -174,7 +174,7 @@ jobs:
       - name: Select final shadow result
         if: steps.intake.outputs.eligible == 'true'
         run: node automation/src/cli.js finalize-shadow --directory automation/.work/shadow-${{ matrix.issue_number }} --output automation/.work/shadow-${{ matrix.issue_number }}/combined.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shadow-${{ matrix.issue_number }}
           path: automation/.work/shadow-${{ matrix.issue_number }}
@@ -185,11 +185,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
-      - uses: actions/download-artifact@v4
+          node-version: 24
+      - uses: actions/download-artifact@v8
         with:
           pattern: shadow-*
           path: automation/.work/shadow-results

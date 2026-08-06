@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "profile": "Milesight-EM410-RDL",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "official-document",
+      "reference": "Milesight EM410-RDL User Guide",
+      "citation": "Periodic and alarm payload examples migrated from the legacy local fixtures"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": false,
+    "checkUnknownFPort": false
+  },
+  "testCases": [
+    {
+      "name": "EM410-RDL power on event",
+      "fPort": 85,
+      "input": "ff0bffff0101fffeff",
+      "description": "Power on event: device_status=on, protocol_version=V1, reset_event=reset. No sensor data.",
+      "expectedOutput": []
+    },
+    {
+      "name": "EM410-RDL boot info packet",
+      "fPort": 85,
+      "input": "ff16686205cb8ce80013ff090120ff0a0103ff0f00ffff0100",
+      "description": "Boot info: SN=686205cb8ce80013, HW=V1.2, FW=V1.3, Class A, TSL=V1.0. No sensor data.",
+      "expectedOutput": []
+    },
+    {
+      "name": "EM410-RDL periodic sensor data",
+      "fPort": 85,
+      "input": "0175640500000482b30106c781ff",
+      "description": "Periodic report: Battery=100%, Distance=435mm, Position=Normal, RadarSignalRSSI=-1.27dBm",
+      "expectedOutput": [
+        { "name": "Battery Level", "channel": 1, "value": 100, "unit": "percent" },
+        { "name": "Device Position", "channel": 3, "value": 0, "unit": null },
+        { "name": "Distance", "channel": 2, "value": 435, "unit": "millimeters" },
+        { "name": "Radar Signal Strength", "channel": 4, "value": -1.27, "unit": "decibels" }
+      ]
+    },
+    {
+      "name": "EM410-RDL periodic data from user guide",
+      "fPort": 85,
+      "input": "0175620482aa0c06c70303050000",
+      "description": "Periodic report from user guide: Battery=98%, Distance=3242mm, RadarSignalRSSI=7.71dBm, Position=Normal",
+      "expectedOutput": [
+        { "name": "Battery Level", "channel": 1, "value": 98, "unit": "percent" },
+        { "name": "Distance", "channel": 2, "value": 3242, "unit": "millimeters" },
+        { "name": "Radar Signal Strength", "channel": 4, "value": 7.71, "unit": "decibels" },
+        { "name": "Device Position", "channel": 3, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "EM410-RDL distance threshold alarm",
+      "fPort": 85,
+      "input": "8482c82701",
+      "description": "Threshold alarm: Distance=10184mm, alarm=threshold",
+      "expectedOutput": [
+        { "name": "Distance", "channel": 2, "value": 10184, "unit": "millimeters" },
+        { "name": "Distance Alarm", "channel": 5, "value": 1, "unit": null }
+      ]
+    },
+    {
+      "name": "EM410-RDL distance mutation alarm",
+      "fPort": 85,
+      "input": "9482c827850c02",
+      "description": "Mutation alarm: Distance=10184mm, Shift=3205mm, alarm=mutation",
+      "expectedOutput": [
+        { "name": "Distance", "channel": 2, "value": 10184, "unit": "millimeters" },
+        { "name": "Distance Shift", "channel": 6, "value": 3205, "unit": "millimeters" },
+        { "name": "Distance Alarm", "channel": 5, "value": 2, "unit": null }
+      ]
+    },
+    {
+      "name": "EM410-RDL blind zone alarm",
+      "fPort": 85,
+      "input": "b482ac0001",
+      "description": "Blind zone alarm: Distance=172mm, status=blind spot alarm",
+      "expectedOutput": [
+        { "name": "Distance", "channel": 2, "value": 172, "unit": "millimeters" },
+        { "name": "Blind Zone Alarm", "channel": 7, "value": 1, "unit": null }
+      ]
+    },
+    {
+      "name": "EM410-RDL temperature reading",
+      "fPort": 85,
+      "input": "0367eb00",
+      "description": "Synthetic temperature uplink: Temperature=23.5C",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 8, "value": 23.5, "unit": "degreesCelsius" }
+      ]
+    }
+  ]
+}
