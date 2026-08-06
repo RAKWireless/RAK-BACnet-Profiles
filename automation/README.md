@@ -14,7 +14,7 @@ Profile Automation turns a complete GitHub Profile Request into an uplink-only D
 
 The official document is downloaded and parsed in a separate job that has no model-provider secrets. Generated codec code is executed only in the isolated validation job.
 
-Generation receives the complete, machine-validated uplink-only Profile and fixture under `automation/examples/canonical/` as its structural reference. It also receives the closest historical Profile's BACnet datatype and LoRaWAN metadata as a mapping reference; legacy codec code is intentionally not copied.
+Generation receives the formal `Thermokon-NOVOS3-OccLumCO2TempRH` Profile and its committed fixture as a repository layout reference. The prompt explicitly identifies its historical downlink, loop, partial-payload, and robustness patterns as legacy behavior that must not be copied. Generation also receives the closest historical Profile's BACnet datatype and LoRaWAN metadata as a mapping reference; current uplink-only and fail-closed requirements remain authoritative.
 
 ## Scope
 

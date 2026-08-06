@@ -7,7 +7,7 @@ const yaml = require('js-yaml');
 const { completeJson } = require('./model-client');
 const { loadPrompt } = require('./prompt-loader');
 const { buildEvidence } = require('./evidence');
-const { selectReference, loadCanonicalExample } = require('./reference-selector');
+const { selectReference, loadRepositoryExample } = require('./reference-selector');
 const { normalizeHex } = require('./issue-parser');
 const { writeJson, writeText } = require('./io');
 const { compileCodec } = require('../../scripts/lib/codec-sandbox');
@@ -55,6 +55,9 @@ function validateCodecPreflight(codec) {
   const errors = [];
   if (!codec) errors.push('codec is empty');
   if (/```/.test(codec)) errors.push('codec contains a Markdown code fence');
+  if (/function\s+(?:Encode|encodeDownlink)\b|\b(?:Encode|encodeDownlink)\s*=/.test(codec)) {
+    errors.push('codec must be uplink-only and must not declare Encode or encodeDownlink');
+  }
   for (const functionName of REQUIRED_CODEC_FUNCTIONS) {
     const declaration = new RegExp(`\\bfunction\\s+${functionName}\\s*\\(`);
     if (!declaration.test(codec)) errors.push(`codec must declare function ${functionName}`);
@@ -192,7 +195,7 @@ function generationUserContent(context) {
     officialDocument: { ...context.source, text: context.source.text },
     evidence: context.evidence,
     mappingReference: context.reference,
-    canonicalExample: context.canonicalExample,
+    repositoryExample: context.repositoryExample,
     authorizedMaintainerFeedback: context.feedback || ''
   });
 }
@@ -214,7 +217,7 @@ async function repairRawCandidate(model, context, previous, validationReport, fe
         issue: context.intake,
         officialDocument: context.source,
         mappingReference: context.reference,
-        canonicalExample: context.canonicalExample || loadCanonicalExample(),
+        repositoryExample: context.repositoryExample || loadRepositoryExample(),
         previousProfileYaml: previous.profileYaml,
         previousFixture: previous.fixture,
         validationReport,
@@ -369,13 +372,13 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
       evidence: evidenceResult.consolidated,
       evidenceReviews: evidenceResult.extractions,
       reference: selectReference(intake.bacnetMapping),
-      canonicalExample: loadCanonicalExample(),
+      repositoryExample: loadRepositoryExample(),
       feedback
     };
     logProgress('candidate', 'generation references selected', {
       mappingReference: context.reference && context.reference.path,
       mappingScore: context.reference && context.reference.score,
-      canonicalProfile: context.canonicalExample.profilePath
+      repositoryExample: context.repositoryExample.profilePath
     });
     if (!evidenceResult.approved || !evidenceResult.consolidated) {
       return writeBlocked(outputDir, context, attempt, 'Protocol evidence is conflicting or ambiguous.', [...evidenceResult.conflicts, ...evidenceResult.ambiguities], models);

@@ -25,7 +25,7 @@ const { validateEvidence } = require('../automation/src/evidence');
 const { GitHubClient } = require('../automation/src/github-client');
 const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
 const { modelConfiguration } = require('../automation/src/config');
-const { loadCanonicalExample } = require('../automation/src/reference-selector');
+const { loadRepositoryExample } = require('../automation/src/reference-selector');
 const { DEFAULT_TIMEOUT_MS, completeJson, isRetryableStatus } = require('../automation/src/model-client');
 const { validateRequestedMapping } = require('./lib/validation/requested-mapping');
 const { getModelsWithTests } = require('./update-registry');
@@ -325,12 +325,14 @@ function testAlarmSemanticRulePrecedence() {
   assert.deepEqual(validateProfileSemantics(profile, null, { strict: false }).errors, []);
 }
 
-function testCanonicalAutomationExample() {
-  const example = loadCanonicalExample();
+function testFormalRepositoryExample() {
+  const example = loadRepositoryExample();
   assert.match(example.profileYaml, /function Decode\(/);
   assert.match(example.profileYaml, /function decodeUplink\(/);
-  assert.equal(example.fixture.profile, 'AutomationTest-TH100');
-  assert.equal(runGeneratedProfileCI(
+  assert.equal(example.fixture.profile, 'Thermokon-NOVOS3-OccLumCO2TempRH');
+  assert.match(example.profilePath, /^profiles\/Thermokon\//);
+  assert.equal(example.cautions.length > 0, true);
+  assert.equal(validateTestFixture(
     path.join(__dirname, '..', example.profilePath),
     path.join(__dirname, '..', example.fixturePath)
   ).valid, true);
@@ -356,6 +358,12 @@ function testGeneratedCodecNormalization() {
   assert.throws(
     () => normalizeProfileYaml(yaml.dump(rawProfile, { lineWidth: -1 }), intake),
     /Generated codec preflight failed/
+  );
+
+  rawProfile.codec = `${SAFE_CODEC}\nfunction Encode() { return []; }`;
+  assert.throws(
+    () => normalizeProfileYaml(yaml.dump(rawProfile, { lineWidth: -1 }), intake),
+    /must be uplink-only/
   );
 }
 
@@ -547,7 +555,7 @@ async function testEndToEndCandidateBuild() {
     const candidate = readCandidate(outputDir);
     assert.equal(candidate.fixture.reviewMode, 'single-model');
     assert.equal(candidate.fixture.evidenceLevel, 'known-answer');
-    assert.match(candidate.context.canonicalExample.profileYaml, /function decodeUplink\(/);
+    assert.equal(candidate.context.repositoryExample.fixture.profile, 'Thermokon-NOVOS3-OccLumCO2TempRH');
     assert.equal(runGeneratedProfileCI(path.join(outputDir, manifest.profilePath), path.join(outputDir, manifest.fixturePath)).valid, true);
   });
 }
@@ -566,7 +574,7 @@ async function main() {
   testEvidenceGates();
   testRequestedBacnetMapping();
   testAlarmSemanticRulePrecedence();
-  testCanonicalAutomationExample();
+  testFormalRepositoryExample();
   testGeneratedCodecNormalization();
   testGenerationErrorStageReporting();
   testGeneratedProfileContract();

@@ -5,24 +5,18 @@ const path = require('path');
 const yaml = require('js-yaml');
 const { WORKSPACE_ROOT } = require('./config');
 
-const CANONICAL_PROFILE_PATH = path.join(
+const REPOSITORY_EXAMPLE_PROFILE_PATH = path.join(
   WORKSPACE_ROOT,
-  'automation',
-  'examples',
-  'canonical',
   'profiles',
-  'AutomationTest',
-  'AutomationTest-TH100.yaml'
+  'Thermokon',
+  'Thermokon-NOVOS3-OccLumCO2TempRH.yaml'
 );
-const CANONICAL_FIXTURE_PATH = path.join(
+const REPOSITORY_EXAMPLE_FIXTURE_PATH = path.join(
   WORKSPACE_ROOT,
-  'automation',
-  'examples',
-  'canonical',
   'profiles',
-  'AutomationTest',
+  'Thermokon',
   'tests',
-  'AutomationTest-TH100.test.json'
+  'Thermokon-NOVOS3-OccLumCO2TempRH.test.json'
 );
 
 function tokens(value) {
@@ -64,13 +58,18 @@ function selectReference(bacnetMapping) {
   return best;
 }
 
-function loadCanonicalExample() {
+function loadRepositoryExample() {
   return {
-    profilePath: path.relative(WORKSPACE_ROOT, CANONICAL_PROFILE_PATH),
-    fixturePath: path.relative(WORKSPACE_ROOT, CANONICAL_FIXTURE_PATH),
-    profileYaml: fs.readFileSync(CANONICAL_PROFILE_PATH, 'utf8'),
-    fixture: JSON.parse(fs.readFileSync(CANONICAL_FIXTURE_PATH, 'utf8'))
+    profilePath: path.relative(WORKSPACE_ROOT, REPOSITORY_EXAMPLE_PROFILE_PATH),
+    fixturePath: path.relative(WORKSPACE_ROOT, REPOSITORY_EXAMPLE_FIXTURE_PATH),
+    profileYaml: fs.readFileSync(REPOSITORY_EXAMPLE_PROFILE_PATH, 'utf8'),
+    fixture: JSON.parse(fs.readFileSync(REPOSITORY_EXAMPLE_FIXTURE_PATH, 'utf8')),
+    cautions: [
+      'This is a formal historical repository Profile, not an automation-safe codec template.',
+      'Do not copy Encode, encodeDownlink, while loops, partial-payload behavior, or disabled robustness checks.',
+      'Generated candidates must follow the current uplink-only and fail-closed requirements.'
+    ]
   };
 }
 
-module.exports = { selectReference, loadCanonicalExample };
+module.exports = { selectReference, loadRepositoryExample };
