@@ -3,6 +3,7 @@
 const { completeJson } = require('./model-client');
 const { loadPrompt } = require('./prompt-loader');
 const { normalizeHex } = require('./issue-parser');
+const { logProgress, elapsedSeconds } = require('./progress');
 
 function evidencePayload(intake, source) {
   return {
@@ -70,17 +71,34 @@ function validateEvidence(evidence, intake) {
   return [...new Set(ambiguities.map(item => typeof item === 'string' ? item : JSON.stringify(item)))];
 }
 
-async function extractEvidence(model, intake, source) {
+async function extractEvidence(model, intake, source, operation = 'evidence-extraction') {
+  const startedAt = Date.now();
+  logProgress('evidence', 'extraction started', { operation, model: model.label });
   const value = await completeJson(model, [
     { role: 'system', content: loadPrompt('extract-evidence') },
     { role: 'user', content: JSON.stringify(evidencePayload(intake, source)) }
-  ], { maxTokens: 8000 });
-  return normalizeEvidence(value);
+  ], { maxTokens: 8000, operation });
+  const evidence = normalizeEvidence(value);
+  logProgress('evidence', 'extraction completed', {
+    operation,
+    model: model.label,
+    elapsedSeconds: elapsedSeconds(startedAt),
+    messageTypes: evidence.messageTypes.length,
+    knownAnswers: evidence.knownAnswers.length,
+    conflicts: evidence.conflicts.length,
+    ambiguities: evidence.ambiguities.length
+  });
+  return evidence;
 }
 
 async function buildEvidence(models, intake, source) {
-  const primary = await extractEvidence(models.primary, intake, source);
+  const primary = await extractEvidence(models.primary, intake, source, 'primary-evidence-extraction');
   const primaryAmbiguities = validateEvidence(primary, intake);
+  logProgress('evidence', 'primary evidence validated', {
+    model: models.primary.label,
+    validationAmbiguities: primaryAmbiguities.length,
+    conflicts: primary.conflicts.length
+  });
   if (primary.conflicts.length > 0 || primaryAmbiguities.length > 0) {
     return { approved: false, conflicts: primary.conflicts, ambiguities: primaryAmbiguities, consolidated: primary, extractions: [primary] };
   }
@@ -88,11 +106,15 @@ async function buildEvidence(models, intake, source) {
     return { approved: true, conflicts: [], ambiguities: [], consolidated: primary, extractions: [primary] };
   }
 
-  const secondary = await extractEvidence(models.secondary, intake, source);
+  const secondary = await extractEvidence(models.secondary, intake, source, 'secondary-evidence-extraction');
+  logProgress('evidence', 'reconciliation started', {
+    primaryModel: models.primary.label,
+    secondaryModel: models.secondary.label
+  });
   const reconciliation = await completeJson(models.primary, [
     { role: 'system', content: loadPrompt('reconcile-evidence') },
     { role: 'user', content: JSON.stringify({ source: evidencePayload(intake, source), primary, secondary }) }
-  ], { maxTokens: 6000 });
+  ], { maxTokens: 6000, operation: 'evidence-reconciliation' });
   const consolidated = reconciliation.consolidated ? normalizeEvidence(reconciliation.consolidated) : null;
   const consolidatedAmbiguities = consolidated ? validateEvidence(consolidated, intake) : ['Evidence reconciliation did not return a consolidated protocol'];
   const conflicts = [
@@ -103,6 +125,11 @@ async function buildEvidence(models, intake, source) {
     ...(Array.isArray(reconciliation.ambiguities) ? reconciliation.ambiguities : []),
     ...consolidatedAmbiguities
   ];
+  logProgress('evidence', 'reconciliation completed', {
+    approved: reconciliation.approved === true,
+    conflicts: conflicts.length,
+    ambiguities: ambiguities.length
+  });
   return {
     approved: reconciliation.approved === true && conflicts.length === 0 && ambiguities.length === 0,
     conflicts,

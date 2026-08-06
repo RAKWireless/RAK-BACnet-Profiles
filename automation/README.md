@@ -40,6 +40,8 @@ Each configured model must provide all three values. If the optional second mode
 
 Model requests time out after 300 seconds and retry transient timeouts, HTTP 429, and HTTP 5xx responses up to two times. Set the optional repository variable `PROFILE_MODEL_TIMEOUT_MS` to override the per-request timeout in milliseconds.
 
+The generation job emits live progress without printing prompts, source text, model output, or API keys. Logs identify the evidence, generation, normalization, protocol review, and adversarial review phases; model HTTP attempts report status, elapsed time, retry decisions, token usage when available, and a waiting heartbeat every 60 seconds.
+
 Optional repository variable `PROFILE_APPROVERS` is a comma-separated GitHub login allowlist for automated `Request changes` handling. If omitted, collaborators with write, maintain, or admin permission are accepted.
 
 In **Settings → Actions → General → Workflow permissions**, enable **Allow GitHub Actions to create and approve pull requests**. The automation uses that permission only to create or update a Draft PR; it never submits an approval or merges.

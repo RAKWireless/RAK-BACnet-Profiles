@@ -401,6 +401,34 @@ async function testTransientModelRequestRetry() {
   }
 }
 
+async function testModelRequestHeartbeatDoesNotLeakPayload() {
+  const server = http.createServer((request, response) => {
+    setTimeout(() => {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }));
+    }, 40);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const logs = [];
+  const originalLog = console.log;
+  console.log = value => logs.push(String(value));
+  try {
+    const address = server.address();
+    await completeJson(
+      { apiKey: 'super-secret-key', name: 'mock', baseUrl: `http://127.0.0.1:${address.port}`, label: 'mock:model' },
+      [{ role: 'user', content: 'super-secret-prompt' }],
+      { maxRetries: 0, heartbeatMs: 10, timeoutMs: 1000, operation: 'heartbeat-test' }
+    );
+    const output = logs.join('\n');
+    assert.match(output, /still waiting for HTTP response/);
+    assert.doesNotMatch(output, /super-secret-key/);
+    assert.doesNotMatch(output, /super-secret-prompt/);
+  } finally {
+    console.log = originalLog;
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
 function testGeneratedProfileContract() {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rak-profile-v2-'));
   const vendorDir = path.join(temporaryRoot, 'profiles', 'Acme');
@@ -543,6 +571,7 @@ async function main() {
   testGenerationErrorStageReporting();
   testGeneratedProfileContract();
   await testTransientModelRequestRetry();
+  await testModelRequestHeartbeatDoesNotLeakPayload();
   await testEndToEndCandidateBuild();
   console.log('Profile Automation tests: PASS');
 }

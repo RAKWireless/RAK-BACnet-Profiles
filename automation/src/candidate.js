@@ -11,6 +11,7 @@ const { selectReference, loadCanonicalExample } = require('./reference-selector'
 const { normalizeHex } = require('./issue-parser');
 const { writeJson, writeText } = require('./io');
 const { compileCodec } = require('../../scripts/lib/codec-sandbox');
+const { logProgress, elapsedSeconds } = require('./progress');
 
 const REQUIRED_CODEC_FUNCTIONS = ['Decode', 'decodeUplink'];
 
@@ -81,10 +82,23 @@ function candidatePreflight(profileYaml) {
   };
 }
 
-async function runStage(stage, operation) {
+async function runStage(stage, operation, operationName = stage) {
+  const startedAt = Date.now();
+  logProgress(stage, 'stage started', { operation: operationName });
   try {
-    return await operation();
+    const result = await operation();
+    logProgress(stage, 'stage completed', {
+      operation: operationName,
+      elapsedSeconds: elapsedSeconds(startedAt)
+    });
+    return result;
   } catch (error) {
+    logProgress(stage, 'stage failed', {
+      operation: operationName,
+      elapsedSeconds: elapsedSeconds(startedAt),
+      errorType: error && error.name,
+      errorCode: error && error.code
+    });
     if (!error.stage) error.stage = stage;
     throw error;
   }
@@ -187,7 +201,7 @@ async function generateRawCandidate(model, context) {
   return completeJson(model, [
     { role: 'system', content: loadPrompt('generate-profile') },
     { role: 'user', content: generationUserContent(context) }
-  ], { maxTokens: 12000 });
+  ], { maxTokens: 12000, operation: 'profile-generation' });
 }
 
 async function repairRawCandidate(model, context, previous, validationReport, feedback) {
@@ -207,7 +221,7 @@ async function repairRawCandidate(model, context, previous, validationReport, fe
         authorizedMaintainerFeedback: feedback || ''
       })
     }
-  ], { maxTokens: 12000 });
+  ], { maxTokens: 12000, operation: 'profile-repair' });
 }
 
 function normalizeReview(value) {
@@ -242,11 +256,11 @@ async function reviewCandidate(models, context, profileYaml, fixture) {
   const review = normalizeReview(await completeJson(reviewerModel, [
     { role: 'system', content: loadPrompt('review-profile') },
     { role: 'user', content: payload }
-  ], { maxTokens: 6000 }));
+  ], { maxTokens: 6000, operation: 'protocol-review' }));
   const adversarial = normalizeReview(await completeJson(models.primary, [
     { role: 'system', content: loadPrompt('adversarial-review') },
     { role: 'user', content: payload }
-  ], { maxTokens: 6000 }));
+  ], { maxTokens: 6000, operation: 'adversarial-review' }));
   return { review, adversarial, approved: review.approved && adversarial.approved };
 }
 
@@ -332,11 +346,23 @@ function writeGenerationError(outputDir, intake, source, attempt, error) {
 
 async function buildCandidate({ models, intake, source, outputDir, attempt = 1, previous = null, validationReport = null, feedback = '' }) {
   const reviewMode = models.secondary ? 'multi-model' : 'single-model';
+  logProgress('candidate', 'candidate build started', {
+    issue: intake.issueNumber,
+    attempt,
+    reviewMode,
+    primaryModel: models.primary.label,
+    secondaryModel: models.secondary && models.secondary.label
+  });
   let context;
   if (previous) {
     context = previous.context;
+    logProgress('candidate', 'previous candidate loaded for repair', {
+      issue: intake.issueNumber,
+      attempt,
+      previousAttempt: previous.manifest.attempt
+    });
   } else {
-    const evidenceResult = await runStage('evidence', () => buildEvidence(models, intake, source));
+    const evidenceResult = await runStage('evidence', () => buildEvidence(models, intake, source), 'evidence-build');
     context = {
       intake,
       source,
@@ -346,20 +372,45 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
       canonicalExample: loadCanonicalExample(),
       feedback
     };
+    logProgress('candidate', 'generation references selected', {
+      mappingReference: context.reference && context.reference.path,
+      mappingScore: context.reference && context.reference.score,
+      canonicalProfile: context.canonicalExample.profilePath
+    });
     if (!evidenceResult.approved || !evidenceResult.consolidated) {
       return writeBlocked(outputDir, context, attempt, 'Protocol evidence is conflicting or ambiguous.', [...evidenceResult.conflicts, ...evidenceResult.ambiguities], models);
     }
   }
 
-  const raw = await runStage(previous ? 'repair' : 'generation', () => (
+  const generationStage = previous ? 'repair' : 'generation';
+  const raw = await runStage(generationStage, () => (
     previous
       ? repairRawCandidate(models.primary, context, previous, validationReport, feedback)
       : generateRawCandidate(models.primary, context)
-  ));
+  ), previous ? 'profile-repair' : 'profile-generation');
   const previousProfile = previous ? yaml.load(previous.profileYaml) : null;
-  const profileYaml = await runStage('normalization', () => normalizeProfileYaml(raw.profileYaml, context.intake, previousProfile));
-  const fixture = await runStage('normalization', () => normalizeFixture(raw.fixture, context.intake, context.evidence, reviewMode, context.source));
-  const reviews = await runStage('review', () => reviewCandidate(models, context, profileYaml, fixture));
+  const profileYaml = await runStage(
+    'normalization',
+    () => normalizeProfileYaml(raw.profileYaml, context.intake, previousProfile),
+    'profile-normalization'
+  );
+  const fixture = await runStage(
+    'normalization',
+    () => normalizeFixture(raw.fixture, context.intake, context.evidence, reviewMode, context.source),
+    'fixture-normalization'
+  );
+  const normalizedProfile = yaml.load(profileYaml);
+  logProgress('normalization', 'candidate structure ready', {
+    datatypeChannels: Object.keys(normalizedProfile.datatype || {}).length,
+    fixtureCases: fixture.testCases.length,
+    evidenceLevel: fixture.evidenceLevel
+  });
+  const reviews = await runStage('review', () => reviewCandidate(models, context, profileYaml, fixture), 'model-reviews');
+  logProgress('review', 'review decisions received', {
+    protocolApproved: reviews.review.approved,
+    adversarialApproved: reviews.adversarial.approved,
+    approved: reviews.approved
+  });
   const paths = outputPaths(outputDir, context.intake);
   const manifest = {
     issueNumber: context.intake.issueNumber,
@@ -380,6 +431,13 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
   writeJson(paths.context, context);
   writeJson(paths.manifest, manifest);
   writeText(paths.review, buildReviewMarkdown(manifest, context, fixture));
+  logProgress('candidate', 'candidate build completed', {
+    issue: intake.issueNumber,
+    attempt,
+    status: manifest.status,
+    profilePath: manifest.profilePath,
+    fixturePath: manifest.fixturePath
+  });
   return manifest;
 }
 
