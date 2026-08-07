@@ -45,6 +45,18 @@ function githubTreePath(value) {
   return { repo: `${parts[0]}/${parts[1]}`, ref: parts[3], dirPath: parts.slice(4).join('/') };
 }
 
+function annotateDecoderAuthority(decoder, authority) {
+  if (!decoder) return null;
+  const userProvided = authority === 'user-provided';
+  return {
+    ...decoder,
+    authority: userProvided ? 'user-provided' : 'supporting',
+    authorityReason: userProvided
+      ? 'Decoder was explicitly supplied by the Issue submitter and is authoritative protocol evidence'
+      : 'Decoder was discovered automatically and remains supporting protocol evidence'
+  };
+}
+
 async function githubApiJson(endpoint, token) {
   const url = new URL(endpoint, GITHUB_API);
   if (url.origin !== GITHUB_API) throw new Error('GitHub API requests must stay on api.github.com');
@@ -136,7 +148,7 @@ async function loadDecoder(intake, options = {}) {
   const downloadTree = options.downloadTree || downloadGitHubTree;
   const search = options.search || searchDecoderOnGitHub;
   if (isInlineDecoder(intake.decoder)) {
-    return decoderResult(intake.decoder, `Issue #${intake.issueNumber} decoder`, 'issue-inline');
+    return annotateDecoderAuthority(decoderResult(intake.decoder, `Issue #${intake.issueNumber} decoder`, 'issue-inline'), 'user-provided');
   }
 
   const url = extractDecoderUrl(intake.decoder);
@@ -145,21 +157,21 @@ async function loadDecoder(intake, options = {}) {
       const raw = githubRawUrl(url);
       if (raw) {
         const result = await download(raw);
-        if (result) return { ...result, origin: 'issue-url' };
+        if (result) return annotateDecoderAuthority({ ...result, origin: 'issue-url' }, 'user-provided');
       }
       if (githubTreePath(url)) {
         const result = await downloadTree(url, options.token, download);
-        if (result) return { ...result, origin: 'issue-url' };
+        if (result) return annotateDecoderAuthority({ ...result, origin: 'issue-url' }, 'user-provided');
       }
       const result = await download(url);
-      if (result) return { ...result, origin: 'issue-url' };
+      if (result) return annotateDecoderAuthority({ ...result, origin: 'issue-url' }, 'user-provided');
     } catch {
       // Fall through to the constrained GitHub search.
     }
   }
 
   const found = await search(intake.vendor, intake.model, options.token, download);
-  return found ? { ...found, origin: 'github-search' } : null;
+  return found ? annotateDecoderAuthority({ ...found, origin: 'github-search' }, 'supporting') : null;
 }
 
 module.exports = {

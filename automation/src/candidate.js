@@ -196,10 +196,11 @@ function normalizeFixture(rawFixture, intake, evidence, reviewMode, source = nul
     });
   }
   if (intake.decoderSource) {
+    const userProvidedDecoder = intake.decoderAuthority === 'user-provided';
     sources.push({
       type: 'customer-data',
       reference: intake.decoderUrl || intake.issueUrl || `Issue #${intake.issueNumber}`,
-      citation: `Untrusted decoder text used as supporting evidence (${intake.decoderOrigin || 'unknown origin'}${intake.decoderSha256 ? `; SHA-256: ${intake.decoderSha256}` : ''})`
+      citation: `${userProvidedDecoder ? 'User-provided authoritative protocol decoder' : 'Automatically discovered supporting decoder'}; text retained as non-executable data (${intake.decoderOrigin || 'unknown origin'}${intake.decoderSha256 ? `; SHA-256: ${intake.decoderSha256}` : ''})`
     });
   }
 
@@ -419,7 +420,10 @@ function buildReviewMarkdown(manifest, context, fixture) {
     `- ${context.intake.issueUrl || `Issue #${context.intake.issueNumber}`}`
   ];
   if (context.intake.decoderSource && context.source.type !== 'decoder') {
-    sourceLines.push(`- ${context.intake.decoderUrl || `Issue #${context.intake.issueNumber} decoder`} (untrusted decoder evidence; ${context.intake.decoderOrigin || 'unknown origin'}${context.intake.decoderSha256 ? `; SHA-256: \`${context.intake.decoderSha256}\`` : ''})`);
+    const decoderLabel = context.intake.decoderAuthority === 'user-provided'
+      ? 'user-provided authoritative protocol decoder; non-executable input'
+      : 'automatically discovered supporting decoder; non-executable input';
+    sourceLines.push(`- ${context.intake.decoderUrl || `Issue #${context.intake.issueNumber} decoder`} (${decoderLabel}; ${context.intake.decoderOrigin || 'unknown origin'}${context.intake.decoderSha256 ? `; SHA-256: \`${context.intake.decoderSha256}\`` : ''})`);
   }
   return `## Automated Profile Evidence\n\n` +
     `- Issue: #${context.intake.issueNumber}\n` +

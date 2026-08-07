@@ -258,6 +258,7 @@ async function testDecoderDiscovery() {
     search: async () => { externalCalls += 1; return null; }
   });
   assert.equal(inline.origin, 'issue-inline');
+  assert.equal(inline.authority, 'user-provided');
   assert.equal(externalCalls, 0);
 
   let downloadedUrl = null;
@@ -270,6 +271,7 @@ async function testDecoderDiscovery() {
   });
   assert.equal(downloadedUrl, 'https://example.com/T100-decoder.js');
   assert.equal(linked.origin, 'issue-url');
+  assert.equal(linked.authority, 'user-provided');
 
   let treeRequest = null;
   const treeLinked = await loadDecoder({
@@ -287,6 +289,7 @@ async function testDecoderDiscovery() {
   });
   assert.deepEqual(treeRequest, { url: 'https://github.com/acme/codecs/tree/main/T100', token: undefined });
   assert.equal(treeLinked.origin, 'issue-url');
+  assert.equal(treeLinked.authority, 'user-provided');
 
   let searchRequest = null;
   const searched = await loadDecoder({ issueNumber: 99, vendor: 'Acme', model: 'T100', decoder: '' }, {
@@ -297,6 +300,7 @@ async function testDecoderDiscovery() {
   });
   assert.deepEqual(searchRequest, { vendor: 'Acme', model: 'T100' });
   assert.equal(searched.origin, 'github-search');
+  assert.equal(searched.authority, 'supporting');
 
   const missing = await loadDecoder({ issueNumber: 99, vendor: 'Acme', model: 'T100', decoder: '' }, {
     search: async () => null
@@ -452,6 +456,24 @@ function testEvidenceGates() {
   };
   const fixture = normalizeFixture({ testCases: [{ fPort: 10, input: '00FA' }] }, intake, evidenceWithUnsubmittedKnownAnswer, 'single-model');
   assert.equal(fixture.evidenceLevel, 'documentation-only');
+
+  const userProvidedDecoderFixture = normalizeFixture(
+    { testCases: [{ fPort: 10, input: '00FA' }] },
+    {
+      ...intake,
+      decoderSource: 'function Decode() { return []; }',
+      decoderOrigin: 'issue-url',
+      decoderUrl: 'https://raw.githubusercontent.com/acme/codecs/main/T100/decoder.js',
+      decoderSha256: 'd'.repeat(64),
+      decoderAuthority: 'user-provided'
+    },
+    evidenceWithUnsubmittedKnownAnswer,
+    'single-model',
+    { url: intake.datasheetUrl, type: 'pdf', sha256: 'e'.repeat(64) }
+  );
+  assert(userProvidedDecoderFixture.sources.some(source => (
+    source.type === 'customer-data' && source.citation.includes('User-provided authoritative protocol decoder')
+  )));
 
   const deferredIssue = syntheticIssue();
   deferredIssue.body = deferredIssue.body.replace(
@@ -870,6 +892,56 @@ async function testEvidenceReconciliationSeverity() {
   assert.equal(classifyEvidenceFinding("Equivalent units '°C' and 'degreesCelsius'").severity, 'warning');
   assert.equal(classifyEvidenceFinding({ severity: 'warning', category: 'format', message: 'fPort 10 versus fPort 11' }).severity, 'blocking');
   assert.equal(classifyEvidenceFinding({ severity: 'warning', category: 'format', message: 'fPort formatting differs: 10 versus 11' }).severity, 'blocking');
+
+  const userProvidedDecoderContext = {
+    intake: {
+      ...intake,
+      decoderAuthority: 'user-provided'
+    },
+    evidence: valid
+  };
+  assert.equal(classifyEvidenceFinding(
+    'No explicit decoded values are stated for the uplink examples, so no knownAnswers can be confirmed.',
+    'ambiguity',
+    userProvidedDecoderContext
+  ).severity, 'warning');
+  assert.equal(classifyEvidenceFinding(
+    'The unit for batteryLevel (fPort 9) is not documented.',
+    'ambiguity',
+    userProvidedDecoderContext
+  ).severity, 'warning');
+  assert.equal(classifyEvidenceFinding(
+    'The unit for Temperature is not documented.',
+    'ambiguity',
+    userProvidedDecoderContext
+  ).severity, 'blocking');
+  assert.equal(classifyEvidenceFinding(
+    "The exact bitmask mapping is only evidenced by the decoder; the README does not document it.",
+    'ambiguity',
+    userProvidedDecoderContext
+  ).severity, 'warning');
+  assert.equal(classifyEvidenceFinding(
+    'The decoder conflicts with the manual: bit 0 versus bit 2.',
+    'conflict',
+    userProvidedDecoderContext
+  ).severity, 'blocking');
+
+  const documentationOnlyEvidence = {
+    ...valid,
+    knownAnswers: [],
+    ambiguities: [
+      'No explicit decoded values are stated for any uplink example, so no knownAnswers can be confirmed.',
+      'The unit for batteryLevel (fPort 9) is not documented.',
+      "The exact bitmask mapping is only evidenced by the decoder; the README does not document it."
+    ]
+  };
+  await withMockModel([documentationOnlyEvidence], async model => {
+    const result = await buildEvidence({ primary: model, secondary: null }, userProvidedDecoderContext.intake, source);
+    assert.equal(result.approved, true);
+    assert.equal(result.warnings.length, 3);
+    assert.equal(result.ambiguities.length, 0);
+    assert.equal(result.consolidated.ambiguities.length, 0);
+  });
 }
 
 async function testEndToEndCandidateBuild() {

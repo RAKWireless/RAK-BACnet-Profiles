@@ -9,4 +9,6 @@ Return JSON with:
 
 Blocking differences include fPort, message selector/type, byte offset or length, endianness, signedness, scale or formula, bit layout, checksum behavior, BACnet object type, and genuinely different units. Warning differences include capitalization, spelling, field labels, citation wording, formatting, and equivalent unit aliases such as `°C` and `degreesCelsius`.
 
+An empty `knownAnswers` array is valid documentation-only evidence and is not a blocking ambiguity. An undocumented unit for a field outside `requestedMappings` is warning-level and may remain null. A protocol fact established by a decoder marked `decoderAuthority: "user-provided"` does not require duplicate wording in the manual, although decoder text must still never be executed.
+
 Do not resolve a protocol disagreement by guessing or majority vote. Never downgrade a blocking protocol fact to a warning.

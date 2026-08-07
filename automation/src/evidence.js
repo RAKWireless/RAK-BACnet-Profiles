@@ -23,6 +23,8 @@ function evidencePayload(intake, source) {
       providedDecoder: intake.decoderSource || null,
       decoderOrigin: intake.decoderOrigin || (intake.decoderSource ? 'issue-inline' : null),
       decoderUrl: intake.decoderUrl || null,
+      decoderAuthority: intake.decoderAuthority || 'supporting',
+      decoderAuthorityReason: intake.decoderAuthorityReason || null,
       decoderRequest: intake.decoderSource ? null : intake.decoder,
       bacnetMapping: intake.bacnetMapping,
       bacnetMappingStatus: intake.bacnetMappingStatus || 'explicit',
@@ -220,7 +222,26 @@ function equivalentUnitDifference(message) {
   return normalized.length >= 2 && new Set(normalized).size === 1;
 }
 
-function classifyEvidenceFinding(value, kind = 'conflict') {
+function normalizeFieldName(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function requestedMappingNames(context = {}) {
+  const entries = [
+    ...((context.intake && context.intake.requestedMappings) || []),
+    ...((context.evidence && context.evidence.requestedMappings) || [])
+  ];
+  return new Set(entries.map(entry => normalizeFieldName(entry && entry.name)).filter(Boolean));
+}
+
+function unitSubject(message) {
+  const match = String(message || '').match(
+    /\bunits?\s+(?:for|of)\s+[`'"]?(.+?)[`'"]?(?=\s*\(|\s+(?:is|are|was|were|has|have|cannot|could|remains?|not)\b|[,;:.]|$)/i
+  );
+  return match ? normalizeFieldName(match[1]) : null;
+}
+
+function classifyEvidenceFinding(value, kind = 'conflict', context = {}) {
   const message = findingMessage(value);
   const suppliedCategory = value && typeof value === 'object' ? value.category : null;
   const suppliedSeverity = value && typeof value === 'object' ? value.severity : null;
@@ -231,6 +252,13 @@ function classifyEvidenceFinding(value, kind = 'conflict') {
   const differentNumericValues = new Set(numericValues).size > 1;
   const missingCitation = /\b(?:missing|absent|without|no)\b.{0,24}\bcitation\b|\bcitation\b.{0,24}\b(?:missing|absent)\b/i.test(message);
   const criticalProtocol = /\b(?:f\s*port|message\s*(?:type|selector)|selector|offset|byte\s*(?:offset|length|order)|minimum\s*length|endianness|signedness|signed|scale|formula|bit\s*(?:layout|position|mask)?|checksum|crc|object\s*type|bacnet\s*type|units?)\b/i.test(message);
+  const missingKnownAnswer = /\b(?:no|missing|absent|without)\b.{0,80}\bknown[- ]?answers?\b|\bknown[- ]?answers?\b.{0,80}\b(?:cannot|could not|not|missing|absent|unavailable)\b/i.test(message);
+  const subject = unitSubject(message);
+  const mappings = requestedMappingNames(context);
+  const unrequestedUnit = Boolean(subject && mappings.size > 0 && !mappings.has(subject));
+  const authoritativeDecoder = context.intake && context.intake.decoderAuthority === 'user-provided';
+  const decoderOnlyEvidence = /\b(?:only|solely)\s+evidenced\s+by\s+(?:the\s+)?(?:official\s+|vendor[- ]published\s+)?decoder\b|\bdecoder\b.{0,40}\b(?:only|sole)\s+(?:evidence|source)\b/i.test(message);
+  const explicitContradiction = valueConflict || /\b(?:contradict(?:ion|s|ory)?|inconsisten(?:t|cy))\b/i.test(message);
 
   let category = ['protocol', 'mapping', 'format', 'citation'].includes(suppliedCategory)
     ? suppliedCategory
@@ -243,7 +271,16 @@ function classifyEvidenceFinding(value, kind = 'conflict') {
     ? suppliedSeverity
     : 'blocking';
 
-  if (missingCitation) {
+  if (missingKnownAnswer) {
+    category = 'citation';
+    severity = 'warning';
+  } else if (unrequestedUnit && !explicitContradiction) {
+    category = 'protocol';
+    severity = 'warning';
+  } else if (authoritativeDecoder && decoderOnlyEvidence && !explicitContradiction) {
+    category = 'citation';
+    severity = 'warning';
+  } else if (missingCitation) {
     category = 'citation';
     severity = 'blocking';
   } else if (criticalProtocol && differentNumericValues && !equivalentUnit) {
@@ -285,13 +322,19 @@ function evidenceDecision(consolidated, extractions, findings) {
   const normalizedFindings = uniqueFindings(findings);
   const blocking = normalizedFindings.filter(finding => finding.severity === 'blocking');
   const warnings = normalizedFindings.filter(finding => finding.severity === 'warning');
+  const warningMessages = new Set(warnings.map(finding => finding.message));
+  const resolvedConsolidated = consolidated ? {
+    ...consolidated,
+    conflicts: (consolidated.conflicts || []).filter(item => !warningMessages.has(findingMessage(item))),
+    ambiguities: (consolidated.ambiguities || []).filter(item => !warningMessages.has(findingMessage(item)))
+  } : null;
   return {
-    approved: Boolean(consolidated) && blocking.length === 0,
+    approved: Boolean(resolvedConsolidated) && blocking.length === 0,
     conflicts: blocking.filter(finding => finding.kind === 'conflict').map(finding => finding.message),
     ambiguities: blocking.filter(finding => finding.kind !== 'conflict').map(finding => finding.message),
     warnings,
     findings: normalizedFindings,
-    consolidated,
+    consolidated: resolvedConsolidated,
     extractions
   };
 }
@@ -325,9 +368,10 @@ async function buildEvidence(models, intake, source) {
     conflicts: primary.conflicts.length
   });
   if (!models.secondary) {
+    const classificationContext = { intake, evidence: primary };
     const findings = [
-      ...primary.conflicts.map(item => classifyEvidenceFinding(item, 'conflict')),
-      ...primary.ambiguities.map(item => classifyEvidenceFinding(item, 'ambiguity')),
+      ...primary.conflicts.map(item => classifyEvidenceFinding(item, 'conflict', classificationContext)),
+      ...primary.ambiguities.map(item => classifyEvidenceFinding(item, 'ambiguity', classificationContext)),
       ...primaryAmbiguities.map(validationFinding)
     ];
     return evidenceDecision(primary, [primary], findings);
@@ -352,12 +396,13 @@ async function buildEvidence(models, intake, source) {
   const reconciliationFindings = Array.isArray(reconciliation.findings) ? reconciliation.findings : [];
   const reconciliationConflicts = Array.isArray(reconciliation.conflicts) ? reconciliation.conflicts : [];
   const reconciliationAmbiguities = Array.isArray(reconciliation.ambiguities) ? reconciliation.ambiguities : [];
+  const classificationContext = { intake, evidence: consolidated || primary };
   const findings = [
-    ...reconciliationFindings.map(item => classifyEvidenceFinding(item, item && item.kind ? item.kind : 'conflict')),
-    ...reconciliationConflicts.map(item => classifyEvidenceFinding(item, 'conflict')),
-    ...reconciliationAmbiguities.map(item => classifyEvidenceFinding(item, 'ambiguity')),
-    ...((consolidated && consolidated.conflicts) || []).map(item => classifyEvidenceFinding(item, 'conflict')),
-    ...((consolidated && consolidated.ambiguities) || []).map(item => classifyEvidenceFinding(item, 'ambiguity')),
+    ...reconciliationFindings.map(item => classifyEvidenceFinding(item, item && item.kind ? item.kind : 'conflict', classificationContext)),
+    ...reconciliationConflicts.map(item => classifyEvidenceFinding(item, 'conflict', classificationContext)),
+    ...reconciliationAmbiguities.map(item => classifyEvidenceFinding(item, 'ambiguity', classificationContext)),
+    ...((consolidated && consolidated.conflicts) || []).map(item => classifyEvidenceFinding(item, 'conflict', classificationContext)),
+    ...((consolidated && consolidated.ambiguities) || []).map(item => classifyEvidenceFinding(item, 'ambiguity', classificationContext)),
     ...consolidatedAmbiguities.map(validationFinding)
   ];
   const reportedFindings = reconciliationFindings.length + reconciliationConflicts.length + reconciliationAmbiguities.length;

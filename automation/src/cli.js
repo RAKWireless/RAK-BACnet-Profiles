@@ -44,7 +44,9 @@ function attachDecoderEvidence(intake, decoder) {
     decoderSource: decoder.text,
     decoderOrigin: decoder.origin,
     decoderUrl: decoder.url,
-    decoderSha256: decoder.sha256 || null
+    decoderSha256: decoder.sha256 || null,
+    decoderAuthority: decoder.authority || 'supporting',
+    decoderAuthorityReason: decoder.authorityReason || null
   };
 }
 
@@ -154,6 +156,7 @@ async function commandCollectSource(args) {
       origin: decoder.origin,
       url: decoder.url,
       sha256: decoder.sha256,
+      authority: decoder.authority,
       textLength: String(decoder.text || '').length
     },
     decoderError,
