@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   intake:
+    if: contains(github.event.issue.labels.*.name, 'profile-request')
     runs-on: ubuntu-latest
     permissions:
       contents: read

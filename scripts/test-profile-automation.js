@@ -103,6 +103,20 @@ function testIssueParsing() {
   assert.deepEqual(parsed.uplinkExamples.map(item => ({ fPort: item.fPort, hex: item.hex })), [{ fPort: 10, hex: '00FA' }]);
   assert(!JSON.stringify(parsed).includes('customer@example.com'));
 
+  const nonstandardTitle = syntheticIssue();
+  nonstandardTitle.title = 'Please add support for my sensor';
+  const parsedNonstandardTitle = parseIssue(nonstandardTitle, { allowExisting: true });
+  assert.equal(parsedNonstandardTitle.status, 'ready');
+  assert.equal(parsedNonstandardTitle.vendor, 'Acme');
+  assert.equal(parsedNonstandardTitle.model, 'T100');
+  assert.equal(parsedNonstandardTitle.profileName, 'Acme-T100');
+  assert(parsedNonstandardTitle.warnings.some(item => item.includes('Device Vendor and Device Model')));
+
+  const unrelatedIssue = syntheticIssue();
+  unrelatedIssue.title = '[Bug] Something is broken';
+  unrelatedIssue.body = '### Description\n\nThis is not a Profile request.';
+  assert.equal(parseIssue(unrelatedIssue).status, 'ignored');
+
   const missingPort = syntheticIssue();
   missingPort.body = missingPort.body.replace('fPort 10: 00 FA', '00 FA');
   assert.equal(parseIssue(missingPort, { allowExisting: true }).status, 'needs-info');
@@ -232,6 +246,7 @@ async function testStateLabelsReplacePreviousState() {
 
 function testIntakeDirectlyStartsBuild() {
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'profile-intake.yml'), 'utf8');
+  assert.match(workflow, /intake:\s+if:\s*contains\(github\.event\.issue\.labels\.\*\.name, 'profile-request'\)/);
   assert.match(workflow, /status:\s*\$\{\{ steps\.intake\.outputs\.status \}\}/);
   assert.match(workflow, /issue_number:\s*\$\{\{ steps\.intake\.outputs\.issue_number \}\}/);
   assert.match(workflow, /if:\s*needs\.intake\.outputs\.status == 'ready'/);

@@ -89,8 +89,14 @@ function parseIssue(issue, options = {}) {
   const errors = [];
   const warnings = [];
   const sections = parseSections(issue.body || '');
-  if (!/^\[Profile Request\]/i.test(issue.title || '')) {
+  const hasProfileRequestTitle = /^\[Profile Request\]/i.test(issue.title || '');
+  const hasProfileIdentitySections = Object.prototype.hasOwnProperty.call(sections, FIELD_LABELS.vendor)
+    && Object.prototype.hasOwnProperty.call(sections, FIELD_LABELS.model);
+  if (!hasProfileRequestTitle && !hasProfileIdentitySections) {
     return { status: 'ignored', errors: ['Issue title is not a Profile Request'], warnings, issueNumber: issue.number };
+  }
+  if (!hasProfileRequestTitle) {
+    warnings.push('Issue title does not use the recommended [Profile Request] prefix; Device Vendor and Device Model from the Issue body were used');
   }
 
   let vendor;
