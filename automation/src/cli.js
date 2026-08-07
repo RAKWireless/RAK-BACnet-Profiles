@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { WORKSPACE_ROOT, MAX_ATTEMPTS, modelConfiguration } = require('./config');
 const { parseIssue } = require('./issue-parser');
-const { loadOfficialSource } = require('./source-loader');
+const { loadOfficialSource, decoderFallbackSource } = require('./source-loader');
+const { loadDecoder } = require('./decoder-loader');
 const { GitHubClient } = require('./github-client');
 const { buildCandidate, readCandidate, writeGenerationError } = require('./candidate');
 const { parseArgs, readJson, writeJson, writeText, appendGithubOutput } = require('./io');
@@ -36,9 +37,23 @@ function attemptNumber(value) {
   return attempt;
 }
 
+function attachDecoderEvidence(intake, decoder) {
+  if (!decoder || !decoder.text) return intake;
+  return {
+    ...intake,
+    decoderSource: decoder.text,
+    decoderOrigin: decoder.origin,
+    decoderUrl: decoder.url,
+    decoderSha256: decoder.sha256 || null
+  };
+}
+
 function intakeComment(intake) {
   if (intake.status === 'ready') {
-    return 'The request passed the Profile Automation completeness gate and has been queued for uplink-only profile generation.';
+    const deferred = (intake.warnings || []).length > 0
+      ? `\n\nThe following items will be resolved during evidence extraction:\n\n${intake.warnings.map(item => `- ${item}`).join('\n')}`
+      : '';
+    return `The request passed the Profile Automation completeness gate and has been queued for uplink-only profile generation.${deferred}`;
   }
   if (intake.status === 'manual' || intake.status === 'duplicate') {
     const reasons = [...(intake.errors || []), ...(intake.warnings || [])];
@@ -94,6 +109,8 @@ async function commandCollectSource(args) {
   const issue = await githubClient().getIssue(issueNumber);
   const intake = parseIssue(issue, { allowExisting: args['allow-existing'] === true });
   let source = null;
+  let decoder = null;
+  let decoderError = null;
   let error = null;
   try {
     if (intake.status !== 'ready') {
@@ -101,26 +118,62 @@ async function commandCollectSource(args) {
       intakeError.code = 'INTAKE_NOT_READY';
       throw intakeError;
     }
-    source = await loadOfficialSource(intake);
+    const [sourceResult, decoderResult] = await Promise.allSettled([
+      loadOfficialSource(intake),
+      loadDecoder(intake, { token: process.env.GITHUB_TOKEN })
+    ]);
+    if (decoderResult.status === 'fulfilled') decoder = decoderResult.value;
+    else decoderError = serializeError(decoderResult.reason);
+    if (sourceResult.status === 'fulfilled') {
+      source = sourceResult.value;
+    } else if (decoder) {
+      source = decoderFallbackSource(intake, decoder);
+    } else {
+      const sourceError = sourceResult.reason;
+      if (!sourceError.code) sourceError.code = 'SOURCE_UNAVAILABLE';
+      error = serializeError(sourceError);
+    }
   } catch (caught) {
     if (!caught.code) caught.code = 'SOURCE_UNAVAILABLE';
     error = serializeError(caught);
   }
-  const bundle = { intake, source, error };
+  const bundle = { intake, source, decoder, decoderError, error };
   writeJson(args.output, bundle);
   if (args['intake-output']) writeJson(args['intake-output'], intake);
-  console.log(JSON.stringify(bundle, null, 2));
+  console.log(JSON.stringify({
+    issueNumber: intake.issueNumber,
+    intakeStatus: intake.status,
+    source: source && {
+      url: source.url,
+      type: source.type,
+      pages: source.pages,
+      sha256: source.sha256,
+      textLength: String(source.text || '').length
+    },
+    decoder: decoder && {
+      origin: decoder.origin,
+      url: decoder.url,
+      sha256: decoder.sha256,
+      textLength: String(decoder.text || '').length
+    },
+    decoderError,
+    error
+  }, null, 2));
 }
 
 async function commandGenerate(args) {
   let intake;
   let source = null;
   let collectionError = null;
+  let decoder = null;
+  let decoderCollected = false;
   if (args.bundle) {
     const bundle = readJson(args.bundle);
     intake = bundle.intake;
     source = bundle.source || null;
     collectionError = bundle.error || null;
+    decoder = bundle.decoder || null;
+    decoderCollected = true;
   } else {
     const issueNumber = Number(args['issue-number']);
     const issue = await githubClient().getIssue(issueNumber);
@@ -135,7 +188,22 @@ async function commandGenerate(args) {
       error.code = 'INTAKE_NOT_READY';
       throw error;
     }
-    if (!source) source = await loadOfficialSource(intake);
+    if (!decoder && !decoderCollected) {
+      try {
+        decoder = await loadDecoder(intake, { token: process.env.GITHUB_TOKEN });
+      } catch {
+        decoder = null;
+      }
+    }
+    intake = attachDecoderEvidence(intake, decoder);
+    if (!source) {
+      try {
+        source = await loadOfficialSource(intake);
+      } catch (sourceError) {
+        if (decoder) source = decoderFallbackSource(intake, decoder);
+        else throw sourceError;
+      }
+    }
     manifest = await buildCandidate({
       models: modelConfiguration(),
       intake,

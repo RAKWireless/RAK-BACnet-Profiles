@@ -57,7 +57,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
-      - name: Download and extract the official document without model secrets
+      - name: Collect official document and decoder evidence without model secrets
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

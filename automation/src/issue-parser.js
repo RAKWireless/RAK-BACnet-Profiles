@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { WORKSPACE_ROOT } = require('./config');
 const { scrubPII } = require('./pii-scrubber');
-const { parseRequestedMappings } = require('../../scripts/lib/validation/requested-mapping');
+const { analyzeRequestedMappings } = require('../../scripts/lib/validation/requested-mapping');
 
 const FIELD_LABELS = {
   vendor: 'Device Vendor',
@@ -59,22 +59,43 @@ function normalizeHex(value) {
   return String(value || '').replace(/0x/gi, '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
 }
 
+const PORT_EXPRESSION = /(?:f\s*port|\bport)\s*[:=]?\s*(\d{1,3})\s*[:=]?/i;
+
+function normalizeMarkdownLine(value) {
+  return String(value || '').replace(/[*_`~]/g, ' ');
+}
+
 function extractUplinkExamples(value) {
   const examples = [];
   const lines = String(value || '').split(/\r?\n/);
+  const declaredPorts = new Set();
+  for (const line of lines) {
+    const match = normalizeMarkdownLine(line).match(PORT_EXPRESSION);
+    if (match) declaredPorts.add(Number(match[1]));
+  }
   let currentPort = null;
   for (const line of lines) {
-    const portMatch = line.match(/(?:f\s*port|port)\s*[:=]?\s*(\d{1,3})/i);
+    const normalizedLine = normalizeMarkdownLine(line);
+    const portMatch = normalizedLine.match(PORT_EXPRESSION);
     if (portMatch) currentPort = Number(portMatch[1]);
-    const payloadLine = line.replace(/(?:f\s*port|port)\s*[:=]?\s*\d{1,3}\s*[:=]?/ig, ' ');
+    const assignedPort = currentPort === null && declaredPorts.size === 1
+      ? [...declaredPorts][0]
+      : currentPort;
+    const payloadLine = normalizedLine.replace(PORT_EXPRESSION, ' ');
     const spaced = payloadLine.match(/(?:\b[0-9A-Fa-f]{2}[\s:-]+){1,}[0-9A-Fa-f]{2}\b/g) || [];
     const compact = payloadLine.match(/\b[0-9A-Fa-f]{4,}\b/g) || [];
     for (const candidate of [...spaced, ...compact]) {
       const hex = normalizeHex(candidate);
       const byteLength = hex.length / 2;
-      const looksLikeExample = Boolean(portMatch) || /example|payload|uplink|пример|示例|例/i.test(line) || byteLength >= 6;
-      if (looksLikeExample && hex.length >= 4 && hex.length % 2 === 0 && !examples.some(item => item.hex === hex && item.fPort === currentPort)) {
-        examples.push({ fPort: currentPort, explicitFPort: Boolean(portMatch), hex, sourceLine: scrubPII(line.trim()) });
+      const pureHexLine = /^\s*(?:(?:0x)?[0-9A-Fa-f]{2}[\s:-]*){2,}\s*$/.test(normalizedLine);
+      const looksLikeExample = Boolean(portMatch) || pureHexLine || /example|payload|uplink|hex|bytes?|пример|示例|例/i.test(line) || byteLength >= 6;
+      if (looksLikeExample && hex.length >= 4 && hex.length % 2 === 0 && !examples.some(item => item.hex === hex && item.fPort === assignedPort)) {
+        examples.push({
+          fPort: assignedPort,
+          explicitFPort: Number.isInteger(assignedPort),
+          hex,
+          sourceLine: scrubPII(line.trim())
+        });
       }
     }
   }
@@ -124,8 +145,9 @@ function parseIssue(issue, options = {}) {
   if (uplinkExamples.some(example => example.hex.length / 2 > 255)) {
     errors.push('Uplink examples must not exceed 255 bytes');
   }
-  if (uplinkExamples.some(example => !Number.isInteger(example.fPort) || !example.explicitFPort)) {
-    errors.push('Every uplink example must identify its fPort; edit the original Issue instead of adding a comment');
+  const fPortStatus = uplinkExamples.some(example => !Number.isInteger(example.fPort)) ? 'deferred' : 'explicit';
+  if (fPortStatus === 'deferred') {
+    warnings.push('One or more uplink examples omit fPort; the evidence stage must prove a fixed port assignment or a port-agnostic protocol');
   }
   if (uplinkExamples.some(example => Number.isInteger(example.fPort) && (example.fPort < 0 || example.fPort > 255))) {
     errors.push('Every uplink fPort must be between 0 and 255');
@@ -139,8 +161,11 @@ function parseIssue(issue, options = {}) {
     errors.push('LoRaWAN Protocol Version must be selected from the Issue form');
   }
   const bacnetMapping = field(sections, 'bacnetMapping');
-  if (parseRequestedMappings(bacnetMapping).length === 0) {
-    errors.push('BACnet Object Mapping Requirements must be completed');
+  const bacnetMappingRequest = analyzeRequestedMappings(bacnetMapping);
+  if (bacnetMappingRequest.status === 'missing') {
+    errors.push('BACnet Object Mapping Requirements must contain mapping rows or an explicit official-document page reference');
+  } else if (bacnetMappingRequest.status === 'deferred') {
+    warnings.push('BACnet mappings will be extracted from the cited official-document pages before generation');
   }
 
   const downlinkSupport = field(sections, 'downlinkSupport');
@@ -172,11 +197,15 @@ function parseIssue(issue, options = {}) {
     datasheetUrl,
     lorawanClass,
     lorawanVersion,
+    fPortStatus,
     uplinkText: scrubPII(field(sections, 'uplinkData')),
     uplinkExamples,
     decoder: scrubPII(field(sections, 'decoder')),
     downlinkSupport,
-    bacnetMapping: scrubPII(bacnetMapping)
+    bacnetMapping: scrubPII(bacnetMapping),
+    bacnetMappingStatus: bacnetMappingRequest.status,
+    bacnetMappingReferences: bacnetMappingRequest.references,
+    requestedMappings: bacnetMappingRequest.mappings
   };
 }
 

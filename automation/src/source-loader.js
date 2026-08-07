@@ -165,4 +165,27 @@ async function loadOfficialSource(intake) {
   };
 }
 
-module.exports = { isPrivateAddress, validateRemoteUrl, fetchDocument, extractSourceText, loadOfficialSource, createPinnedLookup };
+function isInlineDecoder(value) {
+  return /function\s+(?:Decode|Decoder|decodeUplink|decode)\b|(?:decodeUplink|Decoder)\s*[:=]/i.test(String(value || ''));
+}
+
+function decoderFallbackSource(intake, decoder) {
+  return {
+    url: decoder.url || `Issue #${intake.issueNumber} decoder`,
+    type: 'decoder',
+    pages: null,
+    sha256: decoder.sha256 || null,
+    text: scrubPII(decoder.text || '').slice(0, MAX_SOURCE_TEXT)
+  };
+}
+
+module.exports = {
+  isPrivateAddress,
+  validateRemoteUrl,
+  fetchDocument,
+  extractSourceText,
+  loadOfficialSource,
+  isInlineDecoder,
+  decoderFallbackSource,
+  createPinnedLookup
+};

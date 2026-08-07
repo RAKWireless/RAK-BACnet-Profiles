@@ -18,16 +18,29 @@ const {
   readCandidate,
   normalizeProfileYaml,
   normalizeFixture,
+  resolveIntakeFPorts,
+  resolveIntakeMapping,
   candidatePreflight,
   writeGenerationError
 } = require('../automation/src/candidate');
-const { validateEvidence } = require('../automation/src/evidence');
+const { buildEvidence, validateEvidence, classifyEvidenceFinding } = require('../automation/src/evidence');
 const { GitHubClient } = require('../automation/src/github-client');
-const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
+const { isPrivateAddress, createPinnedLookup, decoderFallbackSource } = require('../automation/src/source-loader');
+const {
+  loadDecoder,
+  isDecoderCode,
+  extractDecoderUrl,
+  githubRawUrl,
+  relevantToDevice
+} = require('../automation/src/decoder-loader');
 const { modelConfiguration } = require('../automation/src/config');
 const { loadRepositoryExample } = require('../automation/src/reference-selector');
 const { DEFAULT_TIMEOUT_MS, completeJson, isRetryableStatus } = require('../automation/src/model-client');
-const { validateRequestedMapping } = require('./lib/validation/requested-mapping');
+const {
+  parseRequestedMappings,
+  analyzeRequestedMappings,
+  validateRequestedMapping
+} = require('./lib/validation/requested-mapping');
 const { getModelsWithTests } = require('./update-registry');
 
 const SAFE_CODEC = `function Decode(fPort, data, variables) {
@@ -41,6 +54,17 @@ const SAFE_CODEC = `function Decode(fPort, data, variables) {
 function decodeUplink(input) {
   if (!input || !Array.isArray(input.bytes)) return {data: [], errors: ["invalid input"]};
   if (input.fPort !== 10) return {data: [], errors: ["unsupported fPort"]};
+  if (input.bytes.length < 2) return {data: [], errors: ["truncated payload"]};
+  return {data: Decode(input.fPort, input.bytes, input.variables)};
+}`;
+
+const AGNOSTIC_CODEC = `function Decode(fPort, data, variables) {
+  if (data.length < 2) return [];
+  return [{name: "Temperature", channel: 1, value: ((data[0] << 8) | data[1]) / 10, unit: "degreesCelsius"}];
+}
+function decodeUplink(input) {
+  if (!input || !Array.isArray(input.bytes)) return {data: [], errors: ["invalid input"]};
+  if (input.fPort < 1 || input.fPort > 223) return {data: [], errors: ["unsupported fPort"]};
   if (input.bytes.length < 2) return {data: [], errors: ["truncated payload"]};
   return {data: Decode(input.fPort, input.bytes, input.variables)};
 }`;
@@ -119,11 +143,60 @@ function testIssueParsing() {
 
   const missingPort = syntheticIssue();
   missingPort.body = missingPort.body.replace('fPort 10: 00 FA', '00 FA');
-  assert.equal(parseIssue(missingPort, { allowExisting: true }).status, 'needs-info');
+  const parsedMissingPort = parseIssue(missingPort, { allowExisting: true });
+  assert.equal(parsedMissingPort.status, 'ready');
+  assert.equal(parsedMissingPort.fPortStatus, 'deferred');
+  assert.equal(parsedMissingPort.uplinkExamples[0].fPort, null);
+  assert(parsedMissingPort.warnings.some(item => item.includes('evidence stage')));
 
   const inheritedPort = syntheticIssue();
   inheritedPort.body = inheritedPort.body.replace('fPort 10: 00 FA', 'fPort 10: 00 FA\n01 02 03 04 05 06');
-  assert.equal(parseIssue(inheritedPort, { allowExisting: true }).status, 'needs-info');
+  assert.equal(parseIssue(inheritedPort, { allowExisting: true }).status, 'ready');
+
+  const markdownPort = syntheticIssue();
+  markdownPort.body = markdownPort.body.replace('fPort 10: 00 FA', '- **fPort:** 10\nHex: 00 FA');
+  const parsedMarkdownPort = parseIssue(markdownPort, { allowExisting: true });
+  assert.equal(parsedMarkdownPort.status, 'ready');
+  assert.equal(parsedMarkdownPort.uplinkExamples[0].fPort, 10);
+
+  const singleSectionPort = syntheticIssue();
+  singleSectionPort.body = singleSectionPort.body.replace('fPort 10: 00 FA', 'Hex: 00 FA\nfPort: 10');
+  const parsedSingleSectionPort = parseIssue(singleSectionPort, { allowExisting: true });
+  assert.equal(parsedSingleSectionPort.status, 'ready');
+  assert.equal(parsedSingleSectionPort.uplinkExamples[0].fPort, 10);
+
+  const ambiguousSectionPort = syntheticIssue();
+  ambiguousSectionPort.body = ambiguousSectionPort.body.replace('fPort 10: 00 FA', 'Payload: 00 FA\nfPort: 10\nfPort: 11');
+  const parsedAmbiguousSectionPort = parseIssue(ambiguousSectionPort, { allowExisting: true });
+  assert.equal(parsedAmbiguousSectionPort.status, 'ready');
+  assert.equal(parsedAmbiguousSectionPort.fPortStatus, 'deferred');
+
+  const legacyMapping = syntheticIssue();
+  legacyMapping.body = legacyMapping.body.replace(
+    '- Temperature → AnalogInputObject (degreesCelsius)',
+    'Temperature → Analog Input (AI) – Units: °C'
+  );
+  const parsedLegacyMapping = parseIssue(legacyMapping, { allowExisting: true });
+  assert.equal(parsedLegacyMapping.status, 'ready');
+  assert.equal(parsedLegacyMapping.requestedMappings[0].type, 'AnalogInputObject');
+  assert.equal(parsedLegacyMapping.requestedMappings[0].units, 'degreesCelsius');
+
+  const documentMapping = syntheticIssue();
+  documentMapping.body = documentMapping.body.replace(
+    '- Temperature → AnalogInputObject (degreesCelsius)',
+    'Please reference the official document pages 83-95 for the BACnet data point definitions.'
+  );
+  const parsedDocumentMapping = parseIssue(documentMapping, { allowExisting: true });
+  assert.equal(parsedDocumentMapping.status, 'ready');
+  assert.equal(parsedDocumentMapping.bacnetMappingStatus, 'deferred');
+  assert.equal(parsedDocumentMapping.bacnetMappingReferences[0].pages, '83-95');
+
+  const unresolvedMapping = syntheticIssue();
+  unresolvedMapping.body = unresolvedMapping.body.replace(
+    '- Temperature → AnalogInputObject (degreesCelsius)',
+    'Please see the documentation.'
+  );
+  assert.equal(parseIssue(unresolvedMapping, { allowExisting: true }).status, 'needs-info');
 }
 
 function testPiiScrubbingDoesNotCorruptPayloads() {
@@ -164,6 +237,77 @@ function testPinnedDnsLookupSupportsModernNode() {
     singleResult = { error, address, family };
   });
   assert.deepEqual(singleResult, { error: null, address: '203.0.113.10', family: 4 });
+}
+
+async function testDecoderDiscovery() {
+  const decoderText = 'function decodeUplink(input) { return { data: { model: "T100" } }; }';
+  assert.equal(isDecoderCode(decoderText), true);
+  assert.equal(isDecoderCode('function Decode(fPort, bytes) { return bytes; }'), true);
+  assert.equal(isDecoderCode('function Decoder(bytes) { return bytes; }'), true);
+  assert.equal(extractDecoderUrl('Decoder: https://example.com/T100-decoder.js'), 'https://example.com/T100-decoder.js');
+  assert.equal(extractDecoderUrl('Manual: https://example.com/manual.pdf#decoder'), null);
+  assert.equal(
+    githubRawUrl('https://github.com/acme/codecs/blob/main/T100/decoder.js'),
+    'https://raw.githubusercontent.com/acme/codecs/main/T100/decoder.js'
+  );
+  assert.equal(relevantToDevice({ url: 'https://example.com/T100/decoder.js', text: decoderText }, 'DifferentVendor', 'T100'), true);
+
+  let externalCalls = 0;
+  const inline = await loadDecoder({ issueNumber: 99, vendor: 'Acme', model: 'T100', decoder: decoderText }, {
+    download: async () => { externalCalls += 1; return null; },
+    search: async () => { externalCalls += 1; return null; }
+  });
+  assert.equal(inline.origin, 'issue-inline');
+  assert.equal(externalCalls, 0);
+
+  let downloadedUrl = null;
+  const linked = await loadDecoder({ issueNumber: 99, vendor: 'Acme', model: 'T100', decoder: 'https://example.com/T100-decoder.js' }, {
+    download: async url => {
+      downloadedUrl = url;
+      return { text: decoderText, url, sha256: 'a'.repeat(64) };
+    },
+    search: async () => null
+  });
+  assert.equal(downloadedUrl, 'https://example.com/T100-decoder.js');
+  assert.equal(linked.origin, 'issue-url');
+
+  let treeRequest = null;
+  const treeLinked = await loadDecoder({
+    issueNumber: 99,
+    vendor: 'Acme',
+    model: 'T100',
+    decoder: 'https://github.com/acme/codecs/tree/main/T100'
+  }, {
+    downloadTree: async (url, token) => {
+      treeRequest = { url, token };
+      return { text: decoderText, url: 'https://raw.githubusercontent.com/acme/codecs/main/T100/decoder.js', sha256: 'd'.repeat(64) };
+    },
+    download: async () => null,
+    search: async () => null
+  });
+  assert.deepEqual(treeRequest, { url: 'https://github.com/acme/codecs/tree/main/T100', token: undefined });
+  assert.equal(treeLinked.origin, 'issue-url');
+
+  let searchRequest = null;
+  const searched = await loadDecoder({ issueNumber: 99, vendor: 'Acme', model: 'T100', decoder: '' }, {
+    search: async (vendor, model) => {
+      searchRequest = { vendor, model };
+      return { text: decoderText, url: 'https://github.com/acme/codecs/T100.js', sha256: 'b'.repeat(64) };
+    }
+  });
+  assert.deepEqual(searchRequest, { vendor: 'Acme', model: 'T100' });
+  assert.equal(searched.origin, 'github-search');
+
+  const missing = await loadDecoder({ issueNumber: 99, vendor: 'Acme', model: 'T100', decoder: '' }, {
+    search: async () => null
+  });
+  assert.equal(missing, null);
+
+  const fallback = decoderFallbackSource({ issueNumber: 99 }, linked);
+  assert.equal(fallback.type, 'decoder');
+  assert.equal(fallback.url, linked.url);
+  assert.equal(fallback.sha256, linked.sha256);
+  assert.equal(fallback.text, decoderText);
 }
 
 function testUnifiedModelConfiguration() {
@@ -308,6 +452,78 @@ function testEvidenceGates() {
   };
   const fixture = normalizeFixture({ testCases: [{ fPort: 10, input: '00FA' }] }, intake, evidenceWithUnsubmittedKnownAnswer, 'single-model');
   assert.equal(fixture.evidenceLevel, 'documentation-only');
+
+  const deferredIssue = syntheticIssue();
+  deferredIssue.body = deferredIssue.body.replace(
+    '- Temperature → AnalogInputObject (degreesCelsius)',
+    'Please reference the official document pages 83-95 for the BACnet data point definitions.'
+  );
+  const deferredIntake = parseIssue(deferredIssue, { allowExisting: true });
+  const completeEvidence = {
+    messageTypes: [{
+      name: 'sensor', fPorts: [10], minimumLength: 2,
+      fields: [{ name: 'Temperature', offset: 0, length: 2, citation: 'Manual p.83' }]
+    }],
+    requestedMappings: [],
+    knownAnswers: [],
+    ambiguities: []
+  };
+  assert(validateEvidence(completeEvidence, deferredIntake).some(item => item.includes('BACnet mappings')));
+  completeEvidence.requestedMappings = [{
+    name: 'Temperature', type: 'Analog Input (AI)', units: '°C', citation: 'Manual p.83'
+  }];
+  assert.equal(validateEvidence(completeEvidence, deferredIntake).some(item => item.includes('BACnet mapping')), false);
+
+  const missingPortIssue = syntheticIssue();
+  missingPortIssue.body = missingPortIssue.body.replace('fPort 10: 00 FA', 'Payload: 00 FA');
+  const missingPortIntake = parseIssue(missingPortIssue, { allowExisting: true });
+  const unresolvedPortEvidence = {
+    messageTypes: [{
+      name: 'sensor', fPorts: [], minimumLength: 2,
+      fields: [{ name: 'Temperature', offset: 0, length: 2, citation: 'Manual p.1' }]
+    }],
+    knownAnswers: [],
+    ambiguities: []
+  };
+  assert(validateEvidence(unresolvedPortEvidence, missingPortIntake).some(item => item.includes('fixed or port-agnostic')));
+
+  const fixedPortEvidence = {
+    ...unresolvedPortEvidence,
+    fPortPolicy: { mode: 'fixed', ports: [10], citation: 'Vendor decoder checks fPort 10' },
+    messageTypes: [{ ...unresolvedPortEvidence.messageTypes[0], fPorts: [10] }]
+  };
+  assert.equal(validateEvidence(fixedPortEvidence, missingPortIntake).length, 0);
+  const fixedResolved = resolveIntakeFPorts(missingPortIntake, fixedPortEvidence);
+  assert.equal(fixedResolved.uplinkExamples[0].fPort, 10);
+  assert.deepEqual(fixedResolved.fPortPolicy, { mode: 'fixed', ports: [10], citation: 'Vendor decoder checks fPort 10' });
+
+  const agnosticPortEvidence = {
+    ...unresolvedPortEvidence,
+    fPortPolicy: { mode: 'agnostic', ports: [], representativeFPort: 1, citation: 'Vendor decoder never reads fPort' }
+  };
+  assert.equal(validateEvidence(agnosticPortEvidence, missingPortIntake).length, 0);
+  const agnosticResolved = resolveIntakeFPorts(missingPortIntake, agnosticPortEvidence);
+  assert.equal(agnosticResolved.uplinkExamples[0].fPort, 1);
+  assert.deepEqual(agnosticResolved.fPortPolicy, { mode: 'agnostic', representativeFPort: 1, citation: 'Vendor decoder never reads fPort' });
+
+  const multiPortIssue = syntheticIssue();
+  multiPortIssue.body = multiPortIssue.body.replace('fPort 10: 00 FA', 'Payload: 00 FA\nPayload: 01 02');
+  const multiPortIntake = parseIssue(multiPortIssue, { allowExisting: true });
+  const multiPortEvidence = {
+    messageTypes: [{
+      name: 'messages', fPorts: [1, 2], minimumLength: 2,
+      fields: [{ name: 'Temperature', offset: 0, length: 2, citation: 'Manual p.1' }]
+    }],
+    fPortPolicy: { mode: 'fixed', ports: [1, 2], citation: 'Manual p.1' },
+    uplinkAssignments: [
+      { exampleIndex: 1, input: '00FA', fPort: 1, citation: 'Manual selector table' },
+      { exampleIndex: 2, input: '0102', fPort: 2, citation: 'Manual selector table' }
+    ],
+    knownAnswers: [],
+    ambiguities: []
+  };
+  assert.equal(validateEvidence(multiPortEvidence, multiPortIntake).length, 0);
+  assert.deepEqual(resolveIntakeFPorts(multiPortIntake, multiPortEvidence).uplinkExamples.map(item => item.fPort), [1, 2]);
 }
 
 function testRequestedBacnetMapping() {
@@ -323,6 +539,31 @@ function testRequestedBacnetMapping() {
   assert.equal(validateRequestedMapping(profile, '- Low Battery Alarm → BinaryInputObject').valid, true);
   assert.equal(validateRequestedMapping(profile, '- Temperature → BinaryInputObject').valid, false);
   assert.equal(validateRequestedMapping(profile, '- Humidity → AnalogInputObject (percent)').valid, false);
+  assert.equal(validateRequestedMapping(profile, 'Temperature → Analog Input (AI) – Units: °C').valid, true);
+  assert.equal(validateRequestedMapping(profile, 'Temperature → AI – Units: °C').valid, true);
+  assert.equal(validateRequestedMapping(profile, 'Temperature → AI – Units: bananas').valid, false);
+  assert.equal(validateRequestedMapping(profile, 'High Temperature Alarm → BI – Units: bananas').valid, false);
+  assert.deepEqual(parseRequestedMappings('| Temperature | Analog Input (AI) – Units: °C |')[0], {
+    name: 'Temperature',
+    type: 'AnalogInputObject',
+    units: 'degreesCelsius',
+    rawType: 'Analog Input (AI) – Units: °C'
+  });
+  const deferred = analyzeRequestedMappings('Please reference the official document Page 83-95 definition of BACnet Data Point');
+  assert.equal(deferred.status, 'deferred');
+  assert.equal(deferred.references[0].pages, '83-95');
+  assert.equal(validateRequestedMapping(profile, 'Please reference the official document Page 83-95').valid, false);
+
+  const deferredIssue = syntheticIssue();
+  deferredIssue.body = deferredIssue.body.replace(
+    '- Temperature → AnalogInputObject (degreesCelsius)',
+    'Please reference the official document Page 83-95 definition of BACnet Data Point'
+  );
+  const resolved = resolveIntakeMapping(parseIssue(deferredIssue, { allowExisting: true }), {
+    requestedMappings: [{ name: 'Temperature', type: 'Analog Input (AI)', units: '°C', citation: 'Manual p.83' }]
+  });
+  assert.equal(resolved.bacnetMapping, '- Temperature → AnalogInputObject (degreesCelsius)');
+  assert.equal(resolved.bacnetMappingSource, 'deferred');
 }
 
 function testAlarmSemanticRulePrecedence() {
@@ -501,6 +742,46 @@ function testGeneratedProfileContract() {
   fs.writeFileSync(profilePath, yaml.dump(profileWithDownlinkChannel, { lineWidth: -1 }), 'utf8');
   assert.equal(validateTestFixture(profilePath, fixturePath).valid, true);
 
+  const profileWithOptionalInput = {
+    ...profile,
+    datatype: {
+      ...profile.datatype,
+      '2': { name: 'Humidity', type: 'AnalogInputObject', units: 'percentRelativeHumidity', channel: 2, updateInterval: 600, covIncrement: 0.1 }
+    }
+  };
+  fs.writeFileSync(profilePath, yaml.dump(profileWithOptionalInput, { lineWidth: -1 }), 'utf8');
+  const knownAnswerCoverage = validateTestFixture(profilePath, fixturePath);
+  assert.equal(knownAnswerCoverage.valid, false);
+  assert(knownAnswerCoverage.errors.some(error => error.includes('datatype channels: 2')));
+
+  const documentationOnlyFixture = {
+    ...fixture,
+    evidenceLevel: 'documentation-only',
+    testCases: fixture.testCases.map(({ expectedOutput, ...testCase }) => testCase)
+  };
+  fs.writeFileSync(fixturePath, JSON.stringify(documentationOnlyFixture), 'utf8');
+  const documentationCoverage = validateTestFixture(profilePath, fixturePath);
+  assert.equal(documentationCoverage.valid, true);
+  assert(documentationCoverage.warnings.some(warning => warning.includes('datatype channels: 2')));
+
+  const agnosticProfile = { ...profile, codec: AGNOSTIC_CODEC };
+  const agnosticFixture = {
+    ...fixture,
+    fPortPolicy: {
+      mode: 'agnostic',
+      representativeFPort: 10,
+      citation: 'Vendor decoder does not inspect fPort'
+    }
+  };
+  fs.writeFileSync(profilePath, yaml.dump(agnosticProfile, { lineWidth: -1 }), 'utf8');
+  fs.writeFileSync(fixturePath, JSON.stringify(agnosticFixture), 'utf8');
+  assert.equal(validateTestFixture(profilePath, fixturePath).valid, true);
+
+  fs.writeFileSync(profilePath, yaml.dump(profile, { lineWidth: -1 }), 'utf8');
+  const falselyAgnostic = validateTestFixture(profilePath, fixturePath);
+  assert.equal(falselyAgnostic.valid, false);
+  assert(falselyAgnostic.errors.some(error => error.includes('port-agnostic decoder')));
+
   const unsafeTruncationProfile = {
     ...profile,
     codec: `function Decode(fPort, data) { return [{name: "Temperature", channel: 1, value: 0, unit: "degreesCelsius"}]; }
@@ -524,6 +805,71 @@ async function withMockModel(responses, callback) {
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+}
+
+function protocolEvidence(unit = 'degreesCelsius') {
+  return {
+    messageTypes: [{
+      name: 'sensor',
+      fPorts: [10],
+      selector: null,
+      minimumLength: 2,
+      citation: 'Manual p.1',
+      fields: [{
+        name: 'Temperature', offset: 0, length: 2, bits: null, endianness: 'big-endian', signed: false,
+        scale: 0.1, formula: 'raw / 10', unit, citation: 'Manual p.1'
+      }]
+    }],
+    requestedMappings: [],
+    knownAnswers: [],
+    conflicts: [],
+    ambiguities: [],
+    unsupported: []
+  };
+}
+
+async function testEvidenceReconciliationSeverity() {
+  const intake = parseIssue(syntheticIssue(), { allowExisting: true });
+  const source = {
+    url: intake.datasheetUrl,
+    type: 'pdf',
+    pages: 1,
+    sha256: 'c'.repeat(64),
+    text: 'Protocol text with a two-byte big-endian temperature value on fPort 10. '.repeat(5)
+  };
+  const valid = protocolEvidence();
+  const primaryIncomplete = { ...protocolEvidence(), messageTypes: [], ambiguities: ['The first extraction failed to locate the message table'] };
+  await withMockModel([
+    primaryIncomplete,
+    valid,
+    { approved: true, findings: [], conflicts: [], ambiguities: [], consolidated: valid }
+  ], async model => {
+    const result = await buildEvidence({ primary: model, secondary: model }, intake, source);
+    assert.equal(result.approved, true);
+    assert.equal(result.consolidated.messageTypes.length, 1);
+  });
+
+  const aliasEvidence = protocolEvidence('°C');
+  await withMockModel([
+    aliasEvidence,
+    valid,
+    {
+      approved: false,
+      findings: [{ severity: 'warning', category: 'format', message: "Equivalent unit aliases '°C' and 'degreesCelsius'" }],
+      conflicts: [],
+      ambiguities: [],
+      consolidated: aliasEvidence
+    }
+  ], async model => {
+    const result = await buildEvidence({ primary: model, secondary: model }, intake, source);
+    assert.equal(result.approved, true);
+    assert.equal(result.consolidated.messageTypes[0].fields[0].unit, 'degreesCelsius');
+    assert.equal(result.warnings.length, 1);
+  });
+
+  assert.equal(classifyEvidenceFinding("Equivalent units '°C' and 'degreesCelsius'").severity, 'warning');
+  assert.equal(classifyEvidenceFinding({ severity: 'warning', category: 'format', message: 'fPort 10 versus fPort 11' }).severity, 'blocking');
+  assert.equal(classifyEvidenceFinding({ severity: 'warning', category: 'format', message: 'fPort formatting differs: 10 versus 11' }).severity, 'blocking');
 }
 
 async function testEndToEndCandidateBuild() {
@@ -581,6 +927,7 @@ async function main() {
   testSafetyRules();
   testNetworkBoundaryRules();
   testPinnedDnsLookupSupportsModernNode();
+  await testDecoderDiscovery();
   testUnifiedModelConfiguration();
   testRegistryUsesCommittedFixtureFormatOnly();
   await testStateLabelsReplacePreviousState();
@@ -595,6 +942,7 @@ async function main() {
   testGeneratedProfileContract();
   await testTransientModelRequestRetry();
   await testModelRequestHeartbeatDoesNotLeakPayload();
+  await testEvidenceReconciliationSeverity();
   await testEndToEndCandidateBuild();
   console.log('Profile Automation tests: PASS');
 }

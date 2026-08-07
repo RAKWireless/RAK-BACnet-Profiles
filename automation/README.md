@@ -12,7 +12,7 @@ Profile Automation turns a complete GitHub Profile Request into an uplink-only D
 6. An authorized `Request changes` review regenerates the same PR. The bot never merges.
 7. After merge, the Issue closes with `profile:unverified`; real-hardware verification remains separate.
 
-The official document is downloaded and parsed in a separate job that has no model-provider secrets. Generated codec code is executed only in the isolated validation job.
+The official document and any decoder evidence are downloaded in a separate job that has no model-provider secrets. Decoder discovery uses this order: an inline function in the Issue, a decoder link in the Issue, then a constrained GitHub code search using Device Vendor + Device Model. If no decoder is found, protocol evidence is derived from the Product Manual/Datasheet. Downloaded decoder text is treated as untrusted evidence and is never executed; generated codec code is executed only in the isolated validation job.
 
 Generation receives the formal `Thermokon-NOVOS3-OccLumCO2TempRH` Profile and its committed fixture as a repository layout reference. The prompt explicitly identifies its historical downlink, loop, partial-payload, and robustness patterns as legacy behavior that must not be copied. Generation also receives the closest historical Profile's BACnet datatype and LoRaWAN metadata as a mapping reference; current uplink-only and fail-closed requirements remain authoritative.
 
@@ -20,9 +20,10 @@ Generation receives the formal `Thermokon-NOVOS3-OccLumCO2TempRH` Profile and it
 
 - New Profiles only.
 - Uplink-only devices only.
-- Machine-readable PDF, HTML, or text documentation; OCR is not supported.
-- BACnet mapping remains required in the Issue form.
+- Machine-readable PDF, HTML, or text documentation is preferred; OCR is not supported. A usable decoder can keep evidence extraction available when the document download fails.
+- BACnet mapping remains required in the Issue form, either as explicit rows or as an explicit official-document page reference from which canonical mappings can be extracted.
 - A known-answer payload is preferred but optional. Documentation-only profiles are clearly marked and remain `verified: false`.
+- Missing fPort is deferred to evidence extraction instead of rejected at Intake. Automation must resolve it to cited fixed ports or prove that the payload protocol is port-agnostic; otherwise the submitter is asked for actual Network Server uplink metadata.
 
 ## Repository configuration
 

@@ -87,6 +87,43 @@ function validateUnknownFPort(profile, testCase, knownFPorts) {
   }
 }
 
+function validateRejectedFPort(profile, testCase, fPort, label) {
+  try {
+    const result = testDecode(profile.codec, fPort, testCase.input);
+    const rejectedCase = { ...testCase, fPort };
+    delete rejectedCase.expectedOutput;
+    const errors = validateResult(profile, rejectedCase, result);
+    if (Array.isArray(result.data) && result.data.length > 0) {
+      errors.push(`${label} fPort ${fPort} produced BACnet data`);
+    }
+    if (!Array.isArray(result.errors) || result.errors.length === 0) {
+      errors.push(`${label} fPort ${fPort} must return an errors array`);
+    }
+    return errors;
+  } catch (error) {
+    return [`${label} fPort ${fPort} threw: ${error.message}`];
+  }
+}
+
+function validateAgnosticFPort(profile, testCase, baseline) {
+  const errors = [];
+  const alternateFPort = testCase.fPort === 223 ? 1 : 223;
+  try {
+    const alternate = testDecode(profile.codec, alternateFPort, testCase.input);
+    const alternateCase = { ...testCase, fPort: alternateFPort };
+    delete alternateCase.expectedOutput;
+    errors.push(...validateResult(profile, alternateCase, alternate).map(error => `alternate application fPort ${alternateFPort}: ${error}`));
+    if (!deepEqual(alternate.data || [], baseline.data || [])) {
+      errors.push(`port-agnostic decoder changed output on application fPort ${alternateFPort}`);
+    }
+  } catch (error) {
+    errors.push(`alternate application fPort ${alternateFPort} threw: ${error.message}`);
+  }
+  errors.push(...validateRejectedFPort(profile, testCase, 0, 'MAC-command'));
+  errors.push(...validateRejectedFPort(profile, testCase, 255, 'reserved'));
+  return errors;
+}
+
 function validateTestFixture(profilePath, fixturePath) {
   const profile = loadYAML(profilePath);
   const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
@@ -97,7 +134,10 @@ function validateTestFixture(profilePath, fixturePath) {
   const schemaCheck = validateFixtureSchema(fixture);
   errors.push(...schemaCheck.errors);
   if (!schemaCheck.valid) return { valid: false, errors, warnings, results };
-  const knownFPorts = new Set(fixture.testCases.map(testCase => testCase.fPort));
+  const knownFPorts = new Set([
+    ...fixture.testCases.map(testCase => testCase.fPort),
+    ...((fixture.fPortPolicy && fixture.fPortPolicy.mode === 'fixed' && fixture.fPortPolicy.ports) || [])
+  ]);
 
   const expectedProfile = path.basename(profilePath, path.extname(profilePath));
   if (fixture.profile !== expectedProfile) errors.push(`Fixture profile '${fixture.profile}' must equal '${expectedProfile}'`);
@@ -117,7 +157,11 @@ function validateTestFixture(profilePath, fixturePath) {
         testErrors.push(...validateTruncation(profile, testCase));
       }
       if ((fixture.robustness && fixture.robustness.checkUnknownFPort) !== false) {
-        testErrors.push(...validateUnknownFPort(profile, testCase, knownFPorts));
+        if (fixture.fPortPolicy && fixture.fPortPolicy.mode === 'agnostic') {
+          testErrors.push(...validateAgnosticFPort(profile, testCase, first));
+        } else {
+          testErrors.push(...validateUnknownFPort(profile, testCase, knownFPorts));
+        }
       }
     } catch (error) {
       testErrors.push(error.message);
@@ -132,7 +176,11 @@ function validateTestFixture(profilePath, fixturePath) {
     .map(([channel]) => Number(channel))
     .sort((a, b) => a - b);
   const missingChannels = declaredChannels.filter(channel => !observedChannels.has(channel));
-  if (missingChannels.length > 0) errors.push(`Test fixtures do not cover datatype channels: ${missingChannels.join(', ')}`);
+  if (missingChannels.length > 0) {
+    const message = `Test fixtures do not cover datatype channels: ${missingChannels.join(', ')}`;
+    if (fixture.evidenceLevel === 'documentation-only') warnings.push(message);
+    else errors.push(message);
+  }
   if (fixture.evidenceLevel === 'documentation-only') warnings.push('No independent known-answer oracle is available');
 
   return { valid: errors.length === 0, errors, warnings, results, observedChannels: [...observedChannels].sort((a, b) => a - b) };

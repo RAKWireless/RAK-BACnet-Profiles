@@ -6,12 +6,17 @@ const path = require('path');
 const yaml = require('js-yaml');
 const { completeJson } = require('./model-client');
 const { loadPrompt } = require('./prompt-loader');
-const { buildEvidence } = require('./evidence');
+const { buildEvidence, normalizeFPortPolicy } = require('./evidence');
 const { selectReference, loadRepositoryExample } = require('./reference-selector');
 const { normalizeHex } = require('./issue-parser');
 const { writeJson, writeText } = require('./io');
 const { compileCodec } = require('../../scripts/lib/codec-sandbox');
 const { logProgress, elapsedSeconds } = require('./progress');
+const {
+  analyzeRequestedMappings,
+  normalizeMappingEntries,
+  formatRequestedMappings
+} = require('../../scripts/lib/validation/requested-mapping');
 
 const REQUIRED_CODEC_FUNCTIONS = ['Decode', 'decodeUplink'];
 
@@ -140,17 +145,27 @@ function normalizeProfileYaml(rawYaml, intake, previousProfile = null) {
   return yaml.dump(ordered, { noRefs: true, lineWidth: -1, sortKeys: false, quotingType: '"' });
 }
 
-function normalizedKnownAnswers(evidence) {
+function normalizedKnownAnswers(evidence, intake) {
+  const representativeFPort = intake.fPortPolicy && intake.fPortPolicy.mode === 'agnostic'
+    ? intake.fPortPolicy.representativeFPort
+    : null;
   return (evidence.knownAnswers || []).map(answer => ({
     ...answer,
     normalizedInput: normalizeHex(answer.input),
-    fPort: Number(answer.fPort)
+    fPort: (answer.fPort === null || answer.fPort === '' || answer.fPort === undefined) && representativeFPort
+      ? representativeFPort
+      : Number(answer.fPort)
   }));
 }
 
 function normalizeFixture(rawFixture, intake, evidence, reviewMode, source = null) {
   const supplied = Array.isArray(rawFixture && rawFixture.testCases) ? rawFixture.testCases : [];
-  const knownAnswers = normalizedKnownAnswers(evidence);
+  const fixtureFPortPolicy = intake.fPortPolicy || {
+    mode: 'fixed',
+    ports: [...new Set((intake.uplinkExamples || []).map(example => example.fPort).filter(Number.isInteger))].sort((a, b) => a - b),
+    citation: 'Explicit fPort values supplied in the Issue'
+  };
+  const knownAnswers = normalizedKnownAnswers(evidence, intake);
   const applicableKnownAnswers = knownAnswers.filter(answer => intake.uplinkExamples.some(
     example => example.hex === answer.normalizedInput && example.fPort === answer.fPort
   ));
@@ -170,22 +185,107 @@ function normalizeFixture(rawFixture, intake, evidence, reviewMode, source = nul
     return testCase;
   });
 
+  const sources = [
+    { type: 'issue', reference: intake.issueUrl || `Issue #${intake.issueNumber}`, citation: 'Uplink examples and requested BACnet mapping' }
+  ];
+  if (source && source.type !== 'decoder') {
+    sources.push({
+      type: 'official-document',
+      reference: source.url || intake.datasheetUrl,
+      citation: source.sha256 ? `Protocol documentation SHA-256: ${source.sha256}` : 'Protocol documentation used during generation'
+    });
+  }
+  if (intake.decoderSource) {
+    sources.push({
+      type: 'customer-data',
+      reference: intake.decoderUrl || intake.issueUrl || `Issue #${intake.issueNumber}`,
+      citation: `Untrusted decoder text used as supporting evidence (${intake.decoderOrigin || 'unknown origin'}${intake.decoderSha256 ? `; SHA-256: ${intake.decoderSha256}` : ''})`
+    });
+  }
+
   return {
     schemaVersion: 1,
     profile: intake.profileName,
     evidenceLevel: applicableKnownAnswers.length > 0 ? 'known-answer' : 'documentation-only',
     reviewMode,
-    sources: [
-      { type: 'issue', reference: intake.issueUrl || `Issue #${intake.issueNumber}`, citation: 'Uplink examples and requested BACnet mapping' },
-      {
-        type: 'official-document',
-        reference: (source && source.url) || intake.datasheetUrl,
-        citation: source && source.sha256 ? `Protocol documentation SHA-256: ${source.sha256}` : 'Protocol documentation used during generation'
-      },
-      ...(intake.decoder ? [{ type: 'customer-data', reference: intake.issueUrl || `Issue #${intake.issueNumber}`, citation: 'Decoder supplied in the Issue' }] : [])
-    ],
+    fPortPolicy: fixtureFPortPolicy,
+    sources,
     robustness: { checkTruncation: true, checkUnknownFPort: true },
     testCases
+  };
+}
+
+function fPortAssignment(evidence, example, index) {
+  const assignments = evidence.uplinkAssignments || [];
+  const byIndex = assignments.find(assignment => assignment.exampleIndex === index + 1);
+  if (byIndex) return byIndex;
+  const byPayload = assignments.filter(assignment => assignment.input === example.hex);
+  return byPayload.length === 1 ? byPayload[0] : null;
+}
+
+function fPortResolutionError(message) {
+  const error = new Error(message);
+  error.code = 'FPORT_UNRESOLVED';
+  error.stage = 'evidence';
+  return error;
+}
+
+function resolveIntakeFPorts(intake, evidence) {
+  const examples = intake.uplinkExamples || [];
+  const missingFPort = examples.some(example => !Number.isInteger(example.fPort));
+  const evidencedPolicy = normalizeFPortPolicy(evidence && evidence.fPortPolicy);
+  let policy = evidencedPolicy;
+
+  if (!policy || !policy.mode) {
+    if (missingFPort) throw fPortResolutionError('Missing fPort could not be resolved from official documentation or decoder evidence');
+    policy = {
+      mode: 'fixed',
+      ports: [...new Set(examples.map(example => example.fPort))].sort((a, b) => a - b),
+      representativeFPort: null,
+      citation: 'Explicit fPort values supplied in the Issue'
+    };
+  }
+
+  if (!policy.citation) throw fPortResolutionError('Resolved fPort policy is missing a citation');
+  if (policy.mode === 'fixed' && policy.ports.length === 0) {
+    throw fPortResolutionError('Fixed fPort policy does not identify any ports');
+  }
+
+  let representativeFPort = policy.representativeFPort;
+  if (policy.mode === 'agnostic' && !representativeFPort) {
+    representativeFPort = examples.find(example => Number.isInteger(example.fPort) && example.fPort >= 1 && example.fPort <= 223)?.fPort || 1;
+  }
+
+  const resolvedExamples = examples.map((example, index) => {
+    if (Number.isInteger(example.fPort)) {
+      if (policy.mode === 'fixed' && !policy.ports.includes(example.fPort)) {
+        throw fPortResolutionError(`Fixed fPort policy does not include supplied fPort ${example.fPort}`);
+      }
+      if (policy.mode === 'agnostic' && (example.fPort < 1 || example.fPort > 223)) {
+        throw fPortResolutionError(`Port-agnostic application payload cannot use reserved fPort ${example.fPort}`);
+      }
+      return example;
+    }
+    if (policy.mode === 'agnostic') {
+      return { ...example, fPort: representativeFPort, inferredFPort: true };
+    }
+    if (policy.ports.length === 1) {
+      return { ...example, fPort: policy.ports[0], inferredFPort: true };
+    }
+    const assignment = fPortAssignment(evidence, example, index);
+    if (!assignment || !policy.ports.includes(assignment.fPort) || !assignment.citation) {
+      throw fPortResolutionError(`Uplink example ${index + 1} could not be assigned to one of the evidenced fixed fPorts`);
+    }
+    return { ...example, fPort: assignment.fPort, inferredFPort: true, fPortCitation: assignment.citation };
+  });
+
+  return {
+    ...intake,
+    fPortStatus: 'resolved',
+    fPortPolicy: policy.mode === 'agnostic'
+      ? { mode: 'agnostic', representativeFPort, citation: policy.citation }
+      : { mode: 'fixed', ports: policy.ports, citation: policy.citation },
+    uplinkExamples: resolvedExamples
   };
 }
 
@@ -198,6 +298,38 @@ function generationUserContent(context) {
     repositoryExample: context.repositoryExample,
     authorizedMaintainerFeedback: context.feedback || ''
   });
+}
+
+function resolveIntakeMapping(intake, evidence) {
+  const request = analyzeRequestedMappings(intake.bacnetMapping);
+  let mappings;
+  if ((intake.bacnetMappingStatus || request.status) === 'deferred') {
+    const extracted = normalizeMappingEntries(evidence && evidence.requestedMappings);
+    if (!extracted.valid) {
+      const error = new Error(extracted.errors.join('; ') || 'No BACnet mappings were extracted from the cited official-document pages');
+      error.code = 'BACNET_MAPPING_UNRESOLVED';
+      error.stage = 'evidence';
+      throw error;
+    }
+    mappings = extracted.mappings;
+  } else {
+    mappings = request.mappings;
+  }
+  if (!mappings || mappings.length === 0) {
+    const error = new Error('No resolved BACnet mappings are available for profile generation');
+    error.code = 'BACNET_MAPPING_UNRESOLVED';
+    error.stage = 'evidence';
+    throw error;
+  }
+  const original = intake.bacnetMapping;
+  return {
+    ...intake,
+    bacnetMapping: formatRequestedMappings(mappings),
+    bacnetMappingOriginal: original,
+    bacnetMappingSource: intake.bacnetMappingStatus || request.status,
+    bacnetMappingStatus: 'resolved',
+    requestedMappings: mappings
+  };
 }
 
 async function generateRawCandidate(model, context) {
@@ -281,6 +413,14 @@ function buildReviewMarkdown(manifest, context, fixture) {
   const rows = evidenceFieldRows(context.evidence);
   const tests = fixture.testCases.map(testCase => `| ${testCase.name} | ${testCase.fPort} | ${testCase.input} | ${Object.prototype.hasOwnProperty.call(testCase, 'expectedOutput') ? 'Known answer' : 'Execution + documentation review'} |`);
   const findings = [...manifest.review.findings, ...manifest.adversarial.findings];
+  const evidenceWarnings = context.evidenceWarnings || [];
+  const sourceLines = [
+    `- ${context.source.url} (${context.source.type}${context.source.pages ? `, ${context.source.pages} pages` : ''}${context.source.sha256 ? `; SHA-256: \`${context.source.sha256}\`` : ''})`,
+    `- ${context.intake.issueUrl || `Issue #${context.intake.issueNumber}`}`
+  ];
+  if (context.intake.decoderSource && context.source.type !== 'decoder') {
+    sourceLines.push(`- ${context.intake.decoderUrl || `Issue #${context.intake.issueNumber} decoder`} (untrusted decoder evidence; ${context.intake.decoderOrigin || 'unknown origin'}${context.intake.decoderSha256 ? `; SHA-256: \`${context.intake.decoderSha256}\`` : ''})`);
+  }
   return `## Automated Profile Evidence\n\n` +
     `- Issue: #${context.intake.issueNumber}\n` +
     `- Evidence level: **${manifest.evidenceLevel}**\n` +
@@ -288,13 +428,15 @@ function buildReviewMarkdown(manifest, context, fixture) {
     `- Supported scope: **uplink only**\n` +
     `- Hardware verified: **no**\n\n` +
     `### Sources\n\n` +
-    `- ${context.source.url} (${context.source.type}${context.source.pages ? `, ${context.source.pages} pages` : ''}; SHA-256: \`${context.source.sha256}\`)\n` +
-    `- ${context.intake.issueUrl || `Issue #${context.intake.issueNumber}`}\n\n` +
+    `${sourceLines.join('\n')}\n\n` +
     `### Protocol field checks\n\n` +
     `| Message | Field | Offset | Length | Endian | Formula | Citation |\n|---|---|---:|---:|---|---|---|\n` +
     `${rows.length > 0 ? rows.join('\n') : '| — | — | — | — | — | — | No structured rows returned |'}\n\n` +
-    `### BACnet mapping requested by submitter\n\n${indentedCode(context.intake.bacnetMapping)}\n\n` +
+    `### Resolved BACnet mapping\n\n${indentedCode(context.intake.bacnetMapping)}\n\n` +
+    `${context.intake.bacnetMappingOriginal && context.intake.bacnetMappingOriginal !== context.intake.bacnetMapping ? `### Original mapping request\n\n${indentedCode(context.intake.bacnetMappingOriginal)}\n\n` : ''}` +
+    `### fPort policy\n\n${indentedCode(JSON.stringify(context.intake.fPortPolicy, null, 2))}\n\n` +
     `### Test coverage\n\n| Test | fPort | Payload | Oracle |\n|---|---:|---|---|\n${tests.join('\n')}\n\n` +
+    `### Evidence warnings\n\n${evidenceWarnings.length > 0 ? evidenceWarnings.map(item => `- ${markdownCell(item.message || item)}`).join('\n') : '- None.'}\n\n` +
     `### Review findings\n\n${findings.length > 0 ? findings.map(item => `- ${markdownCell(typeof item === 'string' ? item : JSON.stringify(item))}`).join('\n') : '- No unresolved findings.'}\n\n` +
     `> This profile remains \`verified: false\` until confirmed on real hardware.\n`;
 }
@@ -366,12 +508,16 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
     });
   } else {
     const evidenceResult = await runStage('evidence', () => buildEvidence(models, intake, source), 'evidence-build');
+    const resolvedIntake = evidenceResult.approved && evidenceResult.consolidated
+      ? resolveIntakeMapping(resolveIntakeFPorts(intake, evidenceResult.consolidated), evidenceResult.consolidated)
+      : intake;
     context = {
-      intake,
+      intake: resolvedIntake,
       source,
       evidence: evidenceResult.consolidated,
       evidenceReviews: evidenceResult.extractions,
-      reference: selectReference(intake.bacnetMapping),
+      evidenceWarnings: evidenceResult.warnings || [],
+      reference: selectReference(resolvedIntake.bacnetMapping),
       repositoryExample: loadRepositoryExample(),
       feedback
     };
@@ -423,6 +569,7 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
     profilePath: paths.relativeProfile,
     fixturePath: paths.relativeFixture,
     evidenceLevel: fixture.evidenceLevel,
+    evidenceWarnings: context.evidenceWarnings || [],
     reviewMode,
     models: [models.primary.label, ...(models.secondary ? [models.secondary.label] : [])],
     review: reviews.review,
@@ -461,6 +608,8 @@ module.exports = {
   candidatePreflight,
   normalizeProfileYaml,
   normalizeFixture,
+  resolveIntakeFPorts,
+  resolveIntakeMapping,
   buildReviewMarkdown,
   writeGenerationError
 };

@@ -8,6 +8,35 @@
     "profile": { "type": "string", "pattern": "^[A-Za-z0-9]+-[A-Za-z0-9-]+$" },
     "evidenceLevel": { "enum": ["known-answer", "documentation-only"] },
     "reviewMode": { "enum": ["single-model", "multi-model"] },
+    "fPortPolicy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "ports", "citation"],
+          "properties": {
+            "mode": { "const": "fixed" },
+            "ports": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+            },
+            "citation": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "representativeFPort", "citation"],
+          "properties": {
+            "mode": { "const": "agnostic" },
+            "representativeFPort": { "type": "integer", "minimum": 1, "maximum": 223 },
+            "citation": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
     "sources": {
       "type": "array",
       "minItems": 1,

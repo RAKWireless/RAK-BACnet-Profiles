@@ -4,6 +4,11 @@ const { completeJson } = require('./model-client');
 const { loadPrompt } = require('./prompt-loader');
 const { normalizeHex } = require('./issue-parser');
 const { logProgress, elapsedSeconds } = require('./progress');
+const {
+  normalizeMappingEntries,
+  normalizeObjectType,
+  normalizeUnit
+} = require('../../scripts/lib/validation/requested-mapping');
 
 function evidencePayload(intake, source) {
   return {
@@ -12,23 +17,92 @@ function evidencePayload(intake, source) {
       model: intake.model,
       lorawanClass: intake.lorawanClass,
       lorawanVersion: intake.lorawanVersion,
+      fPortStatus: intake.fPortStatus || 'explicit',
       uplinkExamples: intake.uplinkExamples,
       uplinkDescription: intake.uplinkText,
-      providedDecoder: intake.decoder,
-      bacnetMapping: intake.bacnetMapping
+      providedDecoder: intake.decoderSource || null,
+      decoderOrigin: intake.decoderOrigin || (intake.decoderSource ? 'issue-inline' : null),
+      decoderUrl: intake.decoderUrl || null,
+      decoderRequest: intake.decoderSource ? null : intake.decoder,
+      bacnetMapping: intake.bacnetMapping,
+      bacnetMappingStatus: intake.bacnetMappingStatus || 'explicit',
+      bacnetMappingReferences: intake.bacnetMappingReferences || []
     },
     officialDocument: {
       url: source.url,
       type: source.type,
       pages: source.pages,
-      text: source.text
+      text: source.type === 'decoder' ? null : source.text
     }
   };
 }
 
-function normalizeEvidence(value) {
+function canonicalEvidenceUnit(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const normalized = normalizeUnit(value);
+  if (normalized) return normalized;
+  const noUnitMarker = String(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['unit', 'nounit', 'nounits', 'none', 'na'].includes(noUnitMarker)) return null;
+  return String(value).trim();
+}
+
+function canonicalEndianness(value) {
+  const normalized = String(value || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (normalized === 'be' || normalized === 'big' || normalized === 'bigendian') return 'big-endian';
+  if (normalized === 'le' || normalized === 'little' || normalized === 'littleendian') return 'little-endian';
+  return value === undefined ? null : value;
+}
+
+function normalizeFPortPolicy(value) {
+  if (!value || typeof value !== 'object') return null;
+  const mode = value.mode === 'fixed' || value.mode === 'agnostic' ? value.mode : null;
+  const ports = [...new Set((Array.isArray(value.ports) ? value.ports : [])
+    .map(Number)
+    .filter(port => Number.isInteger(port) && port >= 0 && port <= 255))].sort((a, b) => a - b);
+  const representative = Number(value.representativeFPort);
   return {
-    messageTypes: Array.isArray(value.messageTypes) ? value.messageTypes : [],
+    mode,
+    ports,
+    representativeFPort: Number.isInteger(representative) && representative >= 1 && representative <= 223
+      ? representative
+      : null,
+    citation: String(value.citation || '').trim()
+  };
+}
+
+function normalizeUplinkAssignments(value) {
+  return (Array.isArray(value) ? value : []).map(assignment => ({
+    exampleIndex: Number.isInteger(Number(assignment && assignment.exampleIndex))
+      ? Number(assignment.exampleIndex)
+      : null,
+    input: normalizeHex(assignment && assignment.input),
+    fPort: Number.isInteger(Number(assignment && assignment.fPort))
+      ? Number(assignment.fPort)
+      : null,
+    citation: String(assignment && assignment.citation || '').trim()
+  }));
+}
+
+function normalizeEvidence(value = {}) {
+  return {
+    messageTypes: Array.isArray(value.messageTypes) ? value.messageTypes.map(message => ({
+      ...message,
+      fPorts: Array.isArray(message && message.fPorts)
+        ? message.fPorts.map(port => Number.isInteger(Number(port)) ? Number(port) : port)
+        : [],
+      fields: Array.isArray(message && message.fields) ? message.fields.map(field => ({
+        ...field,
+        endianness: canonicalEndianness(field && field.endianness),
+        unit: canonicalEvidenceUnit(field && field.unit)
+      })) : []
+    })) : [],
+    requestedMappings: Array.isArray(value.requestedMappings) ? value.requestedMappings.map(mapping => ({
+      ...mapping,
+      type: normalizeObjectType(mapping && mapping.type) || (mapping && mapping.type) || null,
+      units: canonicalEvidenceUnit(mapping && mapping.units)
+    })) : [],
+    fPortPolicy: normalizeFPortPolicy(value.fPortPolicy),
+    uplinkAssignments: normalizeUplinkAssignments(value.uplinkAssignments),
     knownAnswers: Array.isArray(value.knownAnswers) ? value.knownAnswers : [],
     conflicts: Array.isArray(value.conflicts) ? value.conflicts : [],
     ambiguities: Array.isArray(value.ambiguities) ? value.ambiguities : [],
@@ -36,15 +110,65 @@ function normalizeEvidence(value) {
   };
 }
 
-function validateEvidence(evidence, intake) {
-  const ambiguities = [...(evidence.ambiguities || [])];
+function assignmentForExample(assignments, example, index) {
+  const byIndex = assignments.find(assignment => assignment.exampleIndex === index + 1);
+  if (byIndex) return byIndex;
+  const byPayload = assignments.filter(assignment => assignment.input && assignment.input === example.hex);
+  return byPayload.length === 1 ? byPayload[0] : null;
+}
+
+function validateEvidence(evidence, intake, options = {}) {
+  const ambiguities = options.includeReported === false ? [] : [...(evidence.ambiguities || [])];
+  const examples = intake.uplinkExamples || [];
+  const missingFPort = examples.some(example => !Number.isInteger(example.fPort));
+  const fPortPolicy = evidence.fPortPolicy;
+  const portAgnostic = fPortPolicy && fPortPolicy.mode === 'agnostic';
+  if (fPortPolicy) {
+    if (!fPortPolicy.mode) ambiguities.push('fPort policy mode must be fixed or agnostic');
+    if (!fPortPolicy.citation) ambiguities.push('fPort policy must include a citation');
+    if (fPortPolicy.mode === 'fixed' && fPortPolicy.ports.length === 0) {
+      ambiguities.push('Fixed fPort policy must identify at least one valid port');
+    }
+    if (fPortPolicy.mode === 'agnostic' && examples.some(example => Number.isInteger(example.fPort) && (example.fPort < 1 || example.fPort > 223))) {
+      ambiguities.push('Port-agnostic application payloads must use fPorts from 1 through 223');
+    }
+  }
+  if (missingFPort) {
+    if (!fPortPolicy || !fPortPolicy.mode || !fPortPolicy.citation) {
+      ambiguities.push('Missing fPort was not resolved to a cited fixed or port-agnostic policy');
+    } else if (fPortPolicy.mode === 'fixed') {
+      for (const [index, example] of examples.entries()) {
+        if (Number.isInteger(example.fPort)) {
+          if (!fPortPolicy.ports.includes(example.fPort)) {
+            ambiguities.push(`Fixed fPort policy does not include supplied fPort ${example.fPort}`);
+          }
+          continue;
+        }
+        const assignment = assignmentForExample(evidence.uplinkAssignments || [], example, index);
+        if (fPortPolicy.ports.length !== 1 && (!assignment || !fPortPolicy.ports.includes(assignment.fPort) || !assignment.citation)) {
+          ambiguities.push(`Uplink example ${index + 1} is missing a cited assignment to one of the fixed fPorts`);
+        }
+      }
+    }
+  }
+  if (intake.bacnetMappingStatus === 'deferred') {
+    const mappingCheck = normalizeMappingEntries(evidence.requestedMappings);
+    if (!mappingCheck.valid) {
+      ambiguities.push(...(mappingCheck.errors.length > 0
+        ? mappingCheck.errors
+        : ['No BACnet mappings could be extracted from the cited official-document pages']));
+    }
+  }
   if (!Array.isArray(evidence.messageTypes) || evidence.messageTypes.length === 0) {
     ambiguities.push('No supported uplink message type could be extracted');
   }
   for (const message of evidence.messageTypes || []) {
     if (!message.name) ambiguities.push('A message type is missing its name');
-    if (!Array.isArray(message.fPorts) || message.fPorts.length === 0 || message.fPorts.some(port => port === null || port === '' || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 255)) {
+    if (!portAgnostic && (!Array.isArray(message.fPorts) || message.fPorts.length === 0 || message.fPorts.some(port => port === null || port === '' || !Number.isInteger(Number(port)) || Number(port) < 0 || Number(port) > 255))) {
       ambiguities.push(`Message '${message.name || 'unknown'}' is missing an explicit fPort`);
+    }
+    if (fPortPolicy && fPortPolicy.mode === 'fixed' && (message.fPorts || []).some(port => !fPortPolicy.ports.includes(Number(port)))) {
+      ambiguities.push(`Message '${message.name || 'unknown'}' uses an fPort outside the fixed policy`);
     }
     if (!Number.isInteger(Number(message.minimumLength)) || Number(message.minimumLength) < 1) {
       ambiguities.push(`Message '${message.name || 'unknown'}' is missing a positive minimum payload length`);
@@ -60,15 +184,116 @@ function validateEvidence(evidence, intake) {
   }
   for (const answer of evidence.knownAnswers || []) {
     const normalizedInput = normalizeHex(answer.input);
-    if (answer.fPort === null || answer.fPort === '' || !Number.isInteger(Number(answer.fPort)) || Number(answer.fPort) < 0 || Number(answer.fPort) > 255 || normalizedInput.length < 2 || normalizedInput.length % 2 !== 0 || !answer.expectedOutput || typeof answer.expectedOutput !== 'object' || !answer.citation) {
+    const validAnswerPort = portAgnostic && (answer.fPort === null || answer.fPort === '' || answer.fPort === undefined)
+      ? true
+      : (answer.fPort !== null && answer.fPort !== '' && Number.isInteger(Number(answer.fPort)) && Number(answer.fPort) >= 0 && Number(answer.fPort) <= 255);
+    if (!validAnswerPort || normalizedInput.length < 2 || normalizedInput.length % 2 !== 0 || !answer.expectedOutput || typeof answer.expectedOutput !== 'object' || !answer.citation) {
       ambiguities.push('A known-answer example is missing a valid fPort, payload, decoded output, or citation');
     }
   }
   const evidencedPorts = new Set((evidence.messageTypes || []).flatMap(message => message.fPorts || []).map(Number));
-  for (const example of intake.uplinkExamples || []) {
-    if (!evidencedPorts.has(Number(example.fPort))) ambiguities.push(`No evidenced message type covers supplied fPort ${example.fPort}`);
+  for (const [index, example] of examples.entries()) {
+    if (Number.isInteger(example.fPort) && !portAgnostic && !evidencedPorts.has(example.fPort)) {
+      ambiguities.push(`No evidenced message type covers supplied fPort ${example.fPort}`);
+    } else if (!Number.isInteger(example.fPort) && fPortPolicy && fPortPolicy.mode === 'fixed') {
+      const assignment = assignmentForExample(evidence.uplinkAssignments || [], example, index);
+      const resolvedPort = fPortPolicy.ports.length === 1 ? fPortPolicy.ports[0] : (assignment && assignment.fPort);
+      if (Number.isInteger(resolvedPort) && !evidencedPorts.has(resolvedPort)) {
+        ambiguities.push(`No evidenced message type covers resolved fPort ${resolvedPort} for uplink example ${index + 1}`);
+      }
+    }
   }
   return [...new Set(ambiguities.map(item => typeof item === 'string' ? item : JSON.stringify(item)))];
+}
+
+function findingMessage(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value.message === 'string') return value.message;
+  if (value && typeof value.detail === 'string') return value.detail;
+  const serialized = JSON.stringify(value);
+  return serialized === undefined ? String(value) : serialized;
+}
+
+function equivalentUnitDifference(message) {
+  const tokens = String(message || '').match(/[A-Za-z%°µμ][A-Za-z0-9%°µμ/_-]*/g) || [];
+  const normalized = tokens.map(normalizeUnit).filter(Boolean);
+  return normalized.length >= 2 && new Set(normalized).size === 1;
+}
+
+function classifyEvidenceFinding(value, kind = 'conflict') {
+  const message = findingMessage(value);
+  const suppliedCategory = value && typeof value === 'object' ? value.category : null;
+  const suppliedSeverity = value && typeof value === 'object' ? value.severity : null;
+  const equivalentUnit = equivalentUnitDifference(message);
+  const formatOnly = equivalentUnit || /\b(?:format(?:ting)?|capitalization|case|spelling|punctuation|whitespace|wording|label|naming|ordering|alias|equivalent)\b/i.test(message);
+  const valueConflict = /\b(?:versus|vs\.?|mismatch|disagree(?:ment)?|conflict|different\s+values?)\b/i.test(message);
+  const numericValues = String(message).match(/-?\d+(?:\.\d+)?/g) || [];
+  const differentNumericValues = new Set(numericValues).size > 1;
+  const missingCitation = /\b(?:missing|absent|without|no)\b.{0,24}\bcitation\b|\bcitation\b.{0,24}\b(?:missing|absent)\b/i.test(message);
+  const criticalProtocol = /\b(?:f\s*port|message\s*(?:type|selector)|selector|offset|byte\s*(?:offset|length|order)|minimum\s*length|endianness|signedness|signed|scale|formula|bit\s*(?:layout|position|mask)?|checksum|crc|object\s*type|bacnet\s*type|units?)\b/i.test(message);
+
+  let category = ['protocol', 'mapping', 'format', 'citation'].includes(suppliedCategory)
+    ? suppliedCategory
+    : (/\b(?:bacnet|object\s*type|requested\s*mapping)\b/i.test(message)
+        ? 'mapping'
+        : (/\bcitation|source\s*(?:wording|reference)|page\s*reference\b/i.test(message)
+            ? 'citation'
+            : (formatOnly ? 'format' : 'protocol')));
+  let severity = suppliedSeverity === 'warning' || suppliedSeverity === 'blocking'
+    ? suppliedSeverity
+    : 'blocking';
+
+  if (missingCitation) {
+    category = 'citation';
+    severity = 'blocking';
+  } else if (criticalProtocol && differentNumericValues && !equivalentUnit) {
+    severity = 'blocking';
+  } else if (criticalProtocol && valueConflict && !formatOnly && !equivalentUnit) {
+    severity = 'blocking';
+  } else if (equivalentUnit || formatOnly) {
+    category = 'format';
+    severity = 'warning';
+  } else if (criticalProtocol || category === 'protocol' || category === 'mapping') {
+    severity = 'blocking';
+  } else if (category === 'format' || category === 'citation') {
+    severity = 'warning';
+  }
+
+  return { severity, category, message, kind };
+}
+
+function validationFinding(message) {
+  return {
+    severity: 'blocking',
+    category: /bacnet|mapping/i.test(message) ? 'mapping' : 'protocol',
+    message,
+    kind: 'ambiguity'
+  };
+}
+
+function uniqueFindings(findings) {
+  const seen = new Set();
+  return findings.filter(finding => {
+    const key = `${finding.severity}\n${finding.category}\n${finding.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function evidenceDecision(consolidated, extractions, findings) {
+  const normalizedFindings = uniqueFindings(findings);
+  const blocking = normalizedFindings.filter(finding => finding.severity === 'blocking');
+  const warnings = normalizedFindings.filter(finding => finding.severity === 'warning');
+  return {
+    approved: Boolean(consolidated) && blocking.length === 0,
+    conflicts: blocking.filter(finding => finding.kind === 'conflict').map(finding => finding.message),
+    ambiguities: blocking.filter(finding => finding.kind !== 'conflict').map(finding => finding.message),
+    warnings,
+    findings: normalizedFindings,
+    consolidated,
+    extractions
+  };
 }
 
 async function extractEvidence(model, intake, source, operation = 'evidence-extraction') {
@@ -93,50 +318,74 @@ async function extractEvidence(model, intake, source, operation = 'evidence-extr
 
 async function buildEvidence(models, intake, source) {
   const primary = await extractEvidence(models.primary, intake, source, 'primary-evidence-extraction');
-  const primaryAmbiguities = validateEvidence(primary, intake);
+  const primaryAmbiguities = validateEvidence(primary, intake, { includeReported: false });
   logProgress('evidence', 'primary evidence validated', {
     model: models.primary.label,
     validationAmbiguities: primaryAmbiguities.length,
     conflicts: primary.conflicts.length
   });
-  if (primary.conflicts.length > 0 || primaryAmbiguities.length > 0) {
-    return { approved: false, conflicts: primary.conflicts, ambiguities: primaryAmbiguities, consolidated: primary, extractions: [primary] };
-  }
   if (!models.secondary) {
-    return { approved: true, conflicts: [], ambiguities: [], consolidated: primary, extractions: [primary] };
+    const findings = [
+      ...primary.conflicts.map(item => classifyEvidenceFinding(item, 'conflict')),
+      ...primary.ambiguities.map(item => classifyEvidenceFinding(item, 'ambiguity')),
+      ...primaryAmbiguities.map(validationFinding)
+    ];
+    return evidenceDecision(primary, [primary], findings);
   }
 
   const secondary = await extractEvidence(models.secondary, intake, source, 'secondary-evidence-extraction');
+  const secondaryAmbiguities = validateEvidence(secondary, intake, { includeReported: false });
   logProgress('evidence', 'reconciliation started', {
     primaryModel: models.primary.label,
-    secondaryModel: models.secondary.label
+    secondaryModel: models.secondary.label,
+    primaryValidationAmbiguities: primaryAmbiguities.length,
+    secondaryValidationAmbiguities: secondaryAmbiguities.length
   });
   const reconciliation = await completeJson(models.primary, [
     { role: 'system', content: loadPrompt('reconcile-evidence') },
     { role: 'user', content: JSON.stringify({ source: evidencePayload(intake, source), primary, secondary }) }
   ], { maxTokens: 6000, operation: 'evidence-reconciliation' });
   const consolidated = reconciliation.consolidated ? normalizeEvidence(reconciliation.consolidated) : null;
-  const consolidatedAmbiguities = consolidated ? validateEvidence(consolidated, intake) : ['Evidence reconciliation did not return a consolidated protocol'];
-  const conflicts = [
-    ...(Array.isArray(reconciliation.conflicts) ? reconciliation.conflicts : []),
-    ...((consolidated && consolidated.conflicts) || [])
+  const consolidatedAmbiguities = consolidated
+    ? validateEvidence(consolidated, intake, { includeReported: false })
+    : ['Evidence reconciliation did not return a consolidated protocol'];
+  const reconciliationFindings = Array.isArray(reconciliation.findings) ? reconciliation.findings : [];
+  const reconciliationConflicts = Array.isArray(reconciliation.conflicts) ? reconciliation.conflicts : [];
+  const reconciliationAmbiguities = Array.isArray(reconciliation.ambiguities) ? reconciliation.ambiguities : [];
+  const findings = [
+    ...reconciliationFindings.map(item => classifyEvidenceFinding(item, item && item.kind ? item.kind : 'conflict')),
+    ...reconciliationConflicts.map(item => classifyEvidenceFinding(item, 'conflict')),
+    ...reconciliationAmbiguities.map(item => classifyEvidenceFinding(item, 'ambiguity')),
+    ...((consolidated && consolidated.conflicts) || []).map(item => classifyEvidenceFinding(item, 'conflict')),
+    ...((consolidated && consolidated.ambiguities) || []).map(item => classifyEvidenceFinding(item, 'ambiguity')),
+    ...consolidatedAmbiguities.map(validationFinding)
   ];
-  const ambiguities = [
-    ...(Array.isArray(reconciliation.ambiguities) ? reconciliation.ambiguities : []),
-    ...consolidatedAmbiguities
-  ];
+  const reportedFindings = reconciliationFindings.length + reconciliationConflicts.length + reconciliationAmbiguities.length;
+  if (reconciliation.approved !== true && reportedFindings === 0) {
+    findings.push({
+      severity: 'blocking',
+      category: 'protocol',
+      message: 'Evidence reconciler rejected the evidence without an explainable warning-level difference',
+      kind: 'ambiguity'
+    });
+  }
+  const decision = evidenceDecision(consolidated, [primary, secondary], findings);
   logProgress('evidence', 'reconciliation completed', {
-    approved: reconciliation.approved === true,
-    conflicts: conflicts.length,
-    ambiguities: ambiguities.length
+    approved: decision.approved,
+    reconcilerApproved: reconciliation.approved === true,
+    conflicts: decision.conflicts.length,
+    ambiguities: decision.ambiguities.length,
+    warnings: decision.warnings.length
   });
-  return {
-    approved: reconciliation.approved === true && conflicts.length === 0 && ambiguities.length === 0,
-    conflicts,
-    ambiguities,
-    consolidated,
-    extractions: [primary, secondary]
-  };
+  return decision;
 }
 
-module.exports = { evidencePayload, extractEvidence, buildEvidence, validateEvidence };
+module.exports = {
+  evidencePayload,
+  extractEvidence,
+  buildEvidence,
+  validateEvidence,
+  normalizeEvidence,
+  normalizeFPortPolicy,
+  classifyEvidenceFinding
+};
