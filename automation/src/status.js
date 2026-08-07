@@ -49,8 +49,12 @@ function writeStatusOutputs(status) {
 
 function failureMarkdown(status) {
   let submitterAction = '';
-  if (status.manifest.status === 'evidence-blocked') {
+  if (status.manifest.code === 'EVIDENCE_SOURCE_BLOCKED') {
     submitterAction = '\n\nPlease edit the original Issue to correct or add the cited protocol evidence. Do not put the missing facts only in comments.';
+  } else if (status.manifest.code === 'EVIDENCE_SCHEMA_INVALID') {
+    submitterAction = status.manifest.attempt < 3
+      ? '\n\nThe source Issue is not being rejected. Automation will retry evidence extraction with the schema validation feedback.'
+      : '\n\nNo Issue edit is requested. A maintainer should inspect the evidence schema or extractor output.';
   } else if (['OCR_UNSUPPORTED', 'SOURCE_UNAVAILABLE'].includes(status.manifest.code)) {
     submitterAction = '\n\nPlease edit the original Issue and provide an accessible, machine-readable PDF, HTML, or text source. OCR is not supported.';
   }

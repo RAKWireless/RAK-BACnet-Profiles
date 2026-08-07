@@ -10,8 +10,8 @@ const {
   normalizeUnit
 } = require('../../scripts/lib/validation/requested-mapping');
 
-function evidencePayload(intake, source) {
-  return {
+function evidencePayload(intake, source, schemaValidationFeedback = []) {
+  const payload = {
     issue: {
       vendor: intake.vendor,
       model: intake.model,
@@ -37,6 +37,10 @@ function evidencePayload(intake, source) {
       text: source.type === 'decoder' ? null : source.text
     }
   };
+  if (schemaValidationFeedback.length > 0) {
+    payload.schemaValidationFeedback = schemaValidationFeedback;
+  }
+  return payload;
 }
 
 function canonicalEvidenceUnit(value) {
@@ -85,6 +89,48 @@ function normalizeUplinkAssignments(value) {
   }));
 }
 
+function normalizeEvidenceField(value = {}) {
+  const rawOffset = value.offset;
+  const numericOffset = Number(rawOffset);
+  const numericOffsetFromEnd = Number(value.offsetFromEnd);
+  const legacyEndRelativeOffset = rawOffset !== null && rawOffset !== '' && Number.isInteger(numericOffset) && numericOffset < 0;
+  return {
+    ...value,
+    offset: legacyEndRelativeOffset
+      ? null
+      : (rawOffset !== null && rawOffset !== '' && Number.isInteger(numericOffset) ? numericOffset : rawOffset),
+    offsetFromEnd: legacyEndRelativeOffset
+      ? Math.abs(numericOffset)
+      : (value.offsetFromEnd !== null && value.offsetFromEnd !== '' && Number.isInteger(numericOffsetFromEnd)
+          ? numericOffsetFromEnd
+          : (value.offsetFromEnd ?? null)),
+    endianness: canonicalEndianness(value.endianness),
+    unit: canonicalEvidenceUnit(value.unit)
+  };
+}
+
+function normalizeRepeatedStructure(value = {}) {
+  return {
+    ...value,
+    startOffset: value.startOffset !== null && value.startOffset !== '' && Number.isInteger(Number(value.startOffset))
+      ? Number(value.startOffset)
+      : value.startOffset,
+    stride: value.stride !== null && value.stride !== '' && Number.isInteger(Number(value.stride))
+      ? Number(value.stride)
+      : value.stride,
+    minCount: value.minCount !== null && value.minCount !== '' && Number.isInteger(Number(value.minCount))
+      ? Number(value.minCount)
+      : value.minCount,
+    maxCount: value.maxCount !== null && value.maxCount !== '' && Number.isInteger(Number(value.maxCount))
+      ? Number(value.maxCount)
+      : value.maxCount,
+    untilTrailerBytes: value.untilTrailerBytes !== null && value.untilTrailerBytes !== '' && Number.isInteger(Number(value.untilTrailerBytes))
+      ? Number(value.untilTrailerBytes)
+      : value.untilTrailerBytes,
+    fields: Array.isArray(value.fields) ? value.fields.map(normalizeEvidenceField) : []
+  };
+}
+
 function normalizeEvidence(value = {}) {
   return {
     messageTypes: Array.isArray(value.messageTypes) ? value.messageTypes.map(message => ({
@@ -92,11 +138,10 @@ function normalizeEvidence(value = {}) {
       fPorts: Array.isArray(message && message.fPorts)
         ? message.fPorts.map(port => Number.isInteger(Number(port)) ? Number(port) : port)
         : [],
-      fields: Array.isArray(message && message.fields) ? message.fields.map(field => ({
-        ...field,
-        endianness: canonicalEndianness(field && field.endianness),
-        unit: canonicalEvidenceUnit(field && field.unit)
-      })) : []
+      fields: Array.isArray(message && message.fields) ? message.fields.map(normalizeEvidenceField) : [],
+      repeatedStructures: Array.isArray(message && message.repeatedStructures)
+        ? message.repeatedStructures.map(normalizeRepeatedStructure)
+        : []
     })) : [],
     requestedMappings: Array.isArray(value.requestedMappings) ? value.requestedMappings.map(mapping => ({
       ...mapping,
@@ -117,6 +162,81 @@ function assignmentForExample(assignments, example, index) {
   if (byIndex) return byIndex;
   const byPayload = assignments.filter(assignment => assignment.input && assignment.input === example.hex);
   return byPayload.length === 1 ? byPayload[0] : null;
+}
+
+function fieldLocation(field, allowOffsetFromEnd = true) {
+  const hasOffset = field.offset !== null && field.offset !== '' && field.offset !== undefined;
+  const hasOffsetFromEnd = field.offsetFromEnd !== null && field.offsetFromEnd !== '' && field.offsetFromEnd !== undefined;
+  const validOffset = hasOffset && Number.isInteger(Number(field.offset)) && Number(field.offset) >= 0;
+  const validOffsetFromEnd = allowOffsetFromEnd && hasOffsetFromEnd && Number.isInteger(Number(field.offsetFromEnd)) && Number(field.offsetFromEnd) >= 1;
+  return {
+    hasOffset,
+    hasOffsetFromEnd,
+    valid: (validOffset || validOffsetFromEnd) && !(hasOffset && hasOffsetFromEnd),
+    validOffset,
+    validOffsetFromEnd
+  };
+}
+
+function validateField(field, messageName, locationLabel, options = {}) {
+  const ambiguities = [];
+  const label = field.name ? `field '${field.name}'` : 'a field';
+  const location = fieldLocation(field, options.allowOffsetFromEnd !== false);
+  const length = Number(field.length);
+  if (!field.name) ambiguities.push(`Message '${messageName}' contains a field without a name`);
+  if (!location.valid) {
+    const expected = options.allowOffsetFromEnd === false
+      ? 'one non-negative byte offset relative to the repeated record'
+      : 'exactly one non-negative byte offset or positive offsetFromEnd';
+    ambiguities.push(`Message '${messageName}' ${locationLabel}${label} must include ${expected}`);
+  }
+  if (field.length === null || field.length === '' || !Number.isInteger(length) || length < 1) {
+    ambiguities.push(`Message '${messageName}' ${locationLabel}${label} is missing a positive byte length`);
+  }
+  if (location.validOffsetFromEnd && Number.isInteger(length) && length > Number(field.offsetFromEnd)) {
+    ambiguities.push(`Message '${messageName}' ${locationLabel}${label} extends beyond the end-relative field location`);
+  }
+  if (!field.citation) ambiguities.push(`Message '${messageName}' ${locationLabel}${label} is missing a citation`);
+  return ambiguities;
+}
+
+function validateRepeatedStructure(structure, messageName) {
+  const ambiguities = [];
+  const name = structure.name || 'unknown';
+  const startOffset = Number(structure.startOffset);
+  const stride = Number(structure.stride);
+  const minCount = Number(structure.minCount);
+  const maxCount = Number(structure.maxCount);
+  const trailerBytes = Number(structure.untilTrailerBytes);
+  if (!structure.name) ambiguities.push(`Message '${messageName}' contains a repeated structure without a name`);
+  if (!Number.isInteger(startOffset) || startOffset < 0) {
+    ambiguities.push(`Message '${messageName}' repeated structure '${name}' is missing a non-negative startOffset`);
+  }
+  if (!Number.isInteger(stride) || stride < 1) {
+    ambiguities.push(`Message '${messageName}' repeated structure '${name}' is missing a positive stride`);
+  }
+  if (!Number.isInteger(minCount) || minCount < 1) {
+    ambiguities.push(`Message '${messageName}' repeated structure '${name}' is missing a positive minCount`);
+  }
+  if (!Number.isInteger(maxCount) || maxCount < minCount) {
+    ambiguities.push(`Message '${messageName}' repeated structure '${name}' has an invalid maxCount`);
+  }
+  if (!Number.isInteger(trailerBytes) || trailerBytes < 0) {
+    ambiguities.push(`Message '${messageName}' repeated structure '${name}' is missing a non-negative untilTrailerBytes`);
+  }
+  if (!structure.citation) ambiguities.push(`Message '${messageName}' repeated structure '${name}' is missing a citation`);
+  if (!Array.isArray(structure.fields) || structure.fields.length === 0) {
+    ambiguities.push(`Message '${messageName}' repeated structure '${name}' has no evidenced fields`);
+  }
+  for (const field of structure.fields || []) {
+    ambiguities.push(...validateField(field, messageName, `repeated structure '${name}' `, { allowOffsetFromEnd: false }));
+    const offset = Number(field.offset);
+    const length = Number(field.length);
+    if (Number.isInteger(stride) && stride > 0 && Number.isInteger(offset) && offset >= 0 && Number.isInteger(length) && length > 0 && offset + length > stride) {
+      ambiguities.push(`Message '${messageName}' repeated structure '${name}' field '${field.name || 'unknown'}' exceeds its stride`);
+    }
+  }
+  return ambiguities;
 }
 
 function validateEvidence(evidence, intake, options = {}) {
@@ -175,13 +295,15 @@ function validateEvidence(evidence, intake, options = {}) {
     if (!Number.isInteger(Number(message.minimumLength)) || Number(message.minimumLength) < 1) {
       ambiguities.push(`Message '${message.name || 'unknown'}' is missing a positive minimum payload length`);
     }
-    if (!Array.isArray(message.fields) || message.fields.length === 0) {
+    const repeatedStructures = Array.isArray(message.repeatedStructures) ? message.repeatedStructures : [];
+    if ((!Array.isArray(message.fields) || message.fields.length === 0) && repeatedStructures.length === 0) {
       ambiguities.push(`Message '${message.name || 'unknown'}' has no evidenced fields`);
     }
     for (const field of message.fields || []) {
-      if (!field.name || field.offset === null || field.offset === '' || !Number.isInteger(Number(field.offset)) || Number(field.offset) < 0 || field.length === null || field.length === '' || !Number.isInteger(Number(field.length)) || Number(field.length) < 1 || !field.citation) {
-        ambiguities.push(`Message '${message.name || 'unknown'}' contains a field without name, byte offset, byte length, or citation`);
-      }
+      ambiguities.push(...validateField(field, message.name || 'unknown', ''));
+    }
+    for (const structure of repeatedStructures) {
+      ambiguities.push(...validateRepeatedStructure(structure, message.name || 'unknown'));
     }
   }
   for (const answer of evidence.knownAnswers || []) {
@@ -296,15 +418,16 @@ function classifyEvidenceFinding(value, kind = 'conflict', context = {}) {
     severity = 'warning';
   }
 
-  return { severity, category, message, kind };
+  return { severity, category, message, kind, retryable: false };
 }
 
 function validationFinding(message) {
   return {
     severity: 'blocking',
-    category: /bacnet|mapping/i.test(message) ? 'mapping' : 'protocol',
+    category: /bacnet|mapping/i.test(message) ? 'mapping' : 'schema',
     message,
-    kind: 'ambiguity'
+    kind: 'ambiguity',
+    retryable: true
   };
 }
 
@@ -330,6 +453,10 @@ function evidenceDecision(consolidated, extractions, findings) {
   } : null;
   return {
     approved: Boolean(resolvedConsolidated) && blocking.length === 0,
+    retryable: blocking.length > 0 && blocking.every(finding => finding.retryable === true),
+    blockerType: blocking.length === 0
+      ? null
+      : (blocking.every(finding => finding.retryable === true) ? 'schema' : 'source'),
     conflicts: blocking.filter(finding => finding.kind === 'conflict').map(finding => finding.message),
     ambiguities: blocking.filter(finding => finding.kind !== 'conflict').map(finding => finding.message),
     warnings,
@@ -339,12 +466,12 @@ function evidenceDecision(consolidated, extractions, findings) {
   };
 }
 
-async function extractEvidence(model, intake, source, operation = 'evidence-extraction') {
+async function extractEvidence(model, intake, source, operation = 'evidence-extraction', schemaValidationFeedback = []) {
   const startedAt = Date.now();
   logProgress('evidence', 'extraction started', { operation, model: model.label });
   const value = await completeJson(model, [
     { role: 'system', content: loadPrompt('extract-evidence') },
-    { role: 'user', content: JSON.stringify(evidencePayload(intake, source)) }
+    { role: 'user', content: JSON.stringify(evidencePayload(intake, source, schemaValidationFeedback)) }
   ], { maxTokens: 8000, operation });
   const evidence = normalizeEvidence(value);
   logProgress('evidence', 'extraction completed', {
@@ -359,8 +486,11 @@ async function extractEvidence(model, intake, source, operation = 'evidence-extr
   return evidence;
 }
 
-async function buildEvidence(models, intake, source) {
-  const primary = await extractEvidence(models.primary, intake, source, 'primary-evidence-extraction');
+async function buildEvidence(models, intake, source, options = {}) {
+  const schemaValidationFeedback = Array.isArray(options.schemaValidationFeedback)
+    ? options.schemaValidationFeedback.map(findingMessage).filter(Boolean)
+    : [];
+  const primary = await extractEvidence(models.primary, intake, source, 'primary-evidence-extraction', schemaValidationFeedback);
   const primaryAmbiguities = validateEvidence(primary, intake, { includeReported: false });
   logProgress('evidence', 'primary evidence validated', {
     model: models.primary.label,
@@ -377,7 +507,7 @@ async function buildEvidence(models, intake, source) {
     return evidenceDecision(primary, [primary], findings);
   }
 
-  const secondary = await extractEvidence(models.secondary, intake, source, 'secondary-evidence-extraction');
+  const secondary = await extractEvidence(models.secondary, intake, source, 'secondary-evidence-extraction', schemaValidationFeedback);
   const secondaryAmbiguities = validateEvidence(secondary, intake, { includeReported: false });
   logProgress('evidence', 'reconciliation started', {
     primaryModel: models.primary.label,
@@ -387,7 +517,7 @@ async function buildEvidence(models, intake, source) {
   });
   const reconciliation = await completeJson(models.primary, [
     { role: 'system', content: loadPrompt('reconcile-evidence') },
-    { role: 'user', content: JSON.stringify({ source: evidencePayload(intake, source), primary, secondary }) }
+    { role: 'user', content: JSON.stringify({ source: evidencePayload(intake, source, schemaValidationFeedback), primary, secondary }) }
   ], { maxTokens: 6000, operation: 'evidence-reconciliation' });
   const consolidated = reconciliation.consolidated ? normalizeEvidence(reconciliation.consolidated) : null;
   const consolidatedAmbiguities = consolidated
@@ -409,9 +539,10 @@ async function buildEvidence(models, intake, source) {
   if (reconciliation.approved !== true && reportedFindings === 0) {
     findings.push({
       severity: 'blocking',
-      category: 'protocol',
+      category: 'schema',
       message: 'Evidence reconciler rejected the evidence without an explainable warning-level difference',
-      kind: 'ambiguity'
+      kind: 'ambiguity',
+      retryable: true
     });
   }
   const decision = evidenceDecision(consolidated, [primary, secondary], findings);

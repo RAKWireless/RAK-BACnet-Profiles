@@ -30,8 +30,9 @@ function scoreProfile(profile, requestedTokens) {
   return score;
 }
 
-function selectReference(bacnetMapping) {
+function selectReference(bacnetMapping, options = {}) {
   const requestedTokens = tokens(bacnetMapping);
+  const excludedPath = options.excludePath ? String(options.excludePath).replace(/\\/g, '/') : null;
   const profilesRoot = path.join(WORKSPACE_ROOT, 'profiles');
   let best = null;
   for (const vendor of fs.readdirSync(profilesRoot, { withFileTypes: true })) {
@@ -39,13 +40,15 @@ function selectReference(bacnetMapping) {
     const vendorPath = path.join(profilesRoot, vendor.name);
     for (const file of fs.readdirSync(vendorPath)) {
       if (!/\.ya?ml$/i.test(file)) continue;
+      const relativePath = `profiles/${vendor.name}/${file}`;
+      if (excludedPath && relativePath === excludedPath) continue;
       try {
         const profile = yaml.load(fs.readFileSync(path.join(vendorPath, file), 'utf8'));
         const score = scoreProfile(profile, requestedTokens);
         if (score > 0 && (!best || score > best.score)) {
           best = {
             score,
-            path: `profiles/${vendor.name}/${file}`,
+            path: relativePath,
             datatype: profile.datatype,
             lorawan: profile.lorawan
           };

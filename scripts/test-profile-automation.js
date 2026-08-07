@@ -23,7 +23,7 @@ const {
   candidatePreflight,
   writeGenerationError
 } = require('../automation/src/candidate');
-const { buildEvidence, validateEvidence, classifyEvidenceFinding } = require('../automation/src/evidence');
+const { buildEvidence, validateEvidence, normalizeEvidence, classifyEvidenceFinding } = require('../automation/src/evidence');
 const { GitHubClient } = require('../automation/src/github-client');
 const { isPrivateAddress, createPinnedLookup, decoderFallbackSource } = require('../automation/src/source-loader');
 const {
@@ -34,7 +34,9 @@ const {
   relevantToDevice
 } = require('../automation/src/decoder-loader');
 const { modelConfiguration } = require('../automation/src/config');
-const { loadRepositoryExample } = require('../automation/src/reference-selector');
+const { loadRepositoryExample, selectReference } = require('../automation/src/reference-selector');
+const { failureMarkdown } = require('../automation/src/status');
+const { evaluate: evaluateShadowRun } = require('./evaluate-shadow-run');
 const { DEFAULT_TIMEOUT_MS, completeJson, isRetryableStatus } = require('../automation/src/model-client');
 const {
   parseRequestedMappings,
@@ -451,6 +453,43 @@ function testEvidenceGates() {
   };
   assert(validateEvidence(incomplete, intake).some(item => item.includes('byte length')));
 
+  const variableLengthEvidence = normalizeEvidence({
+    messageTypes: [{
+      name: 'history',
+      fPorts: [10],
+      minimumLength: 18,
+      citation: 'Manual p.17',
+      fields: [
+        { name: 'type', offset: 3, length: 1, citation: 'Manual p.17' },
+        { name: 'crc', offset: -2, length: 2, citation: 'Manual p.17' }
+      ],
+      repeatedStructures: [{
+        name: 'sensorDataSets',
+        startOffset: 10,
+        stride: 6,
+        minCount: 1,
+        maxCount: 5,
+        untilTrailerBytes: 2,
+        citation: 'Manual p.17',
+        fields: [
+          { name: 'temperature', offset: 0, offsetFromEnd: null, length: 2, citation: 'Manual p.17' },
+          { name: 'humidity', offset: 1, offsetFromEnd: null, length: 2, citation: 'Manual p.17' },
+          { name: 'co2', offset: 3, offsetFromEnd: null, length: 2, citation: 'Manual p.17' },
+          { name: 'battery', offset: 5, offsetFromEnd: null, length: 1, citation: 'Manual p.17' }
+        ]
+      }]
+    }],
+    knownAnswers: [],
+    ambiguities: []
+  });
+  assert.equal(variableLengthEvidence.messageTypes[0].fields[1].offset, null);
+  assert.equal(variableLengthEvidence.messageTypes[0].fields[1].offsetFromEnd, 2);
+  assert.deepEqual(validateEvidence(variableLengthEvidence, intake), []);
+
+  const invalidRepeatedEvidence = normalizeEvidence(variableLengthEvidence);
+  invalidRepeatedEvidence.messageTypes[0].repeatedStructures[0].fields[3].length = 2;
+  assert(validateEvidence(invalidRepeatedEvidence, intake).some(item => item.includes('exceeds its stride')));
+
   const evidenceWithUnsubmittedKnownAnswer = {
     knownAnswers: [{ fPort: 10, input: '0001', expectedOutput: { temperature: 0.1 }, citation: 'Manual p.2' }]
   };
@@ -614,6 +653,41 @@ function testFormalRepositoryExample() {
     path.join(__dirname, '..', example.profilePath),
     path.join(__dirname, '..', example.fixturePath)
   ).valid, true);
+
+  const targetPath = 'profiles/QingPing/QingPing-CGP22CLH.yaml';
+  const reference = selectReference(
+    '- temperature → AnalogInputObject\n- humidity → AnalogInputObject\n- co2Value → AnalogInputObject\n- battery → AnalogInputObject',
+    { excludePath: targetPath }
+  );
+  assert(reference);
+  assert.notEqual(reference.path, targetPath);
+}
+
+function testEvidenceFailureMessagingAndShadowMetrics() {
+  const schemaStatus = {
+    errors: ['Message history field crc must include a valid byte location'],
+    manifest: { status: 'evidence-blocked', code: 'EVIDENCE_SCHEMA_INVALID', attempt: 1 }
+  };
+  assert.doesNotMatch(failureMarkdown(schemaStatus), /Please edit the original Issue/);
+  assert.match(failureMarkdown(schemaStatus), /Automation will retry evidence extraction/);
+
+  const sourceStatus = {
+    errors: ['The official source does not state the temperature offset'],
+    manifest: { status: 'evidence-blocked', code: 'EVIDENCE_SOURCE_BLOCKED', attempt: 1 }
+  };
+  assert.match(failureMarkdown(sourceStatus), /Please edit the original Issue/);
+
+  const metrics = evaluateShadowRun([
+    { eligible: true, valid: false, manifest: { status: 'evidence-blocked' } },
+    { eligible: true, valid: false, manifest: { status: 'review-failed', profilePath: 'a.yaml', fixturePath: 'a.json' } },
+    { eligible: true, valid: true, manifest: { status: 'candidate', profilePath: 'b.yaml', fixturePath: 'b.json' } }
+  ]);
+  assert.equal(metrics.evidenceBlockedIssues, 1);
+  assert.equal(metrics.publishableCandidateIssues, 2);
+  assert.equal(metrics.evidencePassRate, 2 / 3);
+  assert.equal(metrics.candidateSuccessRate, 1 / 2);
+  assert.equal(metrics.automaticSuccessRate, 1 / 3);
+  assert.equal(metrics.sampleSizeSufficient, false);
 }
 
 function testGeneratedCodecNormalization() {
@@ -860,6 +934,23 @@ async function testEvidenceReconciliationSeverity() {
     text: 'Protocol text with a two-byte big-endian temperature value on fPort 10. '.repeat(5)
   };
   const valid = protocolEvidence();
+  const schemaInvalid = protocolEvidence();
+  schemaInvalid.messageTypes[0].fields[0].length = null;
+  await withMockModel([schemaInvalid], async model => {
+    const result = await buildEvidence({ primary: model, secondary: null }, intake, source);
+    assert.equal(result.approved, false);
+    assert.equal(result.retryable, true);
+    assert.equal(result.blockerType, 'schema');
+  });
+
+  const sourceBlocked = { ...protocolEvidence(), ambiguities: ['The official source does not state the byte offset for Temperature.'] };
+  await withMockModel([sourceBlocked], async model => {
+    const result = await buildEvidence({ primary: model, secondary: null }, intake, source);
+    assert.equal(result.approved, false);
+    assert.equal(result.retryable, false);
+    assert.equal(result.blockerType, 'source');
+  });
+
   const primaryIncomplete = { ...protocolEvidence(), messageTypes: [], ambiguities: ['The first extraction failed to locate the message table'] };
   await withMockModel([
     primaryIncomplete,
@@ -1009,6 +1100,7 @@ async function main() {
   testRequestedBacnetMapping();
   testAlarmSemanticRulePrecedence();
   testFormalRepositoryExample();
+  testEvidenceFailureMessagingAndShadowMetrics();
   testGeneratedCodecNormalization();
   testGenerationErrorStageReporting();
   testGeneratedProfileContract();

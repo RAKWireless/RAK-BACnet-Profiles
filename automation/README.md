@@ -1,6 +1,6 @@
 # BACnet Profile Automation
 
-Profile Automation turns a complete GitHub Profile Request into an uplink-only Draft PR. It is intentionally evidence-gated: missing or conflicting protocol facts stop the workflow and ask the submitter to edit the original Issue.
+Profile Automation turns a complete GitHub Profile Request into an uplink-only Draft PR. It is intentionally evidence-gated: missing or conflicting source facts stop the workflow and ask the submitter to edit the original Issue, while malformed extracted evidence is retried as an automation problem.
 
 ## Production flow
 
@@ -13,6 +13,8 @@ Profile Automation turns a complete GitHub Profile Request into an uplink-only D
 7. After merge, the Issue closes with `profile:unverified`; real-hardware verification remains separate.
 
 The official document and any decoder evidence are downloaded in a separate job that has no model-provider secrets. Decoder discovery uses this order: an inline function in the Issue, a decoder link in the Issue, then a constrained GitHub code search using Device Vendor + Device Model. Any decoder explicitly supplied in the Issue is authoritative protocol evidence without publisher or repository verification; only automatically discovered decoders remain supporting evidence. Protocol authority never makes decoder text executable: downloaded decoder text is retained as data and is never run. Generated codec code is executed only in the isolated validation job.
+
+Evidence fields use either a non-negative absolute `offset` or a positive `offsetFromEnd` for frame trailers. Legacy negative offsets are normalized to `offsetFromEnd` for compatibility. Variable-count fixed-stride records use `repeatedStructures` with `startOffset`, `stride`, count bounds, and `untilTrailerBytes`, so trailer bytes cannot be mistaken for records. Schema-validation failures are retried with the previous validation errors; source conflicts and genuinely missing protocol facts remain non-retryable.
 
 Generation receives the formal `Thermokon-NOVOS3-OccLumCO2TempRH` Profile and its committed fixture as a repository layout reference. The prompt explicitly identifies its historical downlink, loop, partial-payload, and robustness patterns as legacy behavior that must not be copied. Generation also receives the closest historical Profile's BACnet datatype and LoRaWAN metadata as a mapping reference; current uplink-only and fail-closed requirements remain authoritative.
 
@@ -87,4 +89,4 @@ node scripts/run-profile-ci.js \
 
 ## Shadow rollout
 
-Run the `Profile Automation - Shadow Evaluation` workflow with a JSON list of 10–20 historical Issue numbers. It never creates a PR or changes an Issue. The final job measures the agreed target: at least 85% automatic success among requests that pass the eligibility gate.
+Run the `Profile Automation - Shadow Evaluation` workflow with a JSON list of 10–20 historical Issue numbers. It never creates a PR or changes an Issue. The final job reports Evidence pass rate, publishable-candidate success rate, and end-to-end automatic success separately; the agreed release target remains at least 85% end-to-end success among requests that pass the eligibility gate. Results with fewer than five eligible Issues are marked as an insufficient sample.

@@ -404,7 +404,14 @@ function evidenceFieldRows(evidence) {
   const rows = [];
   for (const message of evidence.messageTypes || []) {
     for (const field of message.fields || []) {
-      rows.push(`| ${markdownCell(message.name)} | ${markdownCell(field.name)} | ${markdownCell(field.offset)} | ${markdownCell(field.length)} | ${markdownCell(field.endianness)} | ${markdownCell(field.formula ?? field.scale)} | ${markdownCell(field.citation || message.citation)} |`);
+      const location = field.offsetFromEnd ? `end-${field.offsetFromEnd}` : field.offset;
+      rows.push(`| ${markdownCell(message.name)} | ${markdownCell(field.name)} | ${markdownCell(location)} | ${markdownCell(field.length)} | ${markdownCell(field.endianness)} | ${markdownCell(field.formula ?? field.scale)} | ${markdownCell(field.citation || message.citation)} |`);
+    }
+    for (const structure of message.repeatedStructures || []) {
+      for (const field of structure.fields || []) {
+        const location = `${structure.startOffset} + n*${structure.stride} + ${field.offset}`;
+        rows.push(`| ${markdownCell(`${message.name} / ${structure.name}[*]`)} | ${markdownCell(field.name)} | ${markdownCell(location)} | ${markdownCell(field.length)} | ${markdownCell(field.endianness)} | ${markdownCell(field.formula ?? field.scale)} | ${markdownCell(field.citation || structure.citation || message.citation)} |`);
+      }
     }
   }
   return rows;
@@ -445,13 +452,20 @@ function buildReviewMarkdown(manifest, context, fixture) {
     `> This profile remains \`verified: false\` until confirmed on real hardware.\n`;
 }
 
-function writeBlocked(outputDir, context, attempt, reason, details, models) {
+function writeBlocked(outputDir, context, attempt, evidenceResult, models) {
   const paths = outputPaths(outputDir, context.intake);
+  const retryable = evidenceResult.retryable === true;
+  const reason = retryable
+    ? 'Extracted protocol evidence did not satisfy the automation schema.'
+    : 'Protocol evidence is conflicting or ambiguous.';
+  const details = [...evidenceResult.conflicts, ...evidenceResult.ambiguities];
   const manifest = {
     issueNumber: context.intake.issueNumber,
     attempt,
     status: 'evidence-blocked',
-    retryable: false,
+    retryable,
+    code: retryable ? 'EVIDENCE_SCHEMA_INVALID' : 'EVIDENCE_SOURCE_BLOCKED',
+    stage: 'evidence',
     reason,
     details,
     reviewMode: models.secondary ? 'multi-model' : 'single-model',
@@ -511,7 +525,14 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
       previousAttempt: previous.manifest.attempt
     });
   } else {
-    const evidenceResult = await runStage('evidence', () => buildEvidence(models, intake, source), 'evidence-build');
+    const schemaValidationFeedback = validationReport && Array.isArray(validationReport.errors)
+      ? validationReport.errors
+      : [];
+    const evidenceResult = await runStage(
+      'evidence',
+      () => buildEvidence(models, intake, source, { schemaValidationFeedback }),
+      'evidence-build'
+    );
     const resolvedIntake = evidenceResult.approved && evidenceResult.consolidated
       ? resolveIntakeMapping(resolveIntakeFPorts(intake, evidenceResult.consolidated), evidenceResult.consolidated)
       : intake;
@@ -521,7 +542,11 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
       evidence: evidenceResult.consolidated,
       evidenceReviews: evidenceResult.extractions,
       evidenceWarnings: evidenceResult.warnings || [],
-      reference: selectReference(resolvedIntake.bacnetMapping),
+      reference: selectReference(resolvedIntake.bacnetMapping, {
+        excludePath: resolvedIntake.vendor && resolvedIntake.profileName
+          ? `profiles/${resolvedIntake.vendor}/${resolvedIntake.profileName}.yaml`
+          : null
+      }),
       repositoryExample: loadRepositoryExample(),
       feedback
     };
@@ -531,7 +556,7 @@ async function buildCandidate({ models, intake, source, outputDir, attempt = 1, 
       repositoryExample: context.repositoryExample.profilePath
     });
     if (!evidenceResult.approved || !evidenceResult.consolidated) {
-      return writeBlocked(outputDir, context, attempt, 'Protocol evidence is conflicting or ambiguous.', [...evidenceResult.conflicts, ...evidenceResult.ambiguities], models);
+      return writeBlocked(outputDir, context, attempt, evidenceResult, models);
     }
   }
 
