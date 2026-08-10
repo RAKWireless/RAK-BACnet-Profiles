@@ -23,7 +23,8 @@ const { automationMeta } = require('../automation/src/status');
 const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
 const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require('../automation/src/decoder-loader');
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
-const { validateDecodedData } = require('./lib/validation/profile-semantics');
+const { validateProfileSemantics, validateDecodedData } = require('./lib/validation/profile-semantics');
+const { validateTestFixture } = require('./lib/validation/test-fixture');
 const { candidateContractChecks, validateFixtureContract } = require('./lib/validation/agent-candidate');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./evaluate-shadow-run');
@@ -243,6 +244,49 @@ function testSQLiteRealCodecValues() {
   assert(codecPolicy.includes('`false = 0`'));
   assert(codecPolicy.includes('`1, 2, 3, ...`'));
   assert(codecPolicy.includes('adjacent codec comment'));
+}
+
+function testCanonicalGeneratedProfileShape() {
+  const golden = path.join(ROOT, 'automation', 'test', 'golden', 'issue-31');
+  const profilePath = path.join(golden, 'profiles', 'QingPing', 'QingPing-CGP22CLH.yaml');
+  const fixturePath = path.join(golden, 'profiles', 'QingPing', 'tests', 'QingPing-CGP22CLH.test.json');
+  const profile = yaml.load(fs.readFileSync(profilePath, 'utf8'));
+  assert.equal(validateProfileSemantics(profile, profilePath, { strict: true }).valid, true);
+
+  const wrongTopLevelOrder = { id: profile.id };
+  for (const [key, value] of Object.entries(profile)) {
+    if (key !== 'id') wrongTopLevelOrder[key] = value;
+  }
+  assert(validateProfileSemantics(wrongTopLevelOrder, profilePath, { strict: true }).errors.some(error => error.includes('top-level keys')));
+
+  const wrongName = { ...profile, name: 'QingPing CGP22CLH' };
+  assert(validateProfileSemantics(wrongName, profilePath, { strict: true }).errors.some(error => error.includes("must equal device model 'CGP22CLH'")));
+
+  const wrongDatatypeOrder = JSON.parse(JSON.stringify(profile));
+  const first = wrongDatatypeOrder.datatype['1'];
+  wrongDatatypeOrder.datatype['1'] = { name: first.name, channel: first.channel, type: first.type, units: first.units };
+  assert(validateProfileSemantics(wrongDatatypeOrder, profilePath, { strict: true }).errors.some(error => error.includes('datatype.1: fields must appear')));
+
+  const invertedEntrypoints = {
+    ...profile,
+    codec: 'function Decode(fPort, data, variables) { return decodeUplink({ fPort: fPort, bytes: data, variables: variables }).data; }\n' +
+      'function decodeUplink(input) { return { data: [] }; }'
+  };
+  const entrypointErrors = validateProfileSemantics(invertedEntrypoints, profilePath, { strict: true }).errors;
+  assert(entrypointErrors.some(error => error.includes('must not delegate to decodeUplink')));
+  assert(entrypointErrors.some(error => error.includes('decodeUplink must call Decode')));
+
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-return-shape-'));
+  const temporaryProfile = path.join(temporary, 'QingPing-CGP22CLH.yaml');
+  try {
+    const source = fs.readFileSync(profilePath, 'utf8').replace('return { data: data };', 'return { data: data, errors: [] };');
+    fs.writeFileSync(temporaryProfile, source);
+    const report = validateTestFixture(temporaryProfile, fixturePath);
+    assert.equal(report.valid, false);
+    assert(report.errors.some(error => error.includes('must omit errors on success')));
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 function testShadowWorkflowDAG() {
@@ -675,6 +719,7 @@ async function main() {
     testCleanRoomCopyDoesNotPreserveOwnership,
     testIssueCreationHasSingleIntakeRun,
     testSQLiteRealCodecValues,
+    testCanonicalGeneratedProfileShape,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,

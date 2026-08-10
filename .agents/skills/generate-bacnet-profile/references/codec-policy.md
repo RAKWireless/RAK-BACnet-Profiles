@@ -1,10 +1,13 @@
 # Codec policy
 
 Provide both `Decode(fPort, data, variables)` and `decodeUplink(input)`.
-Return BACnet rows as an array. Invalid, truncated, unsupported, or internally
-inconsistent frames must fail closed: return no BACnet data and include a
-non-empty `errors` array from `decodeUplink`. Do not return partially decoded
-BACnet data after a frame error.
+`Decode` is the authoritative parser and returns the BACnet row array directly.
+`decodeUplink` must call `Decode` and wrap a successful result as
+`{ data: rows }`; never make `Decode` delegate to `decodeUplink`. Omit `errors`
+on successful results instead of returning `errors: []`. Invalid, truncated,
+unsupported, or internally inconsistent frames must fail closed as
+`{ data: [], errors: [message] }`. Do not return partially decoded BACnet data
+after a frame error.
 
 Allowed protocol techniques include fixed and dynamic layouts, byte cursors,
 bounded `for`, `while`, and `do...while` loops, repeated records, bit fields,

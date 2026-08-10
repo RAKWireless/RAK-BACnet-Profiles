@@ -3,10 +3,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const acorn = require('acorn');
 const { loadYAML } = require('../yaml-parser');
 
 const mappingRules = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'schemas', 'bacnet-mapping-rules.json'), 'utf8'));
 const OUTPUT_TYPES = new Set(['AnalogOutputObject', 'BinaryOutputObject']);
+const PROFILE_KEY_ORDER = ['codec', 'datatype', 'lorawan', 'model', 'profileVersion', 'name', 'vendor', 'id'];
+const DATATYPE_KEY_ORDER = ['name', 'type', 'units', 'covIncrement', 'updateInterval', 'channel'];
 
 function normalize(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -34,6 +37,40 @@ function matchingRule(name) {
   return matches.length > 0 ? matches[0].rule : null;
 }
 
+function sameOrder(actual, expected) {
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function functionDeclaration(ast, name) {
+  return ast.body.find(node => node.type === 'FunctionDeclaration' && node.id && node.id.name === name) || null;
+}
+
+function containsCall(node, calleeName) {
+  if (!node || typeof node !== 'object') return false;
+  if (node.type === 'CallExpression' && node.callee && node.callee.type === 'Identifier' && node.callee.name === calleeName) return true;
+  return Object.entries(node).some(([key, value]) => {
+    if (['type', 'start', 'end', 'loc'].includes(key)) return false;
+    if (Array.isArray(value)) return value.some(child => containsCall(child, calleeName));
+    return value && typeof value === 'object' && containsCall(value, calleeName);
+  });
+}
+
+function validateCodecEntrypoints(codec) {
+  const errors = [];
+  let ast;
+  try {
+    ast = acorn.parse(codec || '', { ecmaVersion: 2020, sourceType: 'script' });
+  } catch {
+    return errors;
+  }
+  const decode = functionDeclaration(ast, 'Decode');
+  const decodeUplink = functionDeclaration(ast, 'decodeUplink');
+  if (!decode || !decodeUplink) return errors;
+  if (containsCall(decode.body, 'decodeUplink')) errors.push('Decode must return the BACnet row array directly and must not delegate to decodeUplink');
+  if (!containsCall(decodeUplink.body, 'Decode')) errors.push('decodeUplink must call Decode and wrap its returned BACnet row array');
+  return errors;
+}
+
 function validateProfileSemantics(profile, filePath, options = {}) {
   const strict = options.strict !== false;
   const errors = [];
@@ -44,6 +81,9 @@ function validateProfileSemantics(profile, filePath, options = {}) {
   if (channels.length === 0) errors.push('datatype must declare at least one BACnet object');
   if (strict && profile.profileVersion !== '1.0.0') errors.push('New profiles must start at profileVersion 1.0.0');
   if (strict && !isUuid(profile.id)) errors.push('New profiles must contain a generated UUID v4 id');
+  if (strict && !sameOrder(Object.keys(profile), PROFILE_KEY_ORDER)) {
+    errors.push(`New Profile top-level keys must appear exactly in this order: ${PROFILE_KEY_ORDER.join(', ')}`);
+  }
   if (!profile.vendor || !/^[A-Za-z0-9][A-Za-z0-9 -]*$/.test(profile.vendor)) errors.push('vendor must be an English identifier');
   if (!profile.name || !/^[\x20-\x7E]+$/.test(profile.name)) errors.push('name must use printable English characters');
 
@@ -52,11 +92,16 @@ function validateProfileSemantics(profile, filePath, options = {}) {
     const parentVendor = path.basename(path.dirname(filePath));
     if (profile.model !== basename) errors.push(`model '${profile.model}' must match filename '${basename}'`);
     if (profile.vendor !== parentVendor) errors.push(`vendor '${profile.vendor}' must match directory '${parentVendor}'`);
+    if (strict && basename.startsWith(`${parentVendor}-`)) {
+      const expectedName = basename.slice(parentVendor.length + 1);
+      if (profile.name !== expectedName) errors.push(`name '${profile.name}' must equal device model '${expectedName}' without the vendor prefix`);
+    }
   }
 
   if (/function\s+(?:Encode|encodeDownlink)\b|\b(?:Encode|encodeDownlink)\s*=/.test(profile.codec || '')) {
     errors.push('Profile Automation only accepts uplink-only codecs');
   }
+  if (strict) errors.push(...validateCodecEntrypoints(profile.codec));
 
   for (const [channelKey, config] of channels) {
     const channel = Number(channelKey);
@@ -69,6 +114,14 @@ function validateProfileSemantics(profile, filePath, options = {}) {
       errors.push(`datatype.${channelKey}: channel property must equal ${channel}`);
     }
     if (!config.name || !/^[\x20-\x7E]+$/.test(config.name)) errors.push(`datatype.${channelKey}: name must be English`);
+    if (strict) {
+      const actualKeys = Object.keys(config);
+      const expectedKeys = DATATYPE_KEY_ORDER.filter(key => Object.prototype.hasOwnProperty.call(config, key));
+      if (!sameOrder(actualKeys, expectedKeys)) {
+        errors.push(`datatype.${channelKey}: fields must appear in this order when present: ${DATATYPE_KEY_ORDER.join(', ')}`);
+      }
+      if (config.channel === undefined) errors.push(`datatype.${channelKey}: new Profile channels must declare channel explicitly`);
+    }
     const normalizedName = normalize(config.name);
     if (names.has(normalizedName)) errors.push(`datatype.${channelKey}: duplicate object name '${config.name}'`);
     names.add(normalizedName);

@@ -39,6 +39,14 @@ function validateResult(profile, testCase, result, valueOptions = {}) {
   const errors = [];
   if (!result || typeof result !== 'object' || Array.isArray(result)) return ['decodeUplink must return an object'];
   if (result.data !== undefined && !Array.isArray(result.data)) errors.push('decodeUplink.data must be an array when present');
+  if (valueOptions.requireCanonicalReturn === true && Object.prototype.hasOwnProperty.call(result, 'errors')) {
+    if (!Array.isArray(result.errors) || result.errors.length === 0 || result.errors.some(error => typeof error !== 'string' || error.length === 0)) {
+      errors.push('decodeUplink must omit errors on success and use a non-empty string array only on failure');
+    }
+    if (Array.isArray(result.data) && result.data.length > 0) {
+      errors.push('decodeUplink must not return BACnet data together with errors');
+    }
+  }
   const semantic = validateDecodedData(profile, result.data || [], valueOptions);
   errors.push(...semantic.errors);
   if (Object.prototype.hasOwnProperty.call(testCase, 'expectedOutput') && !deepEqual(result.data || [], testCase.expectedOutput)) {
@@ -187,7 +195,10 @@ function validateTestFixture(profilePath, fixturePath) {
   errors.push(...schemaCheck.errors);
   if (!schemaCheck.valid) return { valid: false, errors, warnings, results };
   errors.push(...validateStrictFixtureRobustness(fixture));
-  const valueOptions = { requireBinary01: fixture.strict === true };
+  const valueOptions = {
+    requireBinary01: fixture.strict === true,
+    requireCanonicalReturn: fixture.strict === true
+  };
   const knownFPorts = new Set([
     ...fixture.testCases.map(testCase => testCase.fPort),
     ...((fixture.fPortPolicy && fixture.fPortPolicy.mode === 'fixed' && fixture.fPortPolicy.ports) || [])
