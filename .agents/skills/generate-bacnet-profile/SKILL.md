@@ -42,7 +42,9 @@ inspect and independently re-implement.
    and fPort policy, an empty `resolvedMappings`, and the non-null blocker.
 4. Inspect similar repository Profiles only for repository shape and BACnet
    conventions. Never copy a protocol assumption without request-specific
-   evidence.
+   evidence. Treat existing committed fixtures as legacy shape references
+   only: never copy their `robustness` values into a new strict fixture. Follow
+   the current fixture contract instead.
 5. Write exactly the two allowed paths from `request.json`. Never edit
    `registry.json` or any other file.
 6. Implement a deterministic, fail-closed uplink codec and a strict fixture
