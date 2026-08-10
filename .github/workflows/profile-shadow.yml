@@ -17,7 +17,7 @@ on:
         description: Provider Environment
         required: true
         type: choice
-        default: deepseek
+        default: openai
         options: [deepseek, openai]
       model:
         description: Optional model override

@@ -12,7 +12,7 @@ on:
         description: Explicit provider selection or fallback
         required: true
         type: choice
-        default: deepseek
+        default: openai
         options: [deepseek, openai]
       model:
         description: Optional model override; otherwise use the Environment model

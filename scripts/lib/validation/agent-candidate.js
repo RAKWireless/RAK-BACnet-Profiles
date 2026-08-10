@@ -5,6 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { loadYAML } = require('../yaml-parser');
 const { validateRequestedMapping } = require('./requested-mapping');
+const { validateStrictFixtureRobustness } = require('./test-fixture');
 const { runGeneratedProfileCI } = require('../../run-profile-ci');
 
 function deepEqual(left, right) {
@@ -22,10 +23,9 @@ function validateFixtureContract(fixture, result) {
   if (!fixture.fPortPolicy) errors.push('Strict candidate fixture must declare fPortPolicy');
   if (!deepEqual(fixture.fPortPolicy, result.fPortPolicy)) errors.push('Fixture and Agent result fPortPolicy must match exactly');
   if (fixture.evidenceLevel !== result.evidenceLevel) errors.push('Fixture and Agent result evidenceLevel must match');
-  if (!fixture.robustness || fixture.robustness.checkTruncation !== true) errors.push('Strict candidate must enable truncation checks');
-  if (!fixture.robustness || fixture.robustness.checkFuzz !== true) errors.push('Strict candidate must enable seeded fuzz checks');
+  errors.push(...validateStrictFixtureRobustness(fixture));
   if (fixture.fPortPolicy && fixture.fPortPolicy.mode === 'ignored') {
-    if (fixture.robustness.checkUnknownFPort !== false) errors.push('ignored fPort policy must disable unknown/alternate/reserved fPort checks');
+    if (!fixture.robustness || fixture.robustness.checkUnknownFPort !== false) errors.push('ignored fPort policy must set robustness.checkUnknownFPort to false');
     if (fixture.fPortPolicy.representativeFPort !== 1) warnings.push('ignored fPort convention should use representativeFPort 1 as a test-call placeholder');
   }
   if ((fixture.evidenceLevel === 'known-answer' || fixture.evidenceLevel === 'decoder-derived') &&

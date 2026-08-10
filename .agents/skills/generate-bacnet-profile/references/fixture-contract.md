@@ -18,9 +18,24 @@ Select one fPort policy:
   is entirely payload-driven. Use `representativeFPort: 1` only as a test-call
   placeholder and explain why. Do not claim it is the device's actual fPort.
 
-For `ignored`, do not add fPort-dependent branches and disable unknown,
-alternate, and reserved-port checks. For all modes, keep truncation and seeded
-fuzz checks enabled for new candidates.
+The fixture's `evidenceLevel` and complete `fPortPolicy` object must match the
+final structured Agent result exactly. Reuse the same values and citation text;
+do not shorten or rephrase them when producing the result JSON.
+
+Every new strict candidate must include this exact robustness shape:
+
+```json
+"robustness": {
+  "checkTruncation": true,
+  "checkUnknownFPort": true,
+  "checkFuzz": true
+}
+```
+
+For `ignored`, do not add fPort-dependent branches and set
+`robustness.checkUnknownFPort` to `false`. For all modes,
+`robustness.checkTruncation` and `robustness.checkFuzz` must remain explicitly
+set to `true`; omitting them is a validation error.
 
 Once a committed fixture has `strict: true`, repository CI permanently applies
 candidate-strict validation to that Profile.

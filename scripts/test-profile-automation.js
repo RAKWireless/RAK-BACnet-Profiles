@@ -23,7 +23,7 @@ const { automationMeta } = require('../automation/src/status');
 const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
 const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require('../automation/src/decoder-loader');
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
-const { candidateContractChecks } = require('./lib/validation/agent-candidate');
+const { candidateContractChecks, validateFixtureContract } = require('./lib/validation/agent-candidate');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./evaluate-shadow-run');
 
@@ -184,6 +184,14 @@ function testCodexPermissionProfile() {
   assert(source.includes('default_permissions = "profile-agent"'));
   assert(source.includes('extends = ":workspace"'), 'The custom profile must inherit Codex runtime mounts before applying narrower repository rules');
   assert(source.includes('glob_scan_max_depth = 8'), 'Linux permission profiles with ** deny globs must bound pre-expansion depth');
+}
+
+function testCleanRoomCopyDoesNotPreserveOwnership() {
+  for (const name of ['profile-validate-candidate.yml', 'profile-build.yml']) {
+    const source = fs.readFileSync(path.join(ROOT, '.github', 'workflows', name), 'utf8');
+    assert(!source.includes('cp -a /source/. /work/repo'), `${name} must not preserve host ownership inside the capability-restricted validation container`);
+    assert(source.includes('cp -R /source/. /work/repo'), `${name} must recursively copy the read-only checkout into the validation tmpfs`);
+  }
 }
 
 function testShadowWorkflowDAG() {
@@ -550,6 +558,32 @@ function testIssue31Golden() {
   assert.equal(fixture.fPortPolicy.mode, 'ignored');
 }
 
+function testStrictFixtureRequiresExplicitRobustness() {
+  const golden = path.join(ROOT, 'automation', 'test', 'golden', 'issue-31');
+  const profilePath = path.join(golden, 'profiles', 'QingPing', 'QingPing-CGP22CLH.yaml');
+  const sourceFixturePath = path.join(golden, 'profiles', 'QingPing', 'tests', 'QingPing-CGP22CLH.test.json');
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-strict-fixture-'));
+  const fixturePath = path.join(temporary, 'QingPing-CGP22CLH.test.json');
+  try {
+    const fixture = JSON.parse(fs.readFileSync(sourceFixturePath, 'utf8'));
+    delete fixture.robustness;
+    fs.writeFileSync(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+    const report = runGeneratedProfileCI(profilePath, fixturePath);
+    assert.equal(report.valid, false);
+    assert(report.checks.fixture.errors.includes('Strict fixture must set robustness.checkTruncation to true'));
+    assert(report.checks.fixture.errors.includes('Strict fixture must set robustness.checkFuzz to true'));
+    const contract = validateFixtureContract(fixture, {
+      evidenceLevel: fixture.evidenceLevel,
+      fPortPolicy: fixture.fPortPolicy,
+      evidenceMatrix: []
+    });
+    assert.equal(contract.valid, false);
+    assert(contract.errors.includes('ignored fPort policy must set robustness.checkUnknownFPort to false'));
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 function testMetadataAndShadowEvaluation() {
   const meta = { issueNumber: 31, issueBodySha: 'a'.repeat(64), reviewCycle: 2 };
   assert.deepEqual(automationMeta(`x\n<!-- profile-automation:meta ${JSON.stringify(meta)} -->\ny`), meta);
@@ -587,6 +621,7 @@ async function main() {
     testProviderSecretRouting,
     testStructuredOutputSchemas,
     testCodexPermissionProfile,
+    testCleanRoomCopyDoesNotPreserveOwnership,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,
@@ -599,6 +634,7 @@ async function main() {
     testNetworkBoundary,
     testDecoderTrustClassification,
     testIssue31Golden,
+    testStrictFixtureRequiresExplicitRobustness,
     testMetadataAndShadowEvaluation
   ];
   for (const test of tests) {

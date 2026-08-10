@@ -23,6 +23,18 @@ function validateFixtureSchema(fixture) {
   };
 }
 
+function validateStrictFixtureRobustness(fixture) {
+  if (fixture.strict !== true) return [];
+  const errors = [];
+  if (!fixture.robustness || fixture.robustness.checkTruncation !== true) {
+    errors.push('Strict fixture must set robustness.checkTruncation to true');
+  }
+  if (!fixture.robustness || fixture.robustness.checkFuzz !== true) {
+    errors.push('Strict fixture must set robustness.checkFuzz to true');
+  }
+  return errors;
+}
+
 function validateResult(profile, testCase, result) {
   const errors = [];
   if (!result || typeof result !== 'object' || Array.isArray(result)) return ['decodeUplink must return an object'];
@@ -174,6 +186,7 @@ function validateTestFixture(profilePath, fixturePath) {
   const schemaCheck = validateFixtureSchema(fixture);
   errors.push(...schemaCheck.errors);
   if (!schemaCheck.valid) return { valid: false, errors, warnings, results };
+  errors.push(...validateStrictFixtureRobustness(fixture));
   const knownFPorts = new Set([
     ...fixture.testCases.map(testCase => testCase.fPort),
     ...((fixture.fPortPolicy && fixture.fPortPolicy.mode === 'fixed' && fixture.fPortPolicy.ports) || [])
@@ -246,4 +259,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { validateTestFixture };
+module.exports = { validateTestFixture, validateStrictFixtureRobustness };

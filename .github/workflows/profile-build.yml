@@ -296,7 +296,7 @@ jobs:
             --tmpfs /work:rw,nosuid,size=640m \
             -v "$GITHUB_WORKSPACE:/source:ro" \
             node:24-alpine \
-            sh -c 'cp -a /source/. /work/repo && cd /work/repo && node scripts/validate-agent-candidate.js --candidate automation/.work/selected --source-bundle automation/.work/source/source-bundle.json' \
+            sh -c 'cp -R /source/. /work/repo && cd /work/repo && node scripts/validate-agent-candidate.js --candidate automation/.work/selected --source-bundle automation/.work/source/source-bundle.json' \
             > automation/.work/publish-validation/report.json
       - name: Regenerate and validate registry deterministically
         run: |
