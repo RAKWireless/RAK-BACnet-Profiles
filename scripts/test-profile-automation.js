@@ -194,6 +194,23 @@ function testCleanRoomCopyDoesNotPreserveOwnership() {
   }
 }
 
+function testIssueCreationHasSingleIntakeRun() {
+  const template = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'ISSUE_TEMPLATE', 'device-profile-request.yml'), 'utf8'));
+  assert.equal(template.labels, undefined, 'The Issue form must not emit labeled events during creation');
+
+  const workflowSource = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-intake.yml'), 'utf8');
+  const workflow = yaml.load(workflowSource, { schema: yaml.JSON_SCHEMA });
+  assert(workflow.on.issues.types.includes('opened'), 'Profile Intake must bootstrap requests from the single opened event');
+  assert(workflowSource.includes("github.event.label.name == 'profile:approved'"), 'Maintainer approval must still trigger Intake');
+  assert(workflowSource.includes("github.event.label.name == 'profile-request'"), 'Manual profile-request labeling must still trigger Intake');
+
+  const cliSource = fs.readFileSync(path.join(ROOT, 'automation', 'src', 'cli.js'), 'utf8');
+  assert(
+    cliSource.includes("client.addLabels(intake.issueNumber, ['profile-request', 'requirement-gathering'])"),
+    'The opened-event Intake run must initialize the request labels with GITHUB_TOKEN'
+  );
+}
+
 function testShadowWorkflowDAG() {
   const workflowPath = path.join(ROOT, '.github', 'workflows', 'profile-build.yml');
   const workflow = yaml.load(fs.readFileSync(workflowPath, 'utf8'));
@@ -622,6 +639,7 @@ async function main() {
     testStructuredOutputSchemas,
     testCodexPermissionProfile,
     testCleanRoomCopyDoesNotPreserveOwnership,
+    testIssueCreationHasSingleIntakeRun,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,

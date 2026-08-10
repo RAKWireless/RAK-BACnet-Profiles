@@ -1,6 +1,8 @@
 'use strict';
 
 const LABELS = {
+  'profile-request': { color: '1D76DB', description: 'Request for a new BACnet device profile' },
+  'requirement-gathering': { color: 'FBCA04', description: 'Request requirements are being collected' },
   'profile:awaiting-approval': { color: 'FBCA04', description: 'External request awaits maintainer approval' },
   'profile:approved': { color: '0E8A16', description: 'One-shot maintainer approval trigger' },
   'profile:queued': { color: 'C5DEF5', description: 'Queued for Profile Agent generation' },

@@ -17,7 +17,15 @@ concurrency:
 
 jobs:
   intake:
-    if: contains(github.event.issue.labels.*.name, 'profile-request') || github.event.label.name == 'profile:approved'
+    if: >-
+      (github.event.action == 'opened' &&
+        (startsWith(github.event.issue.title, '[Profile Request]') ||
+         contains(github.event.issue.body, '### Device Vendor'))) ||
+      ((github.event.action == 'edited' || github.event.action == 'reopened') &&
+        contains(github.event.issue.labels.*.name, 'profile-request')) ||
+      (github.event.action == 'labeled' &&
+        (github.event.label.name == 'profile-request' ||
+         github.event.label.name == 'profile:approved'))
     runs-on: ubuntu-latest
     permissions:
       actions: write

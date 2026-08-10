@@ -1,7 +1,6 @@
 name: 🆕 Device Profile Request
 description: Request to create a BACnet profile configuration for a new device
 title: "[Profile Request] <Vendor> - <Model>"
-labels: ["profile-request", "requirement-gathering"]
 assignees: []
 
 body:

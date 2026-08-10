@@ -116,6 +116,7 @@ async function commandApplyIntake(args) {
     'needs-info': 'profile:needs-info',
     manual: 'profile:manual'
   }[decision.state] || 'profile:needs-info';
+  await client.addLabels(intake.issueNumber, ['profile-request', 'requirement-gathering']);
   await client.ensureLabel('profile:approved');
   await client.ensureLabel('profile:provider:openai');
   await client.ensureLabel('profile:provider:deepseek');
