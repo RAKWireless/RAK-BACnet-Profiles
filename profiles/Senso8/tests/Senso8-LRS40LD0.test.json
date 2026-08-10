@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "strict": true,
+  "profile": "Senso8-LRS40LD0",
+  "evidenceLevel": "documentation-only",
+  "sources": [
+    { "type": "official-document", "reference": "official-document.txt: Decode fPort cases and LRS40LD0 selectors" }
+  ],
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [8, 9, 10, 12, 13],
+    "citation": "request.json issue.uplinkExamples; decoder.txt Decode fPort cases 8, 9, 10, 12, and 13"
+  },
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "Sensor report: heartbeat",
+      "fPort": 10,
+      "input": "0B016403E801",
+      "expectedOutput": [
+        { "name": "Event", "unit": null, "channel": 1, "value": 1 },
+        { "name": "Battery", "unit": "percent", "channel": 2, "value": 100 },
+        { "name": "Distance", "unit": "centimeters", "channel": 3, "value": 100 },
+        { "name": "State", "unit": null, "channel": 4, "value": 1 }
+      ]
+    },
+    {
+      "name": "Sensor report: state alert",
+      "fPort": 10,
+      "input": "0B045700FA00",
+      "expectedOutput": [
+        { "name": "Event", "unit": null, "channel": 1, "value": 4 },
+        { "name": "Battery", "unit": "percent", "channel": 2, "value": 87 },
+        { "name": "Distance", "unit": "centimeters", "channel": 3, "value": 25 },
+        { "name": "State", "unit": null, "channel": 4, "value": 0 }
+      ]
+    },
+    {
+      "name": "Sensor report: combined events",
+      "fPort": 10,
+      "input": "0B053201A901",
+      "expectedOutput": [
+        { "name": "Event", "unit": null, "channel": 1, "value": 5 },
+        { "name": "Battery", "unit": "percent", "channel": 2, "value": 50 },
+        { "name": "Distance", "unit": "centimeters", "channel": 3, "value": 42.5 },
+        { "name": "State", "unit": null, "channel": 4, "value": 1 }
+      ]
+    },
+    {
+      "name": "Firmware version",
+      "fPort": 8,
+      "input": "0104002A",
+      "expectedOutput": []
+    },
+    {
+      "name": "Status report",
+      "fPort": 9,
+      "input": "0104002A0E745700003039",
+      "expectedOutput": [
+        { "name": "Battery", "unit": "percent", "channel": 2, "value": 87 }
+      ]
+    },
+    {
+      "name": "Device settings",
+      "fPort": 12,
+      "input": "0B000F",
+      "expectedOutput": []
+    },
+    {
+      "name": "Threshold settings",
+      "fPort": 13,
+      "input": "0B03E800640000",
+      "expectedOutput": []
+    }
+  ]
+}
