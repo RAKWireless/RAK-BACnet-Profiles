@@ -1,0 +1,25 @@
+# The Action supplies the selected model and its local Responses proxy.
+# Credentials stay in the selected Environment; the upstream is resolved before Action startup.
+forced_login_method = "api"
+hide_agent_reasoning = true
+show_raw_agent_reasoning = false
+approval_policy = "never"
+default_permissions = "profile-agent"
+
+[permissions.profile-agent.filesystem]
+":minimal" = "read"
+
+[permissions.profile-agent.filesystem.":workspace_roots"]
+"." = "read"
+"profiles/**" = "write"
+".profile-agent/**" = "read"
+".git/**" = "deny"
+"**/*.env" = "deny"
+
+[permissions.profile-agent.network]
+enabled = false
+
+[otel]
+log_user_prompt = false
+trace_exporter = "none"
+metrics_exporter = "none"

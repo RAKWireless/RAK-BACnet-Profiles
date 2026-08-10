@@ -95,26 +95,13 @@ function getModelsWithTests(vendorDir) {
   const modelsWithTests = new Set();
   
   if (fs.existsSync(testsDir)) {
-    const testDataFile = path.join(testsDir, 'test-data.json');
-    const expectedOutputFile = path.join(testsDir, 'expected-output.json');
-    
-    // Both files must exist
-    if (fs.existsSync(testDataFile) && fs.existsSync(expectedOutputFile)) {
+    for (const file of fs.readdirSync(testsDir).filter(name => name.endsWith('.test.json'))) {
       try {
-        const testData = JSON.parse(fs.readFileSync(testDataFile, 'utf8'));
-        
-        // Extract models from test cases
-        if (testData.testCases && Array.isArray(testData.testCases)) {
-          for (const testCase of testData.testCases) {
-            if (testCase.model) {
-              modelsWithTests.add(normalizeModelName(testCase.model));
-            } else {
-              modelsWithTests.add('*');
-            }
-          }
-        }
+        const fixture = JSON.parse(fs.readFileSync(path.join(testsDir, file), 'utf8'));
+        const fixtureProfile = fixture.profile || file.replace(/\.test\.json$/, '');
+        modelsWithTests.add(normalizeModelName(fixtureProfile));
       } catch (error) {
-        console.warn(`⚠️  Warning: Failed to parse test data for vendor directory: ${vendorDir}`);
+        console.warn(`⚠️  Warning: Failed to parse profile fixture: ${path.join(testsDir, file)}`);
       }
     }
   }
@@ -398,5 +385,6 @@ module.exports = {
   mergeLastUpdatesFromRegistry,
   loadExistingRegistry,
   isSameRegistryData,
+  getModelsWithTests,
   PINNED_VENDOR_FIRST
 };

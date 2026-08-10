@@ -1,0 +1,109 @@
+name: Profile Automation - Validate Candidate
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: number
+      issue_body_sha:
+        required: true
+        type: string
+      candidate_artifact:
+        required: true
+        type: string
+      source_artifact:
+        required: true
+        type: string
+      validation_artifact:
+        required: true
+        type: string
+      attempt:
+        required: true
+        type: number
+    outputs:
+      valid:
+        value: ${{ jobs.validate.outputs.valid }}
+      retryable:
+        value: ${{ jobs.validate.outputs.retryable }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      valid: ${{ steps.status.outputs.valid }}
+      retryable: ${{ steps.status.outputs.retryable }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install deterministic validation dependencies
+        run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: automation/.work/candidate
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.source_artifact }}
+          path: automation/.work/source
+
+      - name: Read candidate metadata
+        id: metadata
+        run: node automation/src/cli.js candidate-metadata --candidate automation/.work/candidate
+
+      - name: Apply allowlisted candidate patch to a fresh checkout
+        if: steps.metadata.outputs.has_patch == 'true'
+        run: node automation/src/cli.js apply-candidate --candidate automation/.work/candidate --expected-sha "${{ inputs.issue_body_sha }}"
+
+      - name: Run candidate-strict and repository-compat validation without network
+        if: steps.metadata.outputs.has_patch == 'true'
+        continue-on-error: true
+        run: |
+          mkdir -p automation/.work/validation
+          set +e
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 768m \
+            --memory-swap 768m \
+            --cpus 2 \
+            --pids-limit 128 \
+            --tmpfs /work:rw,nosuid,size=640m \
+            -v "$GITHUB_WORKSPACE:/source:ro" \
+            node:24-alpine \
+            sh -c 'cp -a /source/. /work/repo && cd /work/repo && node scripts/validate-agent-candidate.js --candidate automation/.work/candidate --source-bundle automation/.work/source/source-bundle.json' \
+            > automation/.work/validation/report.json
+          status=$?
+          set -e
+          test -s automation/.work/validation/report.json
+          exit "$status"
+
+      - name: Combine candidate and validation status
+        id: status
+        if: always()
+        run: node automation/src/cli.js candidate-status --candidate automation/.work/candidate --report automation/.work/validation/report.json --attempt "${{ inputs.attempt }}" --output automation/.work/validation/combined.json --message-output automation/.work/validation/message.md
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ${{ inputs.validation_artifact }}
+          path: automation/.work/validation
+          retention-days: 14

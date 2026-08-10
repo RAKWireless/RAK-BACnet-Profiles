@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "issueNumber", "issueBodySha", "summary", "profilePath", "fixturePath", "evidenceLevel", "resolvedMappings", "fPortPolicy", "warnings", "evidenceMatrix", "blocker"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["generated", "blocked"] },
+    "issueNumber": { "type": "integer", "minimum": 1 },
+    "issueBodySha": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "profilePath": { "type": ["string", "null"], "pattern": "^profiles/[A-Za-z0-9-]+/[A-Za-z0-9-]+\\.yaml$" },
+    "fixturePath": { "type": ["string", "null"], "pattern": "^profiles/[A-Za-z0-9-]+/tests/[A-Za-z0-9-]+\\.test\\.json$" },
+    "evidenceLevel": { "enum": ["known-answer", "documentation-only", "decoder-derived", null] },
+    "resolvedMappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "units"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["AnalogInputObject", "AnalogValueObject", "BinaryInputObject", "BinaryValueObject", "OctetStringValueObject"] },
+          "units": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "fPortPolicy": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "ports", "citation"],
+          "properties": {
+            "mode": { "const": "fixed" },
+            "ports": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1, "maximum": 223 } },
+            "citation": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "representativeFPort", "citation"],
+          "properties": {
+            "mode": { "const": "agnostic" },
+            "representativeFPort": { "type": "integer", "minimum": 1, "maximum": 223 },
+            "citation": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "representativeFPort", "reason"],
+          "properties": {
+            "mode": { "const": "ignored" },
+            "representativeFPort": { "type": "integer", "minimum": 1, "maximum": 223 },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "warnings": { "type": "array", "items": { "type": "string", "maxLength": 1000 } },
+    "evidenceMatrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "officialDocument", "decoder", "knownPayload", "resolution", "resolvedValue", "rationale"],
+        "properties": {
+          "field": { "type": "string", "minLength": 1 },
+          "officialDocument": { "type": ["string", "null"], "maxLength": 1000 },
+          "decoder": { "type": ["string", "null"], "maxLength": 1000 },
+          "knownPayload": { "type": ["string", "null"], "maxLength": 1000 },
+          "resolution": { "enum": ["agreed", "payload-verified", "documentation-only", "decoder-verified", "conflict"] },
+          "resolvedValue": { "type": ["string", "number", "boolean", "null"] },
+          "rationale": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        }
+      }
+    },
+    "blocker": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": { "enum": ["evidence-conflict", "insufficient-evidence", "unsupported-scope"] },
+            "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+            "retryable": { "const": false }
+          }
+        }
+      ]
+    }
+  }
+}

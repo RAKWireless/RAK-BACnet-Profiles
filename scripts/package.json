@@ -4,8 +4,17 @@
   "description": "Validation scripts for RAK BACnet Profiles",
   "main": "validate-profile.js",
   "scripts": {
-    "validate": "node validate-profile.js",
-    "test": "node test-codec.js"
+    "test": "npm run test:automation",
+    "test:automation": "cd .. && node scripts/test-profile-automation.js",
+    "test:codec": "cd .. && node scripts/test-codec.js",
+    "test:fixtures": "cd .. && node scripts/validate-committed-fixtures.js",
+    "validate": "cd .. && node scripts/validate-profile.js",
+    "validate:all": "cd .. && node scripts/validate-all.js",
+    "validate:generated": "cd .. && node scripts/run-profile-ci.js",
+    "validate:agent-candidate": "cd .. && node scripts/validate-agent-candidate.js",
+    "validate:registry": "cd .. && node scripts/validate-registry.js",
+    "registry:update": "cd .. && node scripts/update-registry.js",
+    "ci": "npm run test:automation && npm run validate:all && npm run test:fixtures && npm run validate:registry"
   },
   "keywords": [
     "bacnet",
@@ -16,9 +25,9 @@
   "author": "RAKwireless",
   "license": "MIT",
   "dependencies": {
-    "js-yaml": "^4.1.0",
-    "ajv": "^8.12.0",
-    "ajv-formats": "^2.1.1"
+    "acorn": "^8.15.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "^2.1.1",
+    "js-yaml": "4.3.1"
   }
 }
-

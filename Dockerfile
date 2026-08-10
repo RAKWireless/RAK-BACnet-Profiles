@@ -1,41 +1,20 @@
-# Profile Generation Agent - Docker image
+FROM node:20-bookworm-slim
 
-FROM python:3.11-slim
-
-# Add metadata
 LABEL maintainer="RAKwireless IoT Automation" \
-      version="1.0" \
-      description="BACnet Profile Generation Agent"
+      version="2.0" \
+      description="BACnet Profile Automation"
 
 WORKDIR /workspace
 
-# Install Node.js, git (for comment-on-issue), and Python dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    nodejs npm git \
-    && rm -rf /var/lib/apt/lists/*
+COPY --chown=node:node scripts/package*.json /workspace/scripts/
+COPY --chown=node:node automation/package*.json /workspace/automation/
 
-# Install Python dependencies
-COPY automation/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN npm ci --prefix /workspace/scripts --omit=dev --ignore-scripts \
+    && npm ci --prefix /workspace/automation --omit=dev --ignore-scripts
 
-# Copy all project files
-COPY . .
+COPY --chown=node:node . /workspace
 
-# Set up entrypoint (must be done as root)
-COPY automation/docker-entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+USER node
 
-# Create non-root user
-RUN groupadd -r agent && useradd -r -g agent -m agent
-
-# Pre-create automation/temp with correct ownership (fixes PermissionError in CI)
-RUN mkdir -p /workspace/automation/temp && chown -R agent:agent /workspace
-
-USER agent
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
-
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["--help"]
+ENTRYPOINT ["node", "automation/src/cli.js"]
+CMD ["help"]

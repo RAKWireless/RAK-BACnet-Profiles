@@ -68,39 +68,39 @@ codec: |
       // BATTERY
       else if (channel_id === 0x01 && channel_type === 0x75) {
         var battery = readUInt8(data, i);
-        values.push({ name: "BatteryLevel", channel: 1, value: battery, unit: "%" });
+        values.push({ name: "Battery Level", channel: 1, value: battery, unit: "percent" });
         i += 1;
       }
       // TEMPERATURE
       else if (channel_id === 0x03 && channel_type === 0x67) {
         var temperature = readInt16LE(data, i) / 10;
-        values.push({ name: "Temperature", channel: 8, value: temperature, unit: "°C" });
+        values.push({ name: "Temperature", channel: 8, value: temperature, unit: "degreesCelsius" });
         i += 2;
       }
       // DISTANCE / LIQUID LEVEL
       else if (channel_id === 0x04 && channel_type === 0x82) {
         var distance = readInt16LE(data, i);
-        values.push({ name: "Distance", channel: 2, value: distance, unit: "mm" });
+        values.push({ name: "Distance", channel: 2, value: distance, unit: "millimeters" });
         i += 2;
       }
       // DEVICE POSITION
       else if (channel_id === 0x05 && channel_type === 0x00) {
         var position = readUInt8(data, i);
-        values.push({ name: "DevicePosition", channel: 3, value: position, unit: null });
+        values.push({ name: "Device Position", channel: 3, value: position, unit: null });
         i += 1;
       }
       // RADAR SIGNAL STRENGTH
       else if (channel_id === 0x06 && channel_type === 0xc7) {
         var rssi = readInt16LE(data, i) / 100;
-        values.push({ name: "RadarSignalStrength", channel: 4, value: rssi, unit: "dBm" });
+        values.push({ name: "Radar Signal Strength", channel: 4, value: rssi, unit: "decibels" });
         i += 2;
       }
       // DISTANCE THRESHOLD ALARM
       else if (channel_id === 0x84 && channel_type === 0x82) {
         var alarmDistance = readInt16LE(data, i);
         var alarmStatus = readUInt8(data, i + 2);
-        values.push({ name: "Distance", channel: 2, value: alarmDistance, unit: "mm" });
-        values.push({ name: "DistanceAlarm", channel: 5, value: alarmStatus, unit: null });
+        values.push({ name: "Distance", channel: 2, value: alarmDistance, unit: "millimeters" });
+        values.push({ name: "Distance Alarm", channel: 5, value: alarmStatus, unit: null });
         i += 3;
       }
       // DISTANCE SHIFTS THRESHOLD ALARM
@@ -108,9 +108,9 @@ codec: |
         var shiftDistance = readInt16LE(data, i);
         var shiftValue = readInt16LE(data, i + 2);
         var shiftAlarm = readUInt8(data, i + 4);
-        values.push({ name: "Distance", channel: 2, value: shiftDistance, unit: "mm" });
-        values.push({ name: "DistanceShift", channel: 6, value: shiftValue, unit: "mm" });
-        values.push({ name: "DistanceAlarm", channel: 5, value: shiftAlarm, unit: null });
+        values.push({ name: "Distance", channel: 2, value: shiftDistance, unit: "millimeters" });
+        values.push({ name: "Distance Shift", channel: 6, value: shiftValue, unit: "millimeters" });
+        values.push({ name: "Distance Alarm", channel: 5, value: shiftAlarm, unit: null });
         i += 5;
       }
       // BLIND ZONE / DISTANCE EXCEPTION ALARM
@@ -120,9 +120,9 @@ codec: |
         var blindStatus = readUInt8(data, i + 2);
         // Skip distance when no target (0xfffd) or sensor exception (0xffff)
         if (blindRaw !== 0xfffd && blindRaw !== 0xffff) {
-          values.push({ name: "Distance", channel: 2, value: blindDistance, unit: "mm" });
+          values.push({ name: "Distance", channel: 2, value: blindDistance, unit: "millimeters" });
         }
-        values.push({ name: "BlindZoneAlarm", channel: 7, value: blindStatus, unit: null });
+        values.push({ name: "Blind Zone Alarm", channel: 7, value: blindStatus, unit: null });
         i += 3;
       }
       // HISTORY DATA

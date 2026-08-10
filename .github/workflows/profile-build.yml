@@ -1,0 +1,438 @@
+name: Profile Automation - Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: number
+      issue_body_sha:
+        required: true
+        type: string
+      provider:
+        required: true
+        type: string
+      model:
+        required: false
+        type: string
+        default: ''
+      effort:
+        required: false
+        type: string
+        default: ''
+      mode:
+        required: false
+        type: string
+        default: generate
+      feedback:
+        required: false
+        type: string
+        default: ''
+      review_cycle:
+        required: false
+        type: number
+        default: 0
+      previous_ref:
+        required: false
+        type: string
+        default: ''
+      allow_existing:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      valid:
+        value: ${{ jobs.result.outputs.valid }}
+      pull_request_url:
+        value: ${{ jobs.publish.outputs.pull_request_url }}
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    if: inputs.mode != 'shadow'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Cancel older runs for the same Issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js cancel-issue-runs --issue-number "${{ inputs.issue_number }}"
+      - name: Mark generation started
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state generating
+
+  collect:
+    needs: [start]
+    if: always() && (needs.start.result == 'success' || needs.start.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      ready: ${{ steps.collect.outputs.ready }}
+      issue_body_sha: ${{ steps.collect.outputs.issue_body_sha }}
+      source_artifact: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Collect official documentation and decoder without model secrets
+        id: collect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: >-
+          node automation/src/cli.js collect-source
+          --issue-number "${{ inputs.issue_number }}"
+          --expected-sha "${{ inputs.issue_body_sha == 'current' && '' || inputs.issue_body_sha }}"
+          ${{ inputs.allow_existing && '--allow-existing' || '' }}
+          --output automation/.work/source/source-bundle.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+          path: automation/.work/source
+          retention-days: 1
+
+  agent_1:
+    needs: collect
+    if: needs.collect.outputs.ready == 'true'
+    uses: ./.github/workflows/profile-agent-attempt.yml
+    with:
+      issue_number: ${{ inputs.issue_number }}
+      issue_body_sha: ${{ needs.collect.outputs.issue_body_sha }}
+      source_artifact: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+      candidate_artifact: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+      provider: ${{ inputs.provider }}
+      model: ${{ inputs.model }}
+      effort: ${{ inputs.effort }}
+      mode: ${{ inputs.mode }}
+      attempt: 1
+      review_cycle: ${{ inputs.review_cycle }}
+      feedback: ${{ inputs.feedback }}
+      previous_ref: ${{ inputs.previous_ref }}
+      shadow: ${{ inputs.mode == 'shadow' }}
+
+  mark_validating:
+    needs: agent_1
+    if: inputs.mode != 'shadow' && needs.agent_1.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state validating
+
+  validate_1:
+    needs: [collect, agent_1, mark_validating]
+    if: always() && needs.agent_1.result == 'success' && (needs.mark_validating.result == 'success' || needs.mark_validating.result == 'skipped')
+    uses: ./.github/workflows/profile-validate-candidate.yml
+    with:
+      issue_number: ${{ inputs.issue_number }}
+      issue_body_sha: ${{ needs.collect.outputs.issue_body_sha }}
+      candidate_artifact: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+      source_artifact: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+      validation_artifact: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+      attempt: 1
+
+  agent_2:
+    needs: [collect, validate_1]
+    if: needs.validate_1.outputs.valid != 'true' && needs.validate_1.outputs.retryable == 'true'
+    uses: ./.github/workflows/profile-agent-attempt.yml
+    with:
+      issue_number: ${{ inputs.issue_number }}
+      issue_body_sha: ${{ needs.collect.outputs.issue_body_sha }}
+      source_artifact: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+      candidate_artifact: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+      provider: ${{ inputs.provider }}
+      model: ${{ inputs.model }}
+      effort: ${{ inputs.effort }}
+      mode: repair
+      attempt: 2
+      review_cycle: ${{ inputs.review_cycle }}
+      feedback: ${{ inputs.feedback }}
+      previous_candidate_artifact: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+      previous_validation_artifact: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+      shadow: ${{ inputs.mode == 'shadow' }}
+
+  validate_2:
+    needs: [collect, agent_2]
+    if: needs.agent_2.result == 'success'
+    uses: ./.github/workflows/profile-validate-candidate.yml
+    with:
+      issue_number: ${{ inputs.issue_number }}
+      issue_body_sha: ${{ needs.collect.outputs.issue_body_sha }}
+      candidate_artifact: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+      source_artifact: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+      validation_artifact: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+      attempt: 2
+
+  publish:
+    needs: [collect, agent_1, validate_1, agent_2, validate_2]
+    if: >-
+      always() && inputs.mode != 'shadow' &&
+      (needs.validate_1.outputs.valid == 'true' || needs.validate_2.outputs.valid == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      pull_request_url: ${{ steps.pull_request.outputs.pull-request-url }}
+      pull_request_number: ${{ steps.pull_request.outputs.pull-request-number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install publication dependencies
+        run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+          path: automation/.work/source
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.outputs.valid == 'true'
+        with:
+          name: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+          path: automation/.work/selected
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.outputs.valid == 'true'
+        with:
+          name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+          path: automation/.work/selected-validation
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.outputs.valid != 'true'
+        with:
+          name: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+          path: automation/.work/selected
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.outputs.valid != 'true'
+        with:
+          name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+          path: automation/.work/selected-validation
+      - name: Recheck the current Issue body before publication
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js assert-issue-sha --issue-number "${{ inputs.issue_number }}" --sha "${{ needs.collect.outputs.issue_body_sha }}"
+      - name: Apply the allowlisted patch to a second fresh checkout
+        run: node automation/src/cli.js apply-candidate --candidate automation/.work/selected --expected-sha "${{ needs.collect.outputs.issue_body_sha }}"
+      - name: Repeat clean-room validation before publication
+        run: |
+          mkdir -p automation/.work/publish-validation
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 768m \
+            --memory-swap 768m \
+            --cpus 2 \
+            --pids-limit 128 \
+            --tmpfs /work:rw,nosuid,size=640m \
+            -v "$GITHUB_WORKSPACE:/source:ro" \
+            node:24-alpine \
+            sh -c 'cp -a /source/. /work/repo && cd /work/repo && node scripts/validate-agent-candidate.js --candidate automation/.work/selected --source-bundle automation/.work/source/source-bundle.json' \
+            > automation/.work/publish-validation/report.json
+      - name: Regenerate and validate registry deterministically
+        run: |
+          node scripts/update-registry.js
+          node scripts/validate-registry.js
+      - name: Prepare Draft PR evidence body
+        id: prepare
+        run: >-
+          node automation/src/cli.js prepare-publish
+          --candidate automation/.work/selected
+          --report automation/.work/publish-validation/report.json
+          --provider "${{ inputs.provider }}"
+          --model "${{ needs.validate_2.outputs.valid == 'true' && needs.agent_2.outputs.model || needs.agent_1.outputs.model }}"
+          --review-cycle "${{ inputs.review_cycle }}"
+      - name: Create or update the Draft PR
+        id: pull_request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          branch: ${{ steps.prepare.outputs.branch }}
+          delete-branch: true
+          draft: true
+          title: ${{ steps.prepare.outputs.title }}
+          body-path: ${{ steps.prepare.outputs.body_path }}
+          commit-message: Add BACnet profile for issue #${{ inputs.issue_number }}
+          add-paths: |
+            ${{ steps.prepare.outputs.profile_path }}
+            ${{ steps.prepare.outputs.fixture_path }}
+            registry.json
+      - name: Mark Draft PR ready for human review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ needs.collect.outputs.issue_body_sha }}" --state review --pr-url "${{ steps.pull_request.outputs.pull-request-url }}"
+
+  blocked:
+    needs: [collect, validate_1, validate_2]
+    if: >-
+      always() && inputs.mode != 'shadow' && needs.collect.outputs.ready == 'true' &&
+      needs.validate_1.outputs.valid != 'true' && needs.validate_2.outputs.valid != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.result == 'success'
+        with:
+          name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+          path: automation/.work/blocked
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.result != 'success'
+        with:
+          name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+          path: automation/.work/blocked
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state blocked --message automation/.work/blocked/message.md
+      - run: exit 1
+
+  source_blocked:
+    needs: collect
+    if: inputs.mode != 'shadow' && needs.collect.outputs.ready != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state blocked --reason "Source collection or Issue SHA verification failed. No model key was exposed and no PR was created; inspect the collect job for the bounded error code."
+      - run: exit 1
+
+  publish_failed:
+    needs: [collect, publish]
+    if: always() && inputs.mode != 'shadow' && needs.publish.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ needs.collect.outputs.issue_body_sha }}" --state blocked --reason "The candidate passed generation checks, but the fresh publication check or Draft PR update failed. No merge occurred; inspect the publish job."
+
+  shadow_result:
+    needs: [collect, validate_1, validate_2]
+    if: always() && inputs.mode == 'shadow'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.result == 'success'
+        with:
+          name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
+          path: automation/.work/shadow-validation
+      - uses: actions/download-artifact@v8
+        if: needs.validate_2.result != 'success' && needs.validate_1.result == 'success'
+        with:
+          name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
+          path: automation/.work/shadow-validation
+      - uses: actions/download-artifact@v8
+        with:
+          name: profile-source-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}
+          path: automation/.work/shadow-source
+      - name: Normalize the shadow result
+        run: node automation/src/cli.js finalize-shadow --issue-number "${{ inputs.issue_number }}" --source automation/.work/shadow-source/source-bundle.json --report automation/.work/shadow-validation/combined.json --output automation/.work/shadow/combined.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shadow-${{ inputs.issue_number }}
+          path: automation/.work/shadow
+          retention-days: 14
+
+  result:
+    needs: [validate_1, validate_2, publish, shadow_result]
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      valid: ${{ steps.result.outputs.valid }}
+    steps:
+      - id: result
+        env:
+          VALID_1: ${{ needs.validate_1.outputs.valid }}
+          VALID_2: ${{ needs.validate_2.outputs.valid }}
+        run: |
+          if [ "$VALID_1" = "true" ] || [ "$VALID_2" = "true" ]; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+          fi

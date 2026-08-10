@@ -1,0 +1,188 @@
+name: Profile Automation - Agent Attempt
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: number
+      issue_body_sha:
+        required: true
+        type: string
+      source_artifact:
+        required: true
+        type: string
+      candidate_artifact:
+        required: true
+        type: string
+      provider:
+        required: true
+        type: string
+      model:
+        required: false
+        type: string
+        default: ''
+      effort:
+        required: false
+        type: string
+        default: ''
+      mode:
+        required: true
+        type: string
+      attempt:
+        required: true
+        type: number
+      review_cycle:
+        required: false
+        type: number
+        default: 0
+      feedback:
+        required: false
+        type: string
+        default: ''
+      previous_candidate_artifact:
+        required: false
+        type: string
+        default: ''
+      previous_validation_artifact:
+        required: false
+        type: string
+        default: ''
+      previous_ref:
+        required: false
+        type: string
+        default: ''
+      shadow:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      status:
+        value: ${{ jobs.agent.outputs.status }}
+      retryable:
+        value: ${{ jobs.agent.outputs.retryable }}
+      model:
+        value: ${{ jobs.agent.outputs.model }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-agent-global
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: profile-agent-${{ inputs.provider }}
+    outputs:
+      status: ${{ steps.capture.outputs.status }}
+      retryable: ${{ steps.capture.outputs.retryable }}
+      model: ${{ steps.runtime.outputs.model }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install local generation and validation dependencies
+        run: |
+          npm ci --prefix scripts --omit=dev --ignore-scripts
+          npm ci --prefix automation --omit=dev --ignore-scripts
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.source_artifact }}
+          path: automation/.work/source
+
+      - uses: actions/download-artifact@v8
+        if: inputs.previous_candidate_artifact != ''
+        with:
+          name: ${{ inputs.previous_candidate_artifact }}
+          path: automation/.work/previous-candidate
+
+      - uses: actions/download-artifact@v8
+        if: inputs.previous_validation_artifact != ''
+        with:
+          name: ${{ inputs.previous_validation_artifact }}
+          path: automation/.work/previous-validation
+
+      - name: Prepare the field-whitelisted Agent input
+        env:
+          PROFILE_REVIEW_FEEDBACK: ${{ inputs.feedback }}
+        run: node automation/src/cli.js prepare-agent-input --bundle automation/.work/source/source-bundle.json --output .profile-agent/input --mode "${{ inputs.mode }}" --attempt "${{ inputs.attempt }}" --review-cycle "${{ inputs.review_cycle }}"
+
+      - name: Seed the previous attempt
+        if: inputs.previous_candidate_artifact != ''
+        run: node automation/src/cli.js seed-previous --candidate automation/.work/previous-candidate --report automation/.work/previous-validation/combined.json --request .profile-agent/input/request.json
+
+      - name: Seed the current Draft PR candidate
+        if: inputs.previous_ref != ''
+        env:
+          PREVIOUS_REF: ${{ inputs.previous_ref }}
+        run: |
+          if [[ ! "$PREVIOUS_REF" =~ ^auto-profile-[0-9]+$ ]]; then
+            echo "Invalid automated Profile branch" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin "refs/heads/$PREVIOUS_REF:refs/heads/$PREVIOUS_REF"
+          node automation/src/cli.js seed-previous --ref "$PREVIOUS_REF" --request .profile-agent/input/request.json
+
+      - name: Remove historical target files for a shadow generation
+        if: inputs.shadow
+        run: node automation/src/cli.js remove-shadow-targets --request .profile-agent/input/request.json
+
+      - name: Prepare the restricted Codex home
+        env:
+          PROVIDER: ${{ inputs.provider }}
+          PROFILE_AGENT_MODEL_CATALOG_JSON: ${{ vars.PROFILE_AGENT_MODEL_CATALOG_JSON }}
+        run: node automation/src/cli.js prepare-codex-home --provider "$PROVIDER" --output "$RUNNER_TEMP/profile-codex-home"
+
+      - name: Resolve Environment model configuration
+        id: runtime
+        env:
+          PROFILE_AGENT_MODEL: ${{ vars.PROFILE_AGENT_MODEL }}
+          PROFILE_AGENT_EFFORT: ${{ vars.PROFILE_AGENT_EFFORT }}
+          PROFILE_AGENT_RESPONSES_ENDPOINT: ${{ vars.PROFILE_AGENT_RESPONSES_ENDPOINT }}
+        run: node automation/src/cli.js resolve-runtime --provider "${{ inputs.provider }}" --model "${{ inputs.model }}" --effort "${{ inputs.effort }}"
+
+      - name: Run the Profile Agent
+        id: codex
+        continue-on-error: true
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.PROFILE_AGENT_API_KEY }}
+          responses-api-endpoint: ${{ steps.runtime.outputs.responses_endpoint }}
+          prompt-file: .github/codex/prompts/generate-bacnet-profile.md
+          output-file: .profile-agent/agent-result.json
+          output-schema-file: .github/codex/schemas/profile-agent-output.schema.json
+          model: ${{ steps.runtime.outputs.model }}
+          effort: ${{ steps.runtime.outputs.effort }}
+          codex-home: ${{ runner.temp }}/profile-codex-home
+          permission-profile: profile-agent
+          safety-strategy: drop-sudo
+          allow-users: ${{ github.actor }}
+          codex-args: '["--ephemeral","--config","model_providers.codex-action-responses-proxy.request_max_retries=2","--config","model_providers.codex-action-responses-proxy.stream_max_retries=2"]'
+
+      - name: Capture only the allowlisted patch and structured result
+        id: capture
+        if: always()
+        continue-on-error: true
+        run: node automation/src/cli.js capture-agent-output --result .profile-agent/agent-result.json --request .profile-agent/input/request.json --output automation/.work/candidate
+
+      - name: Preserve a bounded capture failure result
+        if: always() && steps.capture.outcome == 'failure'
+        run: node automation/src/cli.js record-capture-failure --request .profile-agent/input/request.json --output automation/.work/candidate
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: automation/.work/candidate
+          retention-days: 7

@@ -42,7 +42,8 @@ RAK-BACnet-Profiles/
 ├── scripts/                   # 验证脚本
 │   ├── validate-profile.js    # Profile 验证器
 │   ├── test-codec.js          # Codec 测试器
-│   └── utils/                 # 工具函数
+│   ├── lib/                   # 内部 JavaScript 模块
+│   └── schemas/               # 验证 Schema 与映射规则
 ├── docs/                      # 文档
 ├── .github/                   # GitHub 模板
 ├── registry.json              # Profile 注册表 🆕
@@ -241,6 +242,8 @@ Encode 函数编码
 
 欢迎为本仓库贡献新的设备配置文件！
 
+资料完整的 uplink-only 请求可由 [Profile Automation](automation/README.md) 自动处理。系统会创建包含证据报告和独立测试夹具的 Draft PR，但仍必须由 CODEOWNER 审批合并。
+
 ### 添加新设备配置
 
 1. **Fork 本仓库**
@@ -265,9 +268,8 @@ Encode 函数编码
    # 创建测试目录
    mkdir -p profiles/YourVendor/tests
    
-   # 添加测试输入数据
-   # 创建 profiles/YourVendor/tests/test-data.json
-   # 创建 profiles/YourVendor/tests/expected-output.json
+   # 每个 Profile 使用独立测试夹具
+   # 创建 profiles/YourVendor/tests/YourVendor-Model.test.json
    ```
    
    运行验证：
@@ -277,7 +279,7 @@ Encode 函数编码
    cd scripts && npm install && cd ..
    
    # 运行完整验证（包括输出验证）
-   node scripts/validate-profile.js profiles/YourVendor/YourVendor-Model.yaml
+   node scripts/run-profile-ci.js profiles/YourVendor/YourVendor-Model.yaml
    ```
    
    确保所有测试通过：
@@ -320,4 +322,3 @@ Encode 函数编码
 ---
 
 **注意：** 使用这些配置文件前，请确保您的 RAK 网关固件版本支持 BACnet 功能。具体支持情况请参考产品文档。
-

@@ -1,0 +1,62 @@
+name: Profile Automation - Shadow Evaluation
+run-name: Profile shadow evaluation (${{ inputs.provider }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_numbers:
+        description: JSON array of at least 10 historical Issue numbers
+        required: true
+        default: '[31]'
+      provider:
+        description: Provider Environment
+        required: true
+        type: choice
+        default: deepseek
+        options: [deepseek, openai]
+      model:
+        description: Optional model override
+        required: false
+        type: string
+      effort:
+        description: Optional reasoning-effort override; otherwise use the Environment value
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  issues: read
+
+jobs:
+  shadow:
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        issue_number: ${{ fromJSON(inputs.issue_numbers) }}
+    uses: ./.github/workflows/profile-build.yml
+    with:
+      issue_number: ${{ matrix.issue_number }}
+      issue_body_sha: current
+      provider: ${{ inputs.provider }}
+      model: ${{ inputs.model }}
+      effort: ${{ inputs.effort }}
+      mode: shadow
+      allow_existing: true
+
+  summary:
+    needs: shadow
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: shadow-*
+          path: automation/.work/shadow-results
+      - name: Evaluate rollout gates
+        run: node scripts/evaluate-shadow-run.js automation/.work/shadow-results

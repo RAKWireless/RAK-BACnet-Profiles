@@ -1,0 +1,69 @@
+name: Profile Automation - Intake
+run-name: Profile #${{ github.event.issue.number }} intake (${{ github.event.action }})
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: profile-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  intake:
+    if: contains(github.event.issue.labels.*.name, 'profile-request') || github.event.label.name == 'profile:approved'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+    outputs:
+      status: ${{ steps.intake.outputs.status }}
+      should_run: ${{ steps.intake.outputs.should_run }}
+      issue_number: ${{ steps.intake.outputs.issue_number }}
+      issue_body_sha: ${{ steps.intake.outputs.issue_body_sha }}
+      provider: ${{ steps.intake.outputs.provider }}
+      model: ${{ steps.intake.outputs.model }}
+      effort: ${{ steps.intake.outputs.effort }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Check scope, trust, approval, SHA, and provider selection
+        id: intake
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PROFILE_AGENT_ENABLED: ${{ vars.PROFILE_AGENT_ENABLED }}
+          PROFILE_EXTERNAL_APPROVAL_ENABLED: ${{ vars.PROFILE_EXTERNAL_APPROVAL_ENABLED }}
+          PROFILE_AGENT_DEFAULT_PROVIDER: ${{ vars.PROFILE_AGENT_DEFAULT_PROVIDER }}
+        run: node automation/src/cli.js intake --event "$GITHUB_EVENT_PATH" --output automation/.work/intake.json
+      - name: Apply the mutually exclusive Issue state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js apply-intake --intake automation/.work/intake.json
+
+  build:
+    needs: intake
+    if: needs.intake.outputs.should_run == 'true'
+    uses: ./.github/workflows/profile-build.yml
+    with:
+      issue_number: ${{ fromJSON(needs.intake.outputs.issue_number) }}
+      issue_body_sha: ${{ needs.intake.outputs.issue_body_sha }}
+      provider: ${{ needs.intake.outputs.provider }}
+      model: ${{ needs.intake.outputs.model }}
+      effort: ${{ needs.intake.outputs.effort }}
+      mode: generate
+      review_cycle: 0

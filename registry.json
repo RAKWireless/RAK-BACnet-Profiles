@@ -177,8 +177,8 @@
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "9ac8bcbb5f25c8613544ccd5d01b899ccf0cf27c5b5f7cdc96d20b45763d68fc",
-      "lastUpdate": "2026-06-23"
+      "contentSha256": "4ff48f916bd29d07fbb6e47928c573adcef131dd79ae1ba5ea9e28e6327da328",
+      "lastUpdate": "2026-08-06"
     },
     {
       "id": "milesight-uc300",
@@ -225,8 +225,8 @@
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "2fa9a5d190391499712e7230047a2cbc6ae743d9169ec31728258038cc5b5470",
-      "lastUpdate": "2026-06-17"
+      "contentSha256": "09dcf071957ce43e5fce6bd43cc9f9b003f153e82c61c80c9bf33eefb88bd43a",
+      "lastUpdate": "2026-08-06"
     },
     {
       "id": "moko-lw013sb",
@@ -417,8 +417,8 @@
       "lorawanClass": [
         "A"
       ],
-      "contentSha256": "0e6c46ba477f1182ddf650b98dd31d8487ed2542a2d4bccd156af87dca3ffd2f",
-      "lastUpdate": "2026-06-10"
+      "contentSha256": "90801e5376e0ec4d82e91cc96e261458c788b26e67d3b7659c1c2ef02feae0d3",
+      "lastUpdate": "2026-08-06"
     }
   ],
   "statistics": {

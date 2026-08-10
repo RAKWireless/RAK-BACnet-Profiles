@@ -1,0 +1,117 @@
+name: Profile Automation - Advisory Review
+run-name: Profile ${{ github.event.pull_request.head.ref }} advisory review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-advisory-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  advisory_agent:
+    if: >-
+      startsWith(github.event.pull_request.head.ref, 'auto-profile-') &&
+      vars.PROFILE_AGENT_ENABLED != 'false' &&
+      vars.PROFILE_ADVISORY_REVIEW_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: profile-agent-${{ vars.PROFILE_ADVISORY_PROVIDER || 'openai' }}
+    outputs:
+      result: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Prepare the untrusted PR description as data
+        run: node automation/src/cli.js prepare-advisory-input --event "$GITHUB_EVENT_PATH" --output .profile-agent/advisory.json
+      - name: Prepare reviewer provider configuration
+        env:
+          PROVIDER: ${{ vars.PROFILE_ADVISORY_PROVIDER || 'openai' }}
+          PROFILE_AGENT_MODEL_CATALOG_JSON: ${{ vars.PROFILE_AGENT_MODEL_CATALOG_JSON }}
+        run: node automation/src/cli.js prepare-codex-home --provider "$PROVIDER" --output "$RUNNER_TEMP/profile-review-codex-home"
+      - name: Resolve advisory model configuration
+        id: runtime
+        env:
+          PROFILE_AGENT_MODEL: ${{ vars.PROFILE_ADVISORY_MODEL || vars.PROFILE_AGENT_MODEL }}
+          PROFILE_AGENT_EFFORT: ${{ vars.PROFILE_ADVISORY_EFFORT || vars.PROFILE_AGENT_EFFORT }}
+          PROFILE_AGENT_RESPONSES_ENDPOINT: ${{ vars.PROFILE_AGENT_RESPONSES_ENDPOINT }}
+        run: node automation/src/cli.js resolve-runtime --provider "${{ vars.PROFILE_ADVISORY_PROVIDER || 'openai' }}"
+      - name: Run non-blocking advisory review
+        id: codex
+        continue-on-error: true
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.PROFILE_AGENT_API_KEY }}
+          responses-api-endpoint: ${{ steps.runtime.outputs.responses_endpoint }}
+          prompt-file: .github/codex/prompts/advisory-profile-review.md
+          output-schema-file: .github/codex/schemas/profile-advisory-output.schema.json
+          model: ${{ steps.runtime.outputs.model }}
+          effort: ${{ steps.runtime.outputs.effort }}
+          codex-home: ${{ runner.temp }}/profile-review-codex-home
+          permission-profile: :read-only
+          safety-strategy: drop-sudo
+          allow-bots: true
+          codex-args: '["--ephemeral","--config","model_providers.codex-action-responses-proxy.request_max_retries=2","--config","model_providers.codex-action-responses-proxy.stream_max_retries=2"]'
+
+  publish_advisory:
+    needs: advisory_agent
+    if: always() && needs.advisory_agent.outputs.result != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Update the advisory comment and warning label
+        uses: actions/github-script@v7
+        env:
+          ADVISORY_RESULT: ${{ needs.advisory_agent.outputs.result }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            let result;
+            try {
+              result = JSON.parse(process.env.ADVISORY_RESULT);
+            } catch {
+              core.warning('Advisory model did not return valid JSON; deterministic validation remains authoritative.');
+              return;
+            }
+            const marker = '<!-- profile-automation:advisory -->';
+            const findings = (result.findings || []).map(item => `- **${item.severity}** \`${item.file}\`: ${item.message}`).join('\n') || '- No advisory findings.';
+            const body = `${marker}\n## Optional model advisory\n\n${result.summary}\n\n${findings}\n\n> This comment is non-blocking. Clean validation and human review remain authoritative.`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(comment => comment.body && comment.body.includes(marker) && comment.user && comment.user.type === 'Bot');
+            if (existing) {
+              await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+            }
+            if (result.conflict) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'profile:review-warning' });
+              } catch {
+                await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'profile:review-warning', color: 'E99695', description: 'Non-blocking advisory model found a potential conflict' });
+              }
+              await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, labels: ['profile:review-warning'] });
+            } else {
+              try {
+                await github.rest.issues.removeLabel({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, name: 'profile:review-warning' });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }

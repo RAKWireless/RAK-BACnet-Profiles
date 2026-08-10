@@ -15,7 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadYAML, extractCodec } = require('./utils/yaml-parser');
+const { loadYAML, extractCodec } = require('./lib/yaml-parser');
 const { testDecode } = require('./test-codec');
 
 /**

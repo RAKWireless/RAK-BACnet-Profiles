@@ -1,0 +1,9 @@
+{
+  "number": 31,
+  "title": "[Profile Request] <Vendor> - <Model>",
+  "html_url": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/31",
+  "updated_at": "2026-08-06T07:13:04Z",
+  "author_association": "NONE",
+  "labels": ["profile-request"],
+  "body": "### Device Vendor\n\nQingPing\n\n### Device Model\n\nCGP22CLH\n\n### Product Manual/Datasheet Link\n\nhttps://downloads.rakwireless.com/IoT-Marketplace/Qingping/Indoor%20CO2%20Monitoring%20Solution/Qingping%20Indoor%20CO2%20Monitoring%20Solution%20User%20Manual.pdf\n\n### LoRaWAN Class\n\nClass A\n\n### LoRaWAN Protocol Version\n\nLORAWAN_1_0_3\n\n### Uplink Data Examples\n\n```text\nReal-time example: 01 41 15 01 5C 77 88 B6 2F C2 9A 01 AA 4E 31 2E 30 2E 30 43 FE\nTemperature = (764 - 500) / 10 = 26.4 C; humidity = 666 / 10 = 66.6%; CO2 = 426 ppm; battery = 78%.\nHistory example with five records: 01 41 25 00 5C 77 88 B6 00 05 2F C2 9A 01 AA 4E 2F C2 9A 01 AA 4E 2F C2 9A 01 AA 4E 2F C2 9A 01 AA 4E 2F C2 9A 01 AA 4E 46 FE\nEach six-byte record contains temperature/humidity, CO2, and battery.\n```\n\n### Decode Function (Optional)\n\n```code\nfunction Decoder(bytes, port) {\n  var packed = (bytes[8] << 16) | (bytes[9] << 8) | bytes[10];\n  return { temperature: ((packed >> 12) - 500) / 10, humidity: (packed & 0xfff) / 10, co2: (bytes[11] << 8) | bytes[12], battery: bytes[13] };\n}\n```\n\n### Downlink Support\n\nNo - uplink only\n\n### BACnet Object Mapping Requirements\n\ntemperature-AnalogInputObject\nhumidity-AnalogInputObject\nco2Value-AnalogInputObject\nbattery-AnalogInputObject\n\n### Priority\n\nMedium\n\n### Email\n\n[removed from golden fixture]\n\n### Company or organization\n\n[removed from golden fixture]\n\n### Pre-submission Checklist\n\n- [x] Complete"
+}

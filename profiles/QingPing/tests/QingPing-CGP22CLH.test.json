@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "profile": "QingPing-CGP22CLH",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "customer-data",
+      "reference": "Original CGP22CLH profile request test vectors",
+      "citation": "Three uplink payloads and expected BACnet outputs migrated from the legacy local fixtures"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": false,
+    "checkUnknownFPort": false
+  },
+  "testCases": [
+    {
+      "name": "Real-time data from issue - CO2/Temp/Humidity/Battery",
+      "fPort": 1,
+      "input": "014115015C7788B62FC29A01AA4E312E302E3043FE",
+      "description": "Real-time report (type 0x01): Temp=26.4C, Hum=66.6%, CO2=426ppm, Battery=78%, FW=1.0.0",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 26.4, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 66.6, "unit": "percentRelativeHumidity" },
+        { "name": "CO2", "channel": 3, "value": 426, "unit": "partsPerMillion" },
+        { "name": "Battery", "channel": 4, "value": 78, "unit": "percent" },
+        { "name": "Data Type", "channel": 5, "value": 1, "unit": null }
+      ]
+    },
+    {
+      "name": "History data from issue - 5 records, last record published",
+      "fPort": 1,
+      "input": "014125005C7788B600052FC29A01AA4E2FC29A01AA4E2FC29A01AA4E2FC29A01AA4E2FC29A01AA4E46FE",
+      "description": "History report (type 0x00): startTs, 5s interval, 5 identical records. Last record: Temp=26.4C, Hum=66.6%, CO2=426ppm, Battery=78%",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 26.4, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 66.6, "unit": "percentRelativeHumidity" },
+        { "name": "CO2", "channel": 3, "value": 426, "unit": "partsPerMillion" },
+        { "name": "Battery", "channel": 4, "value": 78, "unit": "percent" },
+        { "name": "Data Type", "channel": 5, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "Real-time data with different sensor values",
+      "fPort": 1,
+      "input": "01411501000000002BC1F4032064322E302E3000FF",
+      "description": "Synthetic real-time report: Temp=20.0C, Hum=50.0%, CO2=800ppm, Battery=100%, FW=2.0.0",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 20, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 50, "unit": "percentRelativeHumidity" },
+        { "name": "CO2", "channel": 3, "value": 800, "unit": "partsPerMillion" },
+        { "name": "Battery", "channel": 4, "value": 100, "unit": "percent" },
+        { "name": "Data Type", "channel": 5, "value": 1, "unit": null }
+      ]
+    }
+  ]
+}

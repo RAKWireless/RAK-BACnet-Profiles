@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "openai": {
+      "responsesEndpoint": "https://api.openai.com/v1/responses"
+    },
+    "deepseek": {
+      "responsesEndpoint": "https://api.deepseek.com/v1/responses"
+    }
+  }
+}

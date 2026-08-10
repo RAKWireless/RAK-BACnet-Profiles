@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["conflict", "summary", "findings"],
+  "properties": {
+    "conflict": { "type": "boolean" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "findings": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "file", "message"],
+        "properties": {
+          "severity": { "enum": ["warning", "info"] },
+          "file": { "type": "string", "maxLength": 300 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        }
+      }
+    }
+  }
+}

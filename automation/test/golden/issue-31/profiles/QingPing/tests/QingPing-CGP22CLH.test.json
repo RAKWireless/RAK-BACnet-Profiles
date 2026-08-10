@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "strict": true,
+  "profile": "QingPing-CGP22CLH",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "fPortPolicy": {
+    "mode": "ignored",
+    "representativeFPort": 1,
+    "reason": "Issue and protocol evidence do not specify fPort; codec is payload-driven"
+  },
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "Sanitized Issue #31 golden input",
+      "citation": "Known real-time and history payloads"
+    },
+    {
+      "type": "official-document",
+      "reference": "QingPing Indoor CO2 Monitoring Solution manual",
+      "citation": "Protocol format cross-checked with the submitted decoder"
+    },
+    {
+      "type": "vendor-decoder",
+      "reference": "User-supplied decoder from Issue #31",
+      "citation": "Inspected as untrusted data and independently reimplemented"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": false,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "Issue 31 real-time known answer",
+      "fPort": 1,
+      "input": "014115015C7788B62FC29A01AA4E312E302E3043FE",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 26.4, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 66.6, "unit": "percentRelativeHumidity" },
+        { "name": "CO2 Value", "channel": 3, "value": 426, "unit": "partsPerMillion" },
+        { "name": "Battery", "channel": 4, "value": 78, "unit": "percent" }
+      ]
+    },
+    {
+      "name": "Issue 31 history cursor loop known answer",
+      "fPort": 1,
+      "input": "014125005C7788B600052FC29A01AA4E2FC29A01AA4E2FC29A01AA4E2FC29A01AA4E2FC29A01AA4E46FE",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 26.4, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 66.6, "unit": "percentRelativeHumidity" },
+        { "name": "CO2 Value", "channel": 3, "value": 426, "unit": "partsPerMillion" },
+        { "name": "Battery", "channel": 4, "value": 78, "unit": "percent" }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,8 @@ body:
         Thank you for submitting a device profile request! Please fill in the following information so we can create a BACnet profile for your device.
         
         **Note**: The more detailed the information, the faster the profile can be created.
+
+        **Profile Automation scope:** new single-device, uplink-only Profiles with machine-readable documentation. External requests require maintainer approval, and editing the Issue invalidates that approval. Downlink-capable devices and scanned/image-only protocol documents are handled manually.
         
   - type: input
     id: vendor
@@ -69,7 +71,7 @@ body:
     id: uplink-data
     attributes:
       label: Uplink Data Examples
-      description: Provide hexadecimal examples of device uplink data (at least 2-3 different scenarios)
+      description: Provide hexadecimal examples of device uplink data (at least 2-3 different scenarios). Include the real fPort when known. If it is unknown, leave it out rather than guessing; automation may use payload-driven ignored mode when the protocol evidence does not depend on fPort.
       placeholder: |
         fPort 10: 01 02 64 00 C8 01 90 00
         fPort 10: 00 03 5A 00 FA 02 10 00
@@ -235,4 +237,3 @@ body:
           required: true
         - label: I have checked for duplicate profile requests
           required: true
-

@@ -1,0 +1,12 @@
+---
+description: Generate a new uplink-only BACnet Profile from a prepared Profile Automation evidence bundle
+globs:
+  - "profiles/**/*.yaml"
+  - "profiles/**/tests/*.test.json"
+alwaysApply: false
+---
+
+Use the repository Skill at
+`.agents/skills/generate-bacnet-profile/SKILL.md` as the single source of truth.
+Do not duplicate or weaken its evidence, codec, fixture, path, or validation
+contracts in this rule.

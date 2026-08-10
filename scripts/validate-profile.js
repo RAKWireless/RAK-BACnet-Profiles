@@ -13,8 +13,9 @@ const {
   validateRequiredFields,
   validateBACnetObjects,
   extractVendorModel
-} = require('./utils/yaml-parser');
+} = require('./lib/yaml-parser');
 const { testDecode } = require('./test-codec');
+const { compileCodec } = require('./lib/codec-sandbox');
 
 // Color output
 const colors = {
@@ -52,7 +53,7 @@ function validateYAMLSyntax(filePath) {
  */
 function validateSchema(profile) {
   const ajv = new Ajv({ allErrors: true });
-  const schemaPath = path.join(__dirname, 'profile-schema.json');
+  const schemaPath = path.join(__dirname, 'schemas', 'profile-schema.json');
   const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
   
   const validate = ajv.compile(schema);
@@ -93,32 +94,10 @@ function validateCodecSyntax(codecSource) {
     }
   }
   
-  // Try to execute in sandbox to check syntax
-  const vm = require('vm');
+  // Compile in the restricted in-process runtime. The Profile Automation workflow
+  // adds an outer no-network container boundary before executing generated code.
   try {
-    const sandbox = {
-      console: console,
-      Uint8Array: Uint8Array,
-      DataView: DataView,
-      Array: Array,
-      parseInt: parseInt,
-      parseFloat: parseFloat,
-      Math: Math,
-      JSON: JSON,
-      Object: Object,
-      String: String,
-      Number: Number,
-      Boolean: Boolean
-    };
-    vm.createContext(sandbox);
-    
-    // Use vm.Script for better syntax checking, avoiding scope issues
-    const script = new vm.Script(codecSource, {
-      filename: 'codec.js',
-      lineOffset: 0,
-      columnOffset: 0
-    });
-    script.runInContext(sandbox);
+    compileCodec(codecSource);
   } catch (error) {
     errors.push(`JavaScript syntax error: ${error.message}`);
   }
@@ -569,4 +548,3 @@ module.exports = {
   validateBACnetObjects,
   validateFileNaming
 };
-

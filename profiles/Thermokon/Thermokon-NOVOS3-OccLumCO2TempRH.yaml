@@ -41,7 +41,7 @@ codec: |
         case 0x0011:
           if (offset >= data.length) return values;
           values.push({
-            name: "RelativeHumidity",
+            name: "Relative Humidity",
             channel: 2,
             value: data[offset],
             unit: "percent"
@@ -76,7 +76,7 @@ codec: |
           var occupied = data[offset] & 0x01;
           var movementCount = data[offset] >> 1;
           var motionDetected = movementCount > 0 ? 1 : 0;
-          values.push({ name: "MotionDetected", channel: 5, value: motionDetected, unit: null });
+          values.push({ name: "Motion Detection", channel: 5, value: motionDetected, unit: null });
           values.push({ name: "Occupancy", channel: 6, value: occupied, unit: null });
           offset += 1;
           break;
@@ -84,7 +84,7 @@ codec: |
         case 0x0054:
           if (offset >= data.length) return values;
           values.push({
-            name: "BatteryVoltage",
+            name: "Battery Voltage",
             channel: 7,
             value: data[offset] * 20,
             unit: "millivolts"

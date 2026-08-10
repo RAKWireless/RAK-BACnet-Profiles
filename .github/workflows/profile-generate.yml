@@ -1,0 +1,78 @@
+name: Profile Automation - Manual Generate
+run-name: Profile #${{ inputs.issue_number }} manual generation (${{ inputs.provider }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Profile request Issue number
+        required: true
+        type: number
+      provider:
+        description: Explicit provider selection or fallback
+        required: true
+        type: choice
+        default: deepseek
+        options: [deepseek, openai]
+      model:
+        description: Optional model override; otherwise use the Environment model
+        required: false
+        type: string
+      effort:
+        description: Optional reasoning-effort override; otherwise use the Environment value
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: profile-issue-${{ inputs.issue_number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.intake.outputs.should_run }}
+      issue_body_sha: ${{ steps.intake.outputs.issue_body_sha }}
+      provider: ${{ steps.intake.outputs.provider }}
+      model: ${{ steps.intake.outputs.model }}
+      effort: ${{ steps.intake.outputs.effort }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - name: Re-evaluate the current Issue under trusted manual dispatch
+        id: intake
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PROFILE_AGENT_ENABLED: ${{ vars.PROFILE_AGENT_ENABLED }}
+        run: node automation/src/cli.js fetch-intake --issue-number "${{ inputs.issue_number }}" --provider "${{ inputs.provider }}" --model "${{ inputs.model }}" --effort "${{ inputs.effort }}" --output automation/.work/intake.json
+      - name: Queue the current Issue SHA and cancel older work
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js apply-intake --intake automation/.work/intake.json
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.should_run == 'true'
+    uses: ./.github/workflows/profile-build.yml
+    with:
+      issue_number: ${{ inputs.issue_number }}
+      issue_body_sha: ${{ needs.prepare.outputs.issue_body_sha }}
+      provider: ${{ needs.prepare.outputs.provider }}
+      model: ${{ needs.prepare.outputs.model }}
+      effort: ${{ needs.prepare.outputs.effort }}
+      mode: generate
+      review_cycle: 0

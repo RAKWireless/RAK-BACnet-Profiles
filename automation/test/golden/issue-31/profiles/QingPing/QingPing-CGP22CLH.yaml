@@ -1,0 +1,79 @@
+codec: |
+  function Decode(fPort, data, variables) {
+    var values = [];
+    if (!Array.isArray(data) || data.length < 4) return values;
+    if (data[0] !== 0x01 || data[1] !== 0x41) return values;
+
+    if (data[3] === 0x01) {
+      if (data.length !== 21) return values;
+      var packed = ((data[8] & 0xff) << 16) | ((data[9] & 0xff) << 8) | (data[10] & 0xff);
+      values.push({ name: "Temperature", channel: 1, value: ((packed >>> 12) - 500) / 10, unit: "degreesCelsius" });
+      values.push({ name: "Humidity", channel: 2, value: (packed & 0xfff) / 10, unit: "percentRelativeHumidity" });
+      values.push({ name: "CO2 Value", channel: 3, value: ((data[11] & 0xff) << 8) | (data[12] & 0xff), unit: "partsPerMillion" });
+      values.push({ name: "Battery", channel: 4, value: data[13] & 0xff, unit: "percent" });
+      return values;
+    }
+
+    if (data[3] === 0x00) {
+      if (data.length !== 42) return values;
+      var offset = 10;
+      var boundary = data.length - 2;
+      var lastPacked = null;
+      var lastCO2 = null;
+      var lastBattery = null;
+      while (offset + 6 <= boundary) {
+        lastPacked = ((data[offset] & 0xff) << 16) | ((data[offset + 1] & 0xff) << 8) | (data[offset + 2] & 0xff);
+        lastCO2 = ((data[offset + 3] & 0xff) << 8) | (data[offset + 4] & 0xff);
+        lastBattery = data[offset + 5] & 0xff;
+        offset += 6;
+      }
+      if (offset !== boundary || lastPacked === null) return [];
+      values.push({ name: "Temperature", channel: 1, value: ((lastPacked >>> 12) - 500) / 10, unit: "degreesCelsius" });
+      values.push({ name: "Humidity", channel: 2, value: (lastPacked & 0xfff) / 10, unit: "percentRelativeHumidity" });
+      values.push({ name: "CO2 Value", channel: 3, value: lastCO2, unit: "partsPerMillion" });
+      values.push({ name: "Battery", channel: 4, value: lastBattery, unit: "percent" });
+      return values;
+    }
+    return values;
+  }
+
+  function decodeUplink(input) {
+    try {
+      if (!input || !Array.isArray(input.bytes)) return { data: [], errors: ["invalid input"] };
+      var data = Decode(input.fPort, input.bytes, input.variables);
+      if (data.length === 0) return { data: [], errors: ["invalid or unsupported frame"] };
+      return { data: data };
+    } catch (error) {
+      return { data: [], errors: ["invalid frame"] };
+    }
+  }
+datatype:
+  "1":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    channel: 1
+  "2":
+    name: Humidity
+    type: AnalogInputObject
+    units: percentRelativeHumidity
+    channel: 2
+  "3":
+    name: CO2 Value
+    type: AnalogInputObject
+    units: partsPerMillion
+    channel: 3
+  "4":
+    name: Battery
+    type: AnalogInputObject
+    units: percent
+    channel: 4
+lorawan:
+  macVersion: LORAWAN_1_0_3
+  supportClassB: false
+  supportClassC: false
+model: QingPing-CGP22CLH
+profileVersion: 1.0.0
+name: CGP22CLH
+vendor: QingPing
+id: 7f39eef5-2cda-4bd6-a23a-38535edc6e0d

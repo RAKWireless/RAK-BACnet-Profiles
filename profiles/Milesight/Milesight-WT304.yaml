@@ -46,7 +46,7 @@ codec: |
             name: "Temperature",
             channel: 1,
             value: readInt16LE(data, i) / 100,
-            unit: "°C"
+            unit: "degreesCelsius"
           });
           i += 2;
           break;
@@ -57,7 +57,7 @@ codec: |
             name: "Humidity",
             channel: 2,
             value: readUInt16LE(data, i) / 10,
-            unit: "%"
+            unit: "percent"
           });
           i += 2;
           break;
@@ -68,7 +68,7 @@ codec: |
             name: "Target Temperature",
             channel: 3,
             value: readInt16LE(data, i) / 100,
-            unit: "°C"
+            unit: "degreesCelsius"
           });
           i += 2;
           break;
@@ -110,7 +110,7 @@ codec: |
             name: "Valve Status",
             channel: 7,
             value: readUInt8(data, i),
-            unit: "%"
+            unit: "percent"
           });
           i += 1;
           break;

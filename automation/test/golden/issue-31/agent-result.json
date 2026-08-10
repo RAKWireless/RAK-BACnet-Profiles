@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "status": "generated",
+  "issueNumber": 31,
+  "issueBodySha": "REPLACED_BY_TEST",
+  "summary": "Generated an uplink-only QingPing Profile from two known payloads with payload-driven fPort handling.",
+  "profilePath": "profiles/QingPing/QingPing-CGP22CLH.yaml",
+  "fixturePath": "profiles/QingPing/tests/QingPing-CGP22CLH.test.json",
+  "evidenceLevel": "known-answer",
+  "resolvedMappings": [
+    { "name": "temperature", "type": "AnalogInputObject", "units": "degreesCelsius" },
+    { "name": "humidity", "type": "AnalogInputObject", "units": "percentRelativeHumidity" },
+    { "name": "co2Value", "type": "AnalogInputObject", "units": "partsPerMillion" },
+    { "name": "battery", "type": "AnalogInputObject", "units": "percent" }
+  ],
+  "fPortPolicy": {
+    "mode": "ignored",
+    "representativeFPort": 1,
+    "reason": "Issue and protocol evidence do not specify fPort; codec is payload-driven"
+  },
+  "warnings": [],
+  "blocker": null,
+  "evidenceMatrix": [
+    {
+      "field": "Temperature",
+      "officialDocument": "Packed high 12 bits, offset 500, scale 0.1",
+      "decoder": "Same packed extraction and formula",
+      "knownPayload": "0x2FC gives 26.4 C",
+      "resolution": "payload-verified",
+      "resolvedValue": "((raw >> 12) - 500) / 10",
+      "rationale": "Documentation, decoder, and known payload agree"
+    },
+    {
+      "field": "Humidity",
+      "officialDocument": "Packed low 12 bits, scale 0.1",
+      "decoder": "Same mask and scale",
+      "knownPayload": "0x29A gives 66.6%",
+      "resolution": "payload-verified",
+      "resolvedValue": "(raw & 0xfff) / 10",
+      "rationale": "Documentation, decoder, and known payload agree"
+    },
+    {
+      "field": "CO2",
+      "officialDocument": "Two-byte big-endian ppm",
+      "decoder": "Same two-byte extraction",
+      "knownPayload": "0x01AA gives 426 ppm",
+      "resolution": "payload-verified",
+      "resolvedValue": "big-endian uint16",
+      "rationale": "Known payload reproduces the documented value"
+    },
+    {
+      "field": "Battery",
+      "officialDocument": "One-byte percent",
+      "decoder": "Same byte extraction",
+      "knownPayload": "0x4E gives 78%",
+      "resolution": "payload-verified",
+      "resolvedValue": "uint8 percent",
+      "rationale": "Known payload reproduces the documented value"
+    }
+  ]
+}

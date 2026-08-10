@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/main/scripts/schemas/profile-schema.json",
+  "title": "RAK BACnet Profile Schema",
+  "description": "Schema for validating BACnet Profile YAML files",
+  "type": "object",
+  "required": ["model", "codec", "datatype", "lorawan", "profileVersion"],
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "Device model identifier",
+      "pattern": "^[A-Za-z0-9-_]+$"
+    },
+    "vendor": {
+      "type": "string",
+      "description": "Device vendor/manufacturer name"
+    },
+    "profileVersion": {
+      "type": "string",
+      "description": "Profile version (semantic versioning)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Device friendly name"
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique profile identifier (UUID)"
+    },
+    "codec": {
+      "type": "string",
+      "description": "JavaScript codec functions (Decode, Encode, decodeUplink, encodeDownlink)"
+    },
+    "datatype": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "BACnet object mappings",
+      "patternProperties": {
+        "^\\d+$": {
+          "type": "object",
+          "required": ["name", "type"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "BACnet object name"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "AnalogInputObject",
+                "AnalogOutputObject",
+                "AnalogValueObject",
+                "BinaryInputObject",
+                "BinaryOutputObject",
+                "BinaryValueObject",
+                "OctetStringValueObject"
+              ],
+              "description": "BACnet object type"
+            },
+            "units": {
+              "type": ["string", "null"],
+              "description": "BACnet engineering units"
+            },
+            "covIncrement": {
+              "type": "number",
+              "description": "Change of Value increment for analog objects"
+            },
+            "updateInterval": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Update interval in seconds"
+            }
+          }
+        }
+      }
+    },
+    "lorawan": {
+      "type": "object",
+      "required": ["macVersion","supportClassB","supportClassC"],
+      "properties": {
+        "adrAlgorithm": {
+          "type": "string",
+          "description": "ADR algorithm"
+        },
+        "classCDownlinkTimeout": {
+          "type": "integer",
+          "description": "Class C downlink timeout in seconds"
+        },
+        "macVersion": {
+          "type": "string",
+          "enum": [
+            "LORAWAN_1_0_2",
+            "LORAWAN_1_0_3",
+            "LORAWAN_1_0_4"
+          ],
+          "description": "LoRaWAN MAC version"
+        },
+        "regionalParametersRevision": {
+          "type": "string",
+          "enum": ["A", "B", "RP002_1_0_0", "RP002_1_0_1", "RP002_1_0_2", "RP002_1_0_3"],
+          "description": "Regional parameters revision"
+        },
+        "supportClassB": {
+          "type": "boolean",
+          "description": "Supports LoRaWAN Class B"
+        },
+        "supportClassC": {
+          "type": "boolean",
+          "description": "Supports LoRaWAN Class C"
+        }
+      }
+    }
+  }
+}
