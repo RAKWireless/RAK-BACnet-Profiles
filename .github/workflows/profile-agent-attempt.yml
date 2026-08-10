@@ -56,6 +56,10 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      PROFILE_AGENT_API_KEY:
+        description: API key supplied by the selected profile-agent Environment
+        required: false
     outputs:
       status:
         value: ${{ jobs.agent.outputs.status }}
@@ -152,10 +156,19 @@ jobs:
           PROFILE_AGENT_RESPONSES_ENDPOINT: ${{ vars.PROFILE_AGENT_RESPONSES_ENDPOINT }}
         run: node automation/src/cli.js resolve-runtime --provider "${{ inputs.provider }}" --model "${{ inputs.model }}" --effort "${{ inputs.effort }}"
 
+      - name: Verify the selected Environment API key
+        env:
+          PROFILE_AGENT_API_KEY: ${{ secrets.PROFILE_AGENT_API_KEY }}
+        run: |
+          if [ -z "$PROFILE_AGENT_API_KEY" ]; then
+            echo "PROFILE_AGENT_API_KEY is missing from the selected profile-agent Environment" >&2
+            exit 1
+          fi
+
       - name: Run the Profile Agent
         id: codex
         continue-on-error: true
-        uses: openai/codex-action@v1
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
         with:
           openai-api-key: ${{ secrets.PROFILE_AGENT_API_KEY }}
           responses-api-endpoint: ${{ steps.runtime.outputs.responses_endpoint }}

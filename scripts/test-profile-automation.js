@@ -16,7 +16,8 @@ const {
   expectedPaths,
   validateAgentResult,
   prepareAgentInput,
-  patchPaths
+  patchPaths,
+  seedPreviousFromCandidate
 } = require('../automation/src/agent-artifact');
 const { automationMeta } = require('../automation/src/status');
 const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
@@ -28,6 +29,7 @@ const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./ev
 
 const ROOT = path.resolve(__dirname, '..');
 const PERMISSION_LEVELS = { none: 0, read: 1, write: 2 };
+const CODEX_ACTION_PIN = 'openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56';
 
 function addPermissionLevels(target, permissions, workflowPath) {
   if (!permissions) return;
@@ -89,6 +91,42 @@ function testReusableWorkflowPermissionCeilings() {
       }
     }
   }
+}
+
+function testReusableWorkflowSecretContracts() {
+  const workflowDirectory = path.join(ROOT, '.github', 'workflows');
+  for (const name of fs.readdirSync(workflowDirectory).filter(name => /\.ya?ml$/.test(name))) {
+    const workflowPath = path.join(workflowDirectory, name);
+    const source = fs.readFileSync(workflowPath, 'utf8');
+    const workflow = yaml.load(source, { schema: yaml.JSON_SCHEMA });
+    const workflowCall = workflow.on && workflow.on.workflow_call;
+    if (!workflowCall) continue;
+    const declared = new Set(Object.keys(workflowCall.secrets || {}));
+    const referenced = [...source.matchAll(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/g)].map(match => match[1]);
+    for (const secret of referenced) {
+      assert(declared.has(secret), `${path.relative(ROOT, workflowPath)} references undeclared reusable-workflow secret ${secret}`);
+    }
+  }
+}
+
+function testCodexActionContracts() {
+  const agentWorkflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-agent-attempt.yml'), 'utf8'));
+  const agentSteps = agentWorkflow.jobs.agent.steps;
+  const agentAction = agentSteps.find(step => String(step.uses || '').startsWith('openai/codex-action@'));
+  assert(agentAction, 'Profile Agent workflow must invoke openai/codex-action');
+  assert.equal(agentAction.uses, CODEX_ACTION_PIN, 'Profile Agent must pin the reviewed Codex Action revision');
+  assert.equal(agentAction.with['permission-profile'], 'profile-agent');
+  assert.equal(agentAction.with.sandbox, undefined, 'Permission profiles must not be combined with the legacy sandbox input');
+  assert(agentSteps.some(step => step.name === 'Verify the selected Environment API key'), 'Profile Agent must fail clearly before Codex starts without its Environment secret');
+
+  const advisoryWorkflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-advisory-review.yml'), 'utf8'));
+  const advisorySteps = advisoryWorkflow.jobs.advisory_agent.steps;
+  const advisoryAction = advisorySteps.find(step => String(step.uses || '').startsWith('openai/codex-action@'));
+  assert(advisoryAction, 'Advisory workflow must invoke openai/codex-action');
+  assert.equal(advisoryAction.uses, CODEX_ACTION_PIN, 'Advisory workflow must pin the reviewed Codex Action revision');
+  assert.equal(advisoryAction.with['permission-profile'], ':read-only');
+  assert.equal(advisoryAction.with.sandbox, undefined, 'Permission profiles must not be combined with the legacy sandbox input');
+  assert(advisorySteps.some(step => step.name === 'Verify the selected Environment API key'), 'Advisory Agent must fail clearly before Codex starts without its Environment secret');
 }
 
 function testShadowWorkflowDAG() {
@@ -360,6 +398,33 @@ function testAgentResultSchemaAndPatchPaths() {
   assert.throws(() => patchPaths('diff --git a/a b/b\n'), /Renames/);
 }
 
+function testRetryableAttemptSeedingWithoutCandidatePatch() {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-agent-retry-'));
+  const requestPath = path.join(temporary, 'input', 'request.json');
+  const candidatePath = path.join(temporary, 'candidate');
+  const reportPath = path.join(temporary, 'validation.json');
+  const issueBodySha = 'a'.repeat(64);
+  fs.mkdirSync(candidatePath, { recursive: true });
+  fs.mkdirSync(path.dirname(requestPath), { recursive: true });
+  fs.writeFileSync(requestPath, JSON.stringify({
+    issue: { number: 31, bodySha: issueBodySha },
+    execution: { profilePath: 'profiles/QingPing/QingPing-CGP22CLH.yaml', fixturePath: 'profiles/QingPing/tests/QingPing-CGP22CLH.test.json' }
+  }));
+  fs.writeFileSync(path.join(candidatePath, 'manifest.json'), JSON.stringify({
+    schemaVersion: 1,
+    status: 'invalid-agent-output',
+    issueNumber: 31,
+    issueBodySha,
+    retryable: true,
+    reason: 'The Agent runtime did not produce a result file'
+  }));
+  fs.writeFileSync(reportPath, JSON.stringify({ valid: false, retryable: true }));
+  const seeded = seedPreviousFromCandidate(candidatePath, requestPath, reportPath);
+  assert.deepEqual(seeded, { status: 'invalid-agent-output', candidateSeeded: false });
+  assert(fs.existsSync(path.join(temporary, 'input', 'previous', 'manifest.json')));
+  assert(fs.existsSync(path.join(temporary, 'input', 'validation-report.json')));
+}
+
 function testNetworkBoundary() {
   assert.equal(isPrivateAddress('127.0.0.1'), true);
   assert.equal(isPrivateAddress('169.254.169.254'), true);
@@ -460,6 +525,8 @@ function testMetadataAndShadowEvaluation() {
 async function main() {
   const tests = [
     testReusableWorkflowPermissionCeilings,
+    testReusableWorkflowSecretContracts,
+    testCodexActionContracts,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,
@@ -468,6 +535,7 @@ async function main() {
     testPreparedInputWhitelist,
     testDynamicCodecSafety,
     testAgentResultSchemaAndPatchPaths,
+    testRetryableAttemptSeedingWithoutCandidatePatch,
     testNetworkBoundary,
     testDecoderTrustClassification,
     testIssue31Golden,

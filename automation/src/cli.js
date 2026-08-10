@@ -231,10 +231,14 @@ async function commandPrepareCodexHome(args) {
 }
 
 async function commandSeedPrevious(args) {
-  if (args.candidate) seedPreviousFromCandidate(args.candidate, args.request, args.report);
-  else if (args.ref) seedPreviousFromRef(args.ref, args.request);
+  let result;
+  if (args.candidate) result = seedPreviousFromCandidate(args.candidate, args.request, args.report);
+  else if (args.ref) {
+    seedPreviousFromRef(args.ref, args.request);
+    result = { status: 'candidate', candidateSeeded: true };
+  }
   else throw new Error('seed-previous requires --candidate or --ref');
-  console.log(JSON.stringify({ seeded: true }, null, 2));
+  console.log(JSON.stringify({ seeded: true, ...result }, null, 2));
 }
 
 async function commandRemoveShadowTargets(args) {

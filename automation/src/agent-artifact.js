@@ -297,11 +297,27 @@ function copyPreviousInputs(requestPath) {
 
 function seedPreviousFromCandidate(candidateDirectory, requestPath, validationReportPath) {
   const request = readJson(requestPath);
-  applyCandidatePatch(candidateDirectory, request.issue.bodySha);
-  copyPreviousInputs(requestPath);
+  const candidateRoot = path.resolve(candidateDirectory);
+  const manifest = readJson(path.join(candidateRoot, 'manifest.json'));
+  let candidateSeeded = false;
+  if (manifest.status === 'candidate') {
+    applyCandidatePatch(candidateRoot, request.issue.bodySha);
+    copyPreviousInputs(requestPath);
+    candidateSeeded = true;
+  } else {
+    if (manifest.issueNumber !== request.issue.number || manifest.issueBodySha !== request.issue.bodySha) {
+      throw new Error('Previous attempt identity does not match the prepared request');
+    }
+    if (manifest.retryable !== true) throw new Error(`Previous attempt is not retryable: ${manifest.status}`);
+    const previousRoot = path.join(path.dirname(requestPath), 'previous');
+    writeJson(path.join(previousRoot, 'manifest.json'), manifest);
+    const rawResultPath = path.join(candidateRoot, 'agent-result.raw');
+    if (fs.existsSync(rawResultPath)) fs.copyFileSync(rawResultPath, path.join(previousRoot, 'agent-result.raw'));
+  }
   if (validationReportPath) {
     fs.copyFileSync(validationReportPath, path.join(path.dirname(requestPath), 'validation-report.json'));
   }
+  return { status: manifest.status, candidateSeeded };
 }
 
 function seedPreviousFromRef(ref, requestPath) {
