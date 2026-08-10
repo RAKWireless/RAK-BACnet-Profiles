@@ -100,7 +100,7 @@ function validateProfileSemantics(profile, filePath, options = {}) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
-function validateDecodedData(profile, decodedData) {
+function validateDecodedData(profile, decodedData, options = {}) {
   const errors = [];
   const data = Array.isArray(decodedData) ? decodedData : [];
   const seenChannels = new Set();
@@ -126,8 +126,11 @@ function validateDecodedData(profile, decodedData) {
     const expectedUnit = mapping.units === undefined ? null : mapping.units;
     const actualUnit = item.unit === undefined ? null : item.unit;
     if (actualUnit !== expectedUnit) errors.push(`Channel ${item.channel} unit '${actualUnit}' does not match datatype unit '${expectedUnit}'`);
-    if (typeof item.value === 'number' && !Number.isFinite(item.value)) errors.push(`Channel ${item.channel} value must be finite`);
-    if (item.value === undefined) errors.push(`Channel ${item.channel} value is undefined`);
+    if (typeof item.value !== 'number' || !Number.isFinite(item.value)) {
+      errors.push(`Channel ${item.channel} value must be a finite number for SQLite REAL storage`);
+    } else if (options.requireBinary01 === true && mapping.type === 'BinaryInputObject' && item.value !== 0 && item.value !== 1) {
+      errors.push(`Channel ${item.channel} BinaryInputObject value must be 0 or 1`);
+    }
   }
 
   return { valid: errors.length === 0, errors, channels: [...seenChannels] };

@@ -50,7 +50,9 @@ inspect and independently re-implement.
 6. Implement a deterministic, fail-closed uplink codec and a strict fixture
    covering every Issue payload. Dynamic-length cursor parsing, bounded
    `while`, `for`, `do...while`, varint parsing, and `try/catch` are allowed
-   under the codec contract.
+   under the codec contract. Follow its SQLite `REAL` output rule for every
+   decoded `value`; strings, booleans, nulls, and non-finite numbers are not
+   publishable BACnet values.
 7. Run the candidate command named in `request.json`. Fix candidate errors
    within the current attempt. Do not weaken tests or validation code. Do not
    echo, print, or copy raw Issue, document, decoder, prompt, or model content

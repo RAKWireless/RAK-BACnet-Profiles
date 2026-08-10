@@ -93,7 +93,7 @@
               "properties": {
                 "name": { "type": "string" },
                 "channel": { "type": "integer", "minimum": 1 },
-                "value": {},
+                "value": { "type": "number" },
                 "unit": { "type": ["string", "null"] }
               }
             }

@@ -23,6 +23,7 @@ const { automationMeta } = require('../automation/src/status');
 const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
 const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require('../automation/src/decoder-loader');
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
+const { validateDecodedData } = require('./lib/validation/profile-semantics');
 const { candidateContractChecks, validateFixtureContract } = require('./lib/validation/agent-candidate');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./evaluate-shadow-run');
@@ -209,6 +210,39 @@ function testIssueCreationHasSingleIntakeRun() {
     cliSource.includes("client.addLabels(intake.issueNumber, ['profile-request', 'requirement-gathering'])"),
     'The opened-event Intake run must initialize the request labels with GITHUB_TOKEN'
   );
+}
+
+function testSQLiteRealCodecValues() {
+  const profile = {
+    datatype: {
+      '1': { name: 'State', type: 'BinaryInputObject' },
+      '2': { name: 'Event', type: 'OctetStringValueObject' }
+    }
+  };
+  assert.equal(validateDecodedData(profile, [
+    { name: 'State', channel: 1, value: 0, unit: null },
+    { name: 'Event', channel: 2, value: 4, unit: null }
+  ]).valid, true);
+
+  for (const value of [false, true, 'state_alert', null, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const result = validateDecodedData(profile, [{ name: 'Event', channel: 2, value, unit: null }]);
+    assert(result.errors.some(error => error.includes('SQLite REAL storage')), `Expected SQLite REAL rejection for ${String(value)}`);
+  }
+  const invalidBinary = validateDecodedData(
+    profile,
+    [{ name: 'State', channel: 1, value: 2, unit: null }],
+    { requireBinary01: true }
+  );
+  assert(invalidBinary.errors.includes('Channel 1 BinaryInputObject value must be 0 or 1'));
+
+  const fixtureSchema = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'schemas', 'profile-test-schema.json'), 'utf8'));
+  assert.equal(fixtureSchema.properties.testCases.items.properties.expectedOutput.items.properties.value.type, 'number');
+
+  const codecPolicy = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'references', 'codec-policy.md'), 'utf8');
+  assert(codecPolicy.includes('SQLite `REAL`'));
+  assert(codecPolicy.includes('`false = 0`'));
+  assert(codecPolicy.includes('`1, 2, 3, ...`'));
+  assert(codecPolicy.includes('adjacent codec comment'));
 }
 
 function testShadowWorkflowDAG() {
@@ -640,6 +674,7 @@ async function main() {
     testCodexPermissionProfile,
     testCleanRoomCopyDoesNotPreserveOwnership,
     testIssueCreationHasSingleIntakeRun,
+    testSQLiteRealCodecValues,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,

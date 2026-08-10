@@ -23,3 +23,15 @@ declared lengths, record boundaries, selectors, and required trailers. Avoid
 reading beyond the byte array. Use explicit endian and signed conversions.
 Never execute the supplied decoder; independently reproduce only its verified
 protocol logic.
+
+Every decoded `value` is persisted in a SQLite `REAL` column and must therefore
+be a finite JavaScript number. Never emit a string, boolean, `null`, `NaN`, or
+infinity as a BACnet value. Encode boolean semantics as `false = 0` and
+`true = 1`; `BinaryInputObject` values must be exactly `0` or `1`.
+
+For enums, events, modes, versions, and other symbolic values, preserve the
+documented protocol or decoder numeric code/bitmask whenever one exists. If the
+evidence defines only labels, assign stable numeric codes `1, 2, 3, ...` in
+evidence order. Put an adjacent codec comment that declares every code-to-label
+mapping, and record the same mapping in the evidence matrix. Do not renumber a
+documented code, derive a value from label text, or emit the label itself.

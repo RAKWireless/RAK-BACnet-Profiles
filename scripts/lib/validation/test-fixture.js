@@ -35,11 +35,11 @@ function validateStrictFixtureRobustness(fixture) {
   return errors;
 }
 
-function validateResult(profile, testCase, result) {
+function validateResult(profile, testCase, result, valueOptions = {}) {
   const errors = [];
   if (!result || typeof result !== 'object' || Array.isArray(result)) return ['decodeUplink must return an object'];
   if (result.data !== undefined && !Array.isArray(result.data)) errors.push('decodeUplink.data must be an array when present');
-  const semantic = validateDecodedData(profile, result.data || []);
+  const semantic = validateDecodedData(profile, result.data || [], valueOptions);
   errors.push(...semantic.errors);
   if (Object.prototype.hasOwnProperty.call(testCase, 'expectedOutput') && !deepEqual(result.data || [], testCase.expectedOutput)) {
     errors.push('Actual output does not match expectedOutput');
@@ -47,7 +47,7 @@ function validateResult(profile, testCase, result) {
   return errors;
 }
 
-function validateTruncation(profile, testCase) {
+function validateTruncation(profile, testCase, valueOptions) {
   const errors = [];
   const bytes = hexToBytes(testCase.input);
   const lengths = new Set();
@@ -59,7 +59,7 @@ function validateTruncation(profile, testCase) {
       const result = testDecode(profile.codec, testCase.fPort, truncated);
       const truncatedCase = { ...testCase };
       delete truncatedCase.expectedOutput;
-      errors.push(...validateResult(profile, truncatedCase, result).map(error => `truncated length ${length}: ${error}`));
+      errors.push(...validateResult(profile, truncatedCase, result, valueOptions).map(error => `truncated length ${length}: ${error}`));
       if (Array.isArray(result.data) && result.data.length > 0) {
         errors.push(`truncated length ${length}: decoder produced BACnet data`);
       }
@@ -73,7 +73,7 @@ function validateTruncation(profile, testCase) {
   return errors;
 }
 
-function validateUnknownFPort(profile, testCase, knownFPorts) {
+function validateUnknownFPort(profile, testCase, knownFPorts, valueOptions) {
   let unknownFPort = null;
   for (let candidate = 223; candidate >= 0; candidate -= 1) {
     if (!knownFPorts.has(candidate)) {
@@ -86,7 +86,7 @@ function validateUnknownFPort(profile, testCase, knownFPorts) {
     const result = testDecode(profile.codec, unknownFPort, testCase.input);
     const unknownCase = { ...testCase };
     delete unknownCase.expectedOutput;
-    const errors = validateResult(profile, unknownCase, result);
+    const errors = validateResult(profile, unknownCase, result, valueOptions);
     if (Array.isArray(result.data) && result.data.length > 0) {
       errors.push(`unknown fPort ${unknownFPort} produced BACnet data`);
     }
@@ -99,12 +99,12 @@ function validateUnknownFPort(profile, testCase, knownFPorts) {
   }
 }
 
-function validateRejectedFPort(profile, testCase, fPort, label) {
+function validateRejectedFPort(profile, testCase, fPort, label, valueOptions) {
   try {
     const result = testDecode(profile.codec, fPort, testCase.input);
     const rejectedCase = { ...testCase, fPort };
     delete rejectedCase.expectedOutput;
-    const errors = validateResult(profile, rejectedCase, result);
+    const errors = validateResult(profile, rejectedCase, result, valueOptions);
     if (Array.isArray(result.data) && result.data.length > 0) {
       errors.push(`${label} fPort ${fPort} produced BACnet data`);
     }
@@ -117,22 +117,22 @@ function validateRejectedFPort(profile, testCase, fPort, label) {
   }
 }
 
-function validateAgnosticFPort(profile, testCase, baseline) {
+function validateAgnosticFPort(profile, testCase, baseline, valueOptions) {
   const errors = [];
   const alternateFPort = testCase.fPort === 223 ? 1 : 223;
   try {
     const alternate = testDecode(profile.codec, alternateFPort, testCase.input);
     const alternateCase = { ...testCase, fPort: alternateFPort };
     delete alternateCase.expectedOutput;
-    errors.push(...validateResult(profile, alternateCase, alternate).map(error => `alternate application fPort ${alternateFPort}: ${error}`));
+    errors.push(...validateResult(profile, alternateCase, alternate, valueOptions).map(error => `alternate application fPort ${alternateFPort}: ${error}`));
     if (!deepEqual(alternate.data || [], baseline.data || [])) {
       errors.push(`port-agnostic decoder changed output on application fPort ${alternateFPort}`);
     }
   } catch (error) {
     errors.push(`alternate application fPort ${alternateFPort} threw: ${error.message}`);
   }
-  errors.push(...validateRejectedFPort(profile, testCase, 0, 'MAC-command'));
-  errors.push(...validateRejectedFPort(profile, testCase, 255, 'reserved'));
+  errors.push(...validateRejectedFPort(profile, testCase, 0, 'MAC-command', valueOptions));
+  errors.push(...validateRejectedFPort(profile, testCase, 255, 'reserved', valueOptions));
   return errors;
 }
 
@@ -154,7 +154,7 @@ function nextRandom(state) {
   return state.value / 0x100000000;
 }
 
-function validateSeededFuzz(profile, testCase) {
+function validateSeededFuzz(profile, testCase, valueOptions) {
   const errors = [];
   const state = { value: seedFrom(`${testCase.name}:${testCase.input}:${testCase.fPort}`) };
   for (let iteration = 0; iteration < 16; iteration += 1) {
@@ -168,7 +168,7 @@ function validateSeededFuzz(profile, testCase) {
       if (!deepEqual(first, second)) errors.push(`seeded fuzz ${iteration}: decoder output is not deterministic`);
       const fuzzCase = { ...testCase, input };
       delete fuzzCase.expectedOutput;
-      errors.push(...validateResult(profile, fuzzCase, first).map(error => `seeded fuzz ${iteration}: ${error}`));
+      errors.push(...validateResult(profile, fuzzCase, first, valueOptions).map(error => `seeded fuzz ${iteration}: ${error}`));
     } catch (error) {
       errors.push(`seeded fuzz ${iteration} threw: ${error.message}`);
     }
@@ -187,6 +187,7 @@ function validateTestFixture(profilePath, fixturePath) {
   errors.push(...schemaCheck.errors);
   if (!schemaCheck.valid) return { valid: false, errors, warnings, results };
   errors.push(...validateStrictFixtureRobustness(fixture));
+  const valueOptions = { requireBinary01: fixture.strict === true };
   const knownFPorts = new Set([
     ...fixture.testCases.map(testCase => testCase.fPort),
     ...((fixture.fPortPolicy && fixture.fPortPolicy.mode === 'fixed' && fixture.fPortPolicy.ports) || [])
@@ -207,20 +208,20 @@ function validateTestFixture(profilePath, fixturePath) {
       const first = testDecode(profile.codec, testCase.fPort, testCase.input);
       const second = testDecode(profile.codec, testCase.fPort, testCase.input);
       if (!deepEqual(first, second)) testErrors.push('Decoder output is not deterministic');
-      testErrors.push(...validateResult(profile, testCase, first));
+      testErrors.push(...validateResult(profile, testCase, first, valueOptions));
       for (const item of first.data || []) observedChannels.add(item.channel);
       if ((fixture.robustness && fixture.robustness.checkTruncation) !== false) {
-        testErrors.push(...validateTruncation(profile, testCase));
+        testErrors.push(...validateTruncation(profile, testCase, valueOptions));
       }
       if ((fixture.robustness && fixture.robustness.checkUnknownFPort) !== false) {
         if (fixture.fPortPolicy && fixture.fPortPolicy.mode === 'agnostic') {
-          testErrors.push(...validateAgnosticFPort(profile, testCase, first));
+          testErrors.push(...validateAgnosticFPort(profile, testCase, first, valueOptions));
         } else if (!fixture.fPortPolicy || fixture.fPortPolicy.mode !== 'ignored') {
-          testErrors.push(...validateUnknownFPort(profile, testCase, knownFPorts));
+          testErrors.push(...validateUnknownFPort(profile, testCase, knownFPorts, valueOptions));
         }
       }
       if (fixture.robustness && fixture.robustness.checkFuzz === true) {
-        testErrors.push(...validateSeededFuzz(profile, testCase));
+        testErrors.push(...validateSeededFuzz(profile, testCase, valueOptions));
       }
     } catch (error) {
       testErrors.push(error.message);
