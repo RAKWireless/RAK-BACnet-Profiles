@@ -1,0 +1,126 @@
+codec: |
+  function fail(message) {
+    return { data: [], errors: [message] };
+  }
+
+  function Decode(fPort, data, variables) {
+    var index;
+    var distance;
+    var rows;
+
+    if (!Number.isInteger(fPort)) {
+      return fail("invalid fPort");
+    }
+    if (!data || !Number.isInteger(data.length) || data.length > 255) {
+      return fail("invalid payload");
+    }
+    for (index = 0; index < data.length; index += 1) {
+      if (!Number.isInteger(data[index]) || data[index] < 0 || data[index] > 255) {
+        return fail("invalid payload");
+      }
+    }
+
+    switch (fPort) {
+      case 8:
+        if (data.length !== 4) {
+          return fail("invalid firmware frame");
+        }
+        return [];
+      case 9:
+        if (data.length !== 11) {
+          return fail("invalid status frame");
+        }
+        return [{
+          name: "Battery",
+          unit: "percent",
+          channel: 2,
+          value: data[6]
+        }];
+      case 10:
+        if (data.length !== 6 || data[0] !== 11 || (data[5] !== 0 && data[5] !== 1)) {
+          return fail("invalid sensor frame");
+        }
+        distance = ((data[3] << 8) | data[4]) / 10;
+        rows = [
+          {
+            // Event is the documented event-bit mask: bit 0 = heartbeat/button; bit 2 = state_alert.
+            name: "Event",
+            unit: null,
+            channel: 1,
+            value: data[1]
+          },
+          {
+            name: "Battery",
+            unit: "percent",
+            channel: 2,
+            value: data[2]
+          },
+          {
+            name: "Distance",
+            unit: "centimeters",
+            channel: 3,
+            value: distance
+          },
+          {
+            name: "State",
+            unit: null,
+            channel: 4,
+            value: data[5]
+          }
+        ];
+        return rows;
+      case 12:
+        if (data.length !== 3 || data[0] !== 11) {
+          return fail("invalid settings frame");
+        }
+        return [];
+      case 13:
+        if (data.length !== 7 || data[0] !== 11) {
+          return fail("invalid threshold frame");
+        }
+        return [];
+      default:
+        return fail("unsupported fPort");
+    }
+  }
+
+  function decodeUplink(input) {
+    var rows;
+    if (!input || !Number.isInteger(input.fPort)) {
+      return fail("invalid input");
+    }
+    rows = Decode(input.fPort, input.bytes, input.variables);
+    if (rows && rows.errors) {
+      return rows;
+    }
+    return { data: rows };
+  }
+datatype:
+  1:
+    name: Event
+    type: OctetStringValueObject
+    channel: 1
+  2:
+    name: Battery
+    type: AnalogInputObject
+    units: percent
+    channel: 2
+  3:
+    name: Distance
+    type: AnalogInputObject
+    units: centimeters
+    channel: 3
+  4:
+    name: State
+    type: BinaryInputObject
+    channel: 4
+lorawan:
+  class: A
+  macVersion: LORAWAN_1_0_4
+  supportClassB: false
+  supportClassC: false
+model: Senso8-LRS40LD0
+profileVersion: 1.0.0
+name: LRS40LD0
+vendor: Senso8
+id: 6e9cf24d-70c8-41a9-b514-c0ddbe3e55bf

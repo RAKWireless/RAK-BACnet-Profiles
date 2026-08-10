@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/main/registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-08-06",
-  "totalProfiles": 26,
+  "lastUpdate": "2026-08-10",
+  "totalProfiles": 27,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -405,6 +405,22 @@
       "lastUpdate": "2025-12-12"
     },
     {
+      "id": "senso8-lrs40ld0",
+      "vendor": "Senso8",
+      "model": "Senso8-LRS40LD0",
+      "version": "1.0.0",
+      "path": "profiles/Senso8/Senso8-LRS40LD0.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "Senso8 Senso8-LRS40LD0 Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "b2e179698f267049d0355162d5e982e863bcda9d1027c1355f66fc81c8220bf8",
+      "lastUpdate": "2026-08-10"
+    },
+    {
       "id": "thermokon-novos3-occlumco2temprh",
       "vendor": "Thermokon",
       "model": "Thermokon-NOVOS3-OccLumCO2TempRH",
@@ -430,10 +446,10 @@
       "Milesight": 4,
       "Moko": 1,
       "QingPing": 1,
-      "Senso8": 9,
+      "Senso8": 10,
       "Thermokon": 1
     },
-    "withTests": 4,
+    "withTests": 5,
     "withoutTests": 22
   }
 }
