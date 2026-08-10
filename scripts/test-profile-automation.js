@@ -182,6 +182,7 @@ function testStructuredOutputSchemas() {
 function testCodexPermissionProfile() {
   const source = fs.readFileSync(path.join(ROOT, '.github', 'codex', 'config.toml'), 'utf8');
   assert(source.includes('default_permissions = "profile-agent"'));
+  assert(source.includes('extends = ":workspace"'), 'The custom profile must inherit Codex runtime mounts before applying narrower repository rules');
   assert(source.includes('glob_scan_max_depth = 8'), 'Linux permission profiles with ** deny globs must bound pre-expansion depth');
 }
 
