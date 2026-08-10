@@ -11,6 +11,7 @@ const { scrubPII } = require('../automation/src/pii-scrubber');
 const { decideIntake } = require('../automation/src/intake-policy');
 const { providerCatalog, resolveProvider, resolveAgentRuntime } = require('../automation/src/config');
 const { parseArgs } = require('../automation/src/io');
+const { normalizeCollectionExpectedSha, assertCollectionIssueSha } = require('../automation/src/issue-sha');
 const {
   expectedPaths,
   validateAgentResult,
@@ -23,7 +24,7 @@ const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require(
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
 const { candidateContractChecks } = require('./lib/validation/agent-candidate');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
-const { evaluate: evaluateShadowRun } = require('./evaluate-shadow-run');
+const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./evaluate-shadow-run');
 
 const ROOT = path.resolve(__dirname, '..');
 const PERMISSION_LEVELS = { none: 0, read: 1, write: 2 };
@@ -88,6 +89,33 @@ function testReusableWorkflowPermissionCeilings() {
       }
     }
   }
+}
+
+function testShadowWorkflowDAG() {
+  const workflowPath = path.join(ROOT, '.github', 'workflows', 'profile-build.yml');
+  const workflow = yaml.load(fs.readFileSync(workflowPath, 'utf8'));
+  assert.equal(workflow.jobs.start.if, undefined, 'Shadow mode must not skip the common start job');
+  assert.equal(workflow.jobs.mark_validating.if, undefined, 'Shadow mode must not skip the common validation-state job');
+  assert(workflow.jobs.start.steps.some(step => step.if === "inputs.mode == 'shadow'"), 'start must include an explicit shadow no-op');
+  assert(workflow.jobs.mark_validating.steps.some(step => step.if === "inputs.mode == 'shadow'"), 'mark_validating must include an explicit shadow no-op');
+  const source = fs.readFileSync(workflowPath, 'utf8');
+  assert(!source.includes("inputs.issue_body_sha == 'current' && '' || inputs.issue_body_sha"));
+}
+
+function testCollectionIssueShaSentinel() {
+  const currentSha = 'a'.repeat(64);
+  assert.equal(normalizeCollectionExpectedSha('current'), '');
+  assert.equal(normalizeCollectionExpectedSha(' CURRENT '), '');
+  assert.doesNotThrow(() => assertCollectionIssueSha(currentSha, 'current'));
+  assert.doesNotThrow(() => assertCollectionIssueSha(currentSha, currentSha));
+  assert.throws(
+    () => assertCollectionIssueSha(currentSha, 'b'.repeat(64)),
+    error => error.code === 'ISSUE_SHA_MISMATCH'
+  );
+  assert.throws(
+    () => assertCollectionIssueSha(currentSha, 'not-a-sha'),
+    error => error.code === 'INVALID_EXPECTED_SHA'
+  );
 }
 
 function syntheticIssue(overrides = {}) {
@@ -409,11 +437,31 @@ function testMetadataAndShadowEvaluation() {
   ], 0.5);
   assert.equal(evaluation.valid, true);
   assert.equal(evaluation.evidenceBlockedIssues, 1);
+  assert.deepEqual(parseExpectedIssueNumbers('[31, 32]'), [31, 32]);
+  assert.throws(() => parseExpectedIssueNumbers('[31, 31]'), /duplicates/);
+
+  const smoke = evaluateShadowRun([
+    { issueNumber: 31, eligible: true, evidencePassed: true, candidateProduced: true, valid: true }
+  ], 0.85, { expectedIssueNumbers: [31] });
+  assert.equal(smoke.valid, true);
+  assert.equal(smoke.complete, true);
+
+  const incomplete = evaluateShadowRun([], 0.85, { expectedIssueNumbers: [31] });
+  assert.equal(incomplete.valid, false);
+  assert.deepEqual(incomplete.missingIssueNumbers, [31]);
+
+  const undersizedRollout = evaluateShadowRun([
+    { issueNumber: 31, eligible: true, evidencePassed: true, candidateProduced: true, valid: true }
+  ], 0.85, { expectedIssueNumbers: [31], enforceRolloutGate: true });
+  assert.equal(undersizedRollout.valid, false);
+  assert.equal(undersizedRollout.sampleSizeSufficient, false);
 }
 
 async function main() {
   const tests = [
     testReusableWorkflowPermissionCeilings,
+    testShadowWorkflowDAG,
+    testCollectionIssueShaSentinel,
     testIssueParsingAndPII,
     testTrustAndApprovalStateMachine,
     testProviderConfiguration,

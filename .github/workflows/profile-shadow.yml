@@ -5,9 +5,14 @@ on:
   workflow_dispatch:
     inputs:
       issue_numbers:
-        description: JSON array of at least 10 historical Issue numbers
+        description: JSON array; one Issue for smoke testing, at least 10 eligible Issues for rollout evaluation
         required: true
         default: '[31]'
+      enforce_rollout_gate:
+        description: Require at least 10 eligible Issues in addition to the 85% success target
+        required: true
+        type: boolean
+        default: false
       provider:
         description: Provider Environment
         required: true
@@ -56,8 +61,15 @@ jobs:
         with:
           node-version: 24
       - uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           pattern: shadow-*
           path: automation/.work/shadow-results
       - name: Evaluate rollout gates
-        run: node scripts/evaluate-shadow-run.js automation/.work/shadow-results
+        env:
+          ENFORCE_ROLLOUT_GATE: ${{ inputs.enforce_rollout_gate }}
+          EXPECTED_ISSUE_NUMBERS: ${{ inputs.issue_numbers }}
+        run: >-
+          node scripts/evaluate-shadow-run.js automation/.work/shadow-results
+          --expected-issues "$EXPECTED_ISSUE_NUMBERS"
+          --enforce-rollout-gate "$ENFORCE_ROLLOUT_GATE"

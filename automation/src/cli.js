@@ -18,6 +18,7 @@ const {
   removeShadowTargets
 } = require('./agent-artifact');
 const { parseArgs, readJson, writeJson, writeText, appendGithubOutput } = require('./io');
+const { assertCollectionIssueSha } = require('./issue-sha');
 const { intakeComment, failureMarkdown, automationMeta, preparePublish } = require('./status');
 
 function githubClient() {
@@ -129,17 +130,12 @@ async function commandCollectSource(args) {
   const issueNumber = Number(args['issue-number']);
   const issue = await githubClient().getIssue(issueNumber);
   const intake = parseIssue(issue, { allowExisting: args['allow-existing'] === true });
-  const expectedSha = String(args['expected-sha'] || '');
   let source = null;
   let decoder = null;
   let decoderError = null;
   let error = null;
   try {
-    if (expectedSha && intake.issueBodySha !== expectedSha) {
-      const mismatch = new Error('Issue body changed after this run was queued');
-      mismatch.code = 'ISSUE_SHA_MISMATCH';
-      throw mismatch;
-    }
+    assertCollectionIssueSha(intake.issueBodySha, args['expected-sha']);
     if (intake.status !== 'ready') {
       const intakeError = new Error(`Issue is not ready for generation: ${intake.status}: ${(intake.errors || []).join('; ')}`);
       intakeError.code = 'INTAKE_NOT_READY';

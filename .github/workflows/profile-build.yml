@@ -51,27 +51,34 @@ permissions:
 
 jobs:
   start:
-    if: inputs.mode != 'shadow'
     runs-on: ubuntu-latest
     permissions:
       actions: write
       contents: read
       issues: write
     steps:
+      - name: Complete the shadow start gate without mutating the Issue
+        if: inputs.mode == 'shadow'
+        run: echo "Shadow mode does not cancel runs or update Issue state"
       - uses: actions/checkout@v7
+        if: inputs.mode != 'shadow'
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@v7
+        if: inputs.mode != 'shadow'
         with:
           node-version: 24
-      - run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - if: inputs.mode != 'shadow'
+        run: npm ci --prefix automation --omit=dev --ignore-scripts
       - name: Cancel older runs for the same Issue
+        if: inputs.mode != 'shadow'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node automation/src/cli.js cancel-issue-runs --issue-number "${{ inputs.issue_number }}"
       - name: Mark generation started
+        if: inputs.mode != 'shadow'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -105,7 +112,7 @@ jobs:
         run: >-
           node automation/src/cli.js collect-source
           --issue-number "${{ inputs.issue_number }}"
-          --expected-sha "${{ inputs.issue_body_sha == 'current' && '' || inputs.issue_body_sha }}"
+          --expected-sha "${{ inputs.issue_body_sha }}"
           ${{ inputs.allow_existing && '--allow-existing' || '' }}
           --output automation/.work/source/source-bundle.json
       - uses: actions/upload-artifact@v7
@@ -136,21 +143,27 @@ jobs:
 
   mark_validating:
     needs: agent_1
-    if: inputs.mode != 'shadow' && needs.agent_1.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     steps:
+      - name: Complete the shadow validation-state gate without mutating the Issue
+        if: inputs.mode == 'shadow'
+        run: echo "Shadow mode does not update Issue validation state"
       - uses: actions/checkout@v7
+        if: inputs.mode != 'shadow'
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@v7
+        if: inputs.mode != 'shadow'
         with:
           node-version: 24
-      - run: npm ci --prefix automation --omit=dev --ignore-scripts
-      - env:
+      - if: inputs.mode != 'shadow'
+        run: npm ci --prefix automation --omit=dev --ignore-scripts
+      - if: inputs.mode != 'shadow'
+        env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state validating
@@ -328,18 +341,28 @@ jobs:
       - run: npm ci --prefix automation --omit=dev --ignore-scripts
       - uses: actions/download-artifact@v8
         if: needs.validate_2.result == 'success'
+        continue-on-error: true
         with:
           name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-2
           path: automation/.work/blocked
       - uses: actions/download-artifact@v8
         if: needs.validate_2.result != 'success'
+        continue-on-error: true
         with:
           name: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
           path: automation/.work/blocked
-      - env:
+      - name: Report the validation evidence failure
+        if: hashFiles('automation/.work/blocked/message.md') != ''
+        env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state blocked --message automation/.work/blocked/message.md
+      - name: Report a pipeline failure before validation evidence was produced
+        if: hashFiles('automation/.work/blocked/message.md') == ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node automation/src/cli.js build-status --issue-number "${{ inputs.issue_number }}" --expected-sha "${{ inputs.issue_body_sha }}" --state blocked --reason "The Agent or candidate validation job failed before producing a validation report. Inspect the failed job; no PR was created."
       - run: exit 1
 
   source_blocked:
