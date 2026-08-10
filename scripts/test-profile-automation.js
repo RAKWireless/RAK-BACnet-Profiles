@@ -154,6 +154,37 @@ function testProviderSecretRouting() {
   assert(attemptSource.includes('secrets.PROFILE_AGENT_CALL_API_KEY'), 'Agent attempt must use only the explicitly routed provider key');
 }
 
+function assertStructuredOutputSchema(node, location) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+  const unsupported = ['oneOf', 'allOf', 'not', 'dependentRequired', 'dependentSchemas', 'if', 'then', 'else', 'uniqueItems'];
+  for (const keyword of unsupported) assert.equal(node[keyword], undefined, `${location} uses unsupported Structured Outputs keyword '${keyword}'`);
+  if (Object.prototype.hasOwnProperty.call(node, 'const')) assert(node.type, `${location} uses const without an explicit type`);
+  if (Object.prototype.hasOwnProperty.call(node, 'enum')) assert(node.type, `${location} uses enum without an explicit type`);
+  if (node.type === 'object') {
+    assert.equal(node.additionalProperties, false, `${location} must set additionalProperties to false`);
+    const propertyNames = Object.keys(node.properties || {});
+    assert.deepEqual(new Set(node.required || []), new Set(propertyNames), `${location} must require every property`);
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (Array.isArray(value)) value.forEach((entry, index) => assertStructuredOutputSchema(entry, `${location}.${key}[${index}]`));
+    else assertStructuredOutputSchema(value, `${location}.${key}`);
+  }
+}
+
+function testStructuredOutputSchemas() {
+  for (const name of ['profile-agent-output.schema.json', 'profile-advisory-output.schema.json']) {
+    const schema = JSON.parse(fs.readFileSync(path.join(ROOT, '.github', 'codex', 'schemas', name), 'utf8'));
+    assert.equal(schema.type, 'object');
+    assertStructuredOutputSchema(schema, name);
+  }
+}
+
+function testCodexPermissionProfile() {
+  const source = fs.readFileSync(path.join(ROOT, '.github', 'codex', 'config.toml'), 'utf8');
+  assert(source.includes('default_permissions = "profile-agent"'));
+  assert(source.includes('glob_scan_max_depth = 8'), 'Linux permission profiles with ** deny globs must bound pre-expansion depth');
+}
+
 function testShadowWorkflowDAG() {
   const workflowPath = path.join(ROOT, '.github', 'workflows', 'profile-build.yml');
   const workflow = yaml.load(fs.readFileSync(workflowPath, 'utf8'));
@@ -553,6 +584,8 @@ async function main() {
     testReusableWorkflowSecretContracts,
     testCodexActionContracts,
     testProviderSecretRouting,
+    testStructuredOutputSchemas,
+    testCodexPermissionProfile,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,

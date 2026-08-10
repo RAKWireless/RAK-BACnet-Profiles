@@ -7,6 +7,7 @@ approval_policy = "never"
 default_permissions = "profile-agent"
 
 [permissions.profile-agent.filesystem]
+glob_scan_max_depth = 8
 ":minimal" = "read"
 
 [permissions.profile-agent.filesystem.":workspace_roots"]

@@ -14,7 +14,7 @@
         "additionalProperties": false,
         "required": ["severity", "file", "message"],
         "properties": {
-          "severity": { "enum": ["warning", "info"] },
+          "severity": { "type": "string", "enum": ["warning", "info"] },
           "file": { "type": "string", "maxLength": 300 },
           "message": { "type": "string", "minLength": 1, "maxLength": 2000 }
         }
