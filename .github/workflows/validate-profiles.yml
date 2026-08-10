@@ -23,6 +23,8 @@ on:
       - 'automation/**'
       - '.agents/skills/generate-bacnet-profile/**'
       - '.github/codex/**'
+      - '.github/workflows/profile-*.yml'
+      - '.github/workflows/validate-profiles.yml'
       - 'registry.json'
 
 permissions:

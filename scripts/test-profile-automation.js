@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const yaml = require('js-yaml');
 const { parseIssue } = require('../automation/src/issue-parser');
 const { scrubPII } = require('../automation/src/pii-scrubber');
 const { decideIntake } = require('../automation/src/intake-policy');
@@ -25,6 +26,69 @@ const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { evaluate: evaluateShadowRun } = require('./evaluate-shadow-run');
 
 const ROOT = path.resolve(__dirname, '..');
+const PERMISSION_LEVELS = { none: 0, read: 1, write: 2 };
+
+function addPermissionLevels(target, permissions, workflowPath) {
+  if (!permissions) return;
+  assert.equal(typeof permissions, 'object', `${workflowPath} must use an explicit permission map`);
+  for (const [name, value] of Object.entries(permissions)) {
+    assert(Object.prototype.hasOwnProperty.call(PERMISSION_LEVELS, value), `${workflowPath} has unsupported ${name} permission '${value}'`);
+    target[name] = Math.max(target[name] || 0, PERMISSION_LEVELS[value]);
+  }
+}
+
+function localReusableWorkflow(uses) {
+  const value = String(uses || '');
+  return value.startsWith('./.github/workflows/') ? value.slice(2) : null;
+}
+
+function reusableWorkflowPermissions(workflowPath, workflows, memo = new Map(), visiting = new Set()) {
+  if (memo.has(workflowPath)) return memo.get(workflowPath);
+  assert(!visiting.has(workflowPath), `Reusable workflow cycle detected at ${workflowPath}`);
+  const workflow = workflows.get(workflowPath);
+  assert(workflow, `Missing reusable workflow: ${workflowPath}`);
+  visiting.add(workflowPath);
+  const required = {};
+  addPermissionLevels(required, workflow.permissions, workflowPath);
+  for (const job of Object.values(workflow.jobs || {})) {
+    addPermissionLevels(required, job.permissions, workflowPath);
+    const nested = localReusableWorkflow(job.uses);
+    if (nested) {
+      const nestedRequired = reusableWorkflowPermissions(nested, workflows, memo, visiting);
+      for (const [name, level] of Object.entries(nestedRequired)) required[name] = Math.max(required[name] || 0, level);
+    }
+  }
+  visiting.delete(workflowPath);
+  memo.set(workflowPath, required);
+  return required;
+}
+
+function testReusableWorkflowPermissionCeilings() {
+  const workflowDirectory = path.join(ROOT, '.github', 'workflows');
+  const workflows = new Map();
+  for (const name of fs.readdirSync(workflowDirectory).filter(name => name.endsWith('.yml'))) {
+    const workflowPath = path.posix.join('.github/workflows', name);
+    workflows.set(workflowPath, yaml.load(fs.readFileSync(path.join(workflowDirectory, name), 'utf8')));
+  }
+  const memo = new Map();
+  for (const [callerPath, workflow] of workflows) {
+    for (const [jobName, job] of Object.entries(workflow.jobs || {})) {
+      const calledPath = localReusableWorkflow(job.uses);
+      if (!calledPath) continue;
+      assert(workflows.has(calledPath), `${callerPath} job '${jobName}' calls missing workflow ${calledPath}`);
+      const allowed = {};
+      addPermissionLevels(allowed, job.permissions === undefined ? workflow.permissions : job.permissions, callerPath);
+      const required = reusableWorkflowPermissions(calledPath, workflows, memo);
+      for (const [permission, requiredLevel] of Object.entries(required)) {
+        const allowedLevel = allowed[permission] || 0;
+        assert(
+          allowedLevel >= requiredLevel,
+          `${callerPath} job '${jobName}' calls ${calledPath}, which may request ${permission}: ${Object.keys(PERMISSION_LEVELS)[requiredLevel]}, but the caller allows ${permission}: ${Object.keys(PERMISSION_LEVELS)[allowedLevel]}`
+        );
+      }
+    }
+  }
+}
 
 function syntheticIssue(overrides = {}) {
   return {
@@ -349,6 +413,7 @@ function testMetadataAndShadowEvaluation() {
 
 async function main() {
   const tests = [
+    testReusableWorkflowPermissionCeilings,
     testIssueParsingAndPII,
     testTrustAndApprovalStateMachine,
     testProviderConfiguration,
