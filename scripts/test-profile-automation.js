@@ -117,7 +117,7 @@ function testCodexActionContracts() {
   assert.equal(agentAction.uses, CODEX_ACTION_PIN, 'Profile Agent must pin the reviewed Codex Action revision');
   assert.equal(agentAction.with['permission-profile'], 'profile-agent');
   assert.equal(agentAction.with.sandbox, undefined, 'Permission profiles must not be combined with the legacy sandbox input');
-  assert(agentSteps.some(step => step.name === 'Verify the selected Environment API key'), 'Profile Agent must fail clearly before Codex starts without its Environment secret');
+  assert(agentSteps.some(step => step.name === 'Verify the selected provider API key'), 'Profile Agent must fail clearly before Codex starts without its provider Repository secret');
 
   const advisoryWorkflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-advisory-review.yml'), 'utf8'));
   const advisorySteps = advisoryWorkflow.jobs.advisory_agent.steps;
@@ -126,7 +126,32 @@ function testCodexActionContracts() {
   assert.equal(advisoryAction.uses, CODEX_ACTION_PIN, 'Advisory workflow must pin the reviewed Codex Action revision');
   assert.equal(advisoryAction.with['permission-profile'], ':read-only');
   assert.equal(advisoryAction.with.sandbox, undefined, 'Permission profiles must not be combined with the legacy sandbox input');
-  assert(advisorySteps.some(step => step.name === 'Verify the selected Environment API key'), 'Advisory Agent must fail clearly before Codex starts without its Environment secret');
+  assert(advisorySteps.some(step => step.name === 'Verify the selected provider API key'), 'Advisory Agent must fail clearly before Codex starts without its provider Repository secret');
+}
+
+function testProviderSecretRouting() {
+  for (const name of ['profile-generate.yml', 'profile-intake.yml', 'profile-review.yml', 'profile-shadow.yml']) {
+    const workflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', name), 'utf8'));
+    const buildJob = Object.values(workflow.jobs).find(job => job.uses === './.github/workflows/profile-build.yml');
+    assert(buildJob, `${name} must call profile-build.yml`);
+    assert.equal(buildJob.secrets, 'inherit', `${name} must forward Repository secrets to profile-build.yml`);
+  }
+
+  const buildWorkflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-build.yml'), 'utf8'), { schema: yaml.JSON_SCHEMA });
+  const declared = buildWorkflow.on.workflow_call.secrets;
+  assert(declared.PROFILE_AGENT_OPENAI_API_KEY, 'Reusable build must declare the OpenAI Repository secret');
+  assert(declared.PROFILE_AGENT_DEEPSEEK_API_KEY, 'Reusable build must declare the DeepSeek Repository secret');
+  for (const jobName of ['agent_1', 'agent_2']) {
+    const routed = buildWorkflow.jobs[jobName].secrets.PROFILE_AGENT_CALL_API_KEY;
+    assert(routed.includes('secrets.PROFILE_AGENT_OPENAI_API_KEY'), `${jobName} must route the OpenAI key`);
+    assert(routed.includes('secrets.PROFILE_AGENT_DEEPSEEK_API_KEY'), `${jobName} must route the DeepSeek key`);
+  }
+
+  const attemptWorkflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-agent-attempt.yml'), 'utf8'), { schema: yaml.JSON_SCHEMA });
+  assert.equal(attemptWorkflow.on.workflow_call.secrets.PROFILE_AGENT_CALL_API_KEY.required, true);
+  const attemptSource = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-agent-attempt.yml'), 'utf8');
+  assert(!attemptSource.includes('secrets.PROFILE_AGENT_API_KEY'), 'Agent attempt must not rely on an Environment secret crossing reusable workflows');
+  assert(attemptSource.includes('secrets.PROFILE_AGENT_CALL_API_KEY'), 'Agent attempt must use only the explicitly routed provider key');
 }
 
 function testShadowWorkflowDAG() {
@@ -527,6 +552,7 @@ async function main() {
     testReusableWorkflowPermissionCeilings,
     testReusableWorkflowSecretContracts,
     testCodexActionContracts,
+    testProviderSecretRouting,
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,

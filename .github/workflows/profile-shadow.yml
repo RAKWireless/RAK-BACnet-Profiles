@@ -50,6 +50,7 @@ jobs:
       effort: ${{ inputs.effort }}
       mode: shadow
       allow_existing: true
+    secrets: inherit
 
   summary:
     needs: shadow

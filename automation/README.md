@@ -25,10 +25,12 @@ profile-agent-openai
 profile-agent-deepseek
 ```
 
-Each enabled Environment uses the same secret name:
+Provider API keys are Repository secrets so they can be explicitly forwarded
+through nested reusable workflows:
 
 ```text
-PROFILE_AGENT_API_KEY
+PROFILE_AGENT_OPENAI_API_KEY
+PROFILE_AGENT_DEEPSEEK_API_KEY
 ```
 
 Environment variables:
@@ -43,7 +45,7 @@ Environment variables:
 For example, configure the `profile-agent-deepseek` Environment with:
 
 ```text
-Secret:   PROFILE_AGENT_API_KEY=<DeepSeek API key>
+Repository secret: PROFILE_AGENT_DEEPSEEK_API_KEY=<DeepSeek API key>
 Variable: PROFILE_AGENT_MODEL=deepseek-v4-flash
 Variable: PROFILE_AGENT_EFFORT=high
 Variable: PROFILE_AGENT_RESPONSES_ENDPOINT=https://api.deepseek.com/v1/responses
@@ -52,8 +54,10 @@ Variable: PROFILE_AGENT_RESPONSES_ENDPOINT=https://api.deepseek.com/v1/responses
 Do not commit API keys or `experimental_bearer_token`. The provider catalog at
 `automation/config/providers.json` contains only the provider allowlist and
 HTTPS endpoint fallbacks; it does not select a model or reasoning effort.
-The Environment name is always derived as `profile-agent-<provider>`, so it
-cannot drift from the Workflow's secret scope. The shared
+The Environment name is always derived as `profile-agent-<provider>` for the
+provider-specific runtime variables. The build workflow selects the matching
+Repository secret and explicitly forwards only that key to the Agent attempt;
+other provider keys are not exposed to the Agent job. The shared
 `.github/codex/config.toml` contains only the restricted Codex runtime policy.
 In CI, the Action supplies its local proxy provider and isolates the real
 Environment key. Agent tool commands have workspace-only file access and no

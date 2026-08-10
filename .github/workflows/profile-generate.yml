@@ -76,3 +76,4 @@ jobs:
       effort: ${{ needs.prepare.outputs.effort }}
       mode: generate
       review_cycle: 0
+    secrets: inherit

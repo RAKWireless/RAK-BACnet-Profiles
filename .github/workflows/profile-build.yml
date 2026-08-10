@@ -40,6 +40,13 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      PROFILE_AGENT_OPENAI_API_KEY:
+        description: API key for the openai provider
+        required: false
+      PROFILE_AGENT_DEEPSEEK_API_KEY:
+        description: API key for the deepseek provider
+        required: false
     outputs:
       valid:
         value: ${{ jobs.result.outputs.valid }}
@@ -140,6 +147,8 @@ jobs:
       feedback: ${{ inputs.feedback }}
       previous_ref: ${{ inputs.previous_ref }}
       shadow: ${{ inputs.mode == 'shadow' }}
+    secrets:
+      PROFILE_AGENT_CALL_API_KEY: ${{ inputs.provider == 'openai' && secrets.PROFILE_AGENT_OPENAI_API_KEY || secrets.PROFILE_AGENT_DEEPSEEK_API_KEY }}
 
   mark_validating:
     needs: agent_1
@@ -199,6 +208,8 @@ jobs:
       previous_candidate_artifact: profile-candidate-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
       previous_validation_artifact: profile-validation-${{ inputs.issue_number }}-${{ inputs.issue_body_sha }}-1
       shadow: ${{ inputs.mode == 'shadow' }}
+    secrets:
+      PROFILE_AGENT_CALL_API_KEY: ${{ inputs.provider == 'openai' && secrets.PROFILE_AGENT_OPENAI_API_KEY || secrets.PROFILE_AGENT_DEEPSEEK_API_KEY }}
 
   validate_2:
     needs: [collect, agent_2]

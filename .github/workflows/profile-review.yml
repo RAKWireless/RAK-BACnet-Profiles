@@ -72,6 +72,7 @@ jobs:
       feedback: ${{ needs.authorize.outputs.feedback }}
       review_cycle: ${{ fromJSON(needs.authorize.outputs.review_cycle) }}
       previous_ref: ${{ github.event.pull_request.head.ref }}
+    secrets: inherit
 
   manual_required:
     needs: authorize

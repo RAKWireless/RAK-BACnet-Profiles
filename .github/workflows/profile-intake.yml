@@ -67,3 +67,4 @@ jobs:
       effort: ${{ needs.intake.outputs.effort }}
       mode: generate
       review_cycle: 0
+    secrets: inherit
