@@ -1,646 +1,443 @@
-# Complete Guide to Profile Test Data
+# Complete Guide to Profile Test Fixtures
 
-This guide provides detailed instructions on how to create test data for BACnet Profiles to ensure the correctness of Codec functions.
+This guide explains how to create and maintain test fixtures for BACnet Profiles. Test fixtures validate that the Codec decodes real payloads correctly and that the decoded data matches the Profile's BACnet object mapping.
 
 ---
 
 ## 📂 Directory Structure
 
-Each Profile can contain its own test data:
+Each Profile carries exactly one committed test fixture:
 
 ```
 profiles/
 └── Vendor/
     ├── Vendor-Model.yaml          # Profile file
-    └── tests/                      # Test data directory
-        ├── test-data.json          # Test input (required)
-        └── expected-output.json    # Expected output (optional, recommended)
+    └── tests/
+        └── Vendor-Model.test.json # Test fixture (required)
 ```
 
----
-
-## 📋 Purpose of the Two Test Files
-
-### 1. test-data.json (Required)
-
-**Purpose**: Define test input data
-
-**Contains**:
-- fPort (LoRaWAN port number)
-- input (hexadecimal uplink data)
-- Test case names and descriptions
-
-**Validation Behavior**: Ensures Codec functions execute successfully without throwing exceptions
+The fixture file must be named after the Profile it tests, e.g. `Milesight-EM410-RDL.yaml` → `tests/Milesight-EM410-RDL.test.json`.
 
 ---
 
-### 2. expected-output.json (Optional, Recommended)
+## 📋 What a Test Fixture Does
 
-**Purpose**: Define expected decode output results
+A single `.test.json` fixture contains both the test inputs and the expected outputs for one Profile:
 
-**Contains**:
-- Complete data structure expected to be returned by each test case
+- **Inputs**: uplink payloads (`fPort` + hex `input`) and their descriptions
+- **Expected outputs**: the BACnet row array each payload should decode to
+- **Metadata**: evidence level, data sources, and robustness policy
 
-**Validation Behavior**: **Deep comparison** of actual output against expected output, ensuring complete match
+The validator runs every test case through the Profile Codec and checks:
 
-**Why Recommended**:
-- ✅ Ensures output correctness, not just "no errors"
-- ✅ Prevents regression: immediately detects output changes after code modifications
-- ✅ Serves as documentation: clearly shows what each test data should decode to
+1. Decoding succeeds and is deterministic
+2. The decoded `data` array matches `expectedOutput` exactly (when present)
+3. Every decoded entry is valid against the `datatype` mapping (channel, name, unit, value)
+4. All non-output `datatype` channels are covered by the fixture
+5. Robustness: truncated payloads and unknown fPorts are rejected cleanly (configurable)
 
 ---
 
-## 🔧 Steps to Create Test Data
+## 🔧 Steps to Create a Test Fixture
 
-### Step 1: Create Test Directory
+### Step 1: Create the Tests Directory
 
 ```bash
 mkdir -p profiles/Vendor/tests
 ```
 
-### Step 2: Create test-data.json
+### Step 2: Create the Fixture File
 
-Obtain uplink data from real devices and create the test input file:
+Create `profiles/Vendor/tests/Vendor-Model.test.json`:
 
 ```json
 {
-  "description": "Vendor-Model test data set",
+  "schemaVersion": 1,
+  "profile": "Vendor-Model",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "official-document",
+      "reference": "Vendor-Model User Guide, payload section",
+      "citation": "Periodic and alarm payload examples used as test vectors"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": false
+  },
   "testCases": [
     {
-      "name": "Normal working data",
-      "model": "LRS20100",
+      "name": "Normal periodic report",
       "fPort": 10,
-      "input": "040164010000000f41dc",
-      "description": "Temperature=25°C, Humidity=60%, Battery=100%"
+      "input": "0175640500000482b3",
+      "description": "Temperature=25.0C, Humidity=60%",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 60, "unit": "percent" }
+      ]
     },
     {
-      "name": "Low temperature alert",
-      "model": "LRS20100",
+      "name": "High temperature alarm",
       "fPort": 10,
-      "input": "0801640100000000ffdc",
-      "description": "Temperature=-5°C, triggers low temperature alarm"
+      "input": "0482c82701",
+      "description": "Temperature alarm triggered",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 31.0, "unit": "degreesCelsius" },
+        { "name": "High Temp Alarm", "channel": 3, "value": 1, "unit": null }
+      ]
     }
   ]
 }
 ```
 
-**Field Descriptions**:
-- `name` (Required): Test case name
-- `model` (Optional): Device model, used to distinguish test cases for different models
-  - If `model` is specified, the test case will only run when validating the corresponding model Profile
-  - If `model` is not specified, the test case applies to all models (generic test)
-  - Model name is automatically extracted from the Profile filename (e.g., `Senso8-LRS20100.yaml` → `LRS20100`)
-- `fPort` (Required): LoRaWAN port number
-- `input` (Required): Uplink data in hexadecimal format
-- `description` (Optional): Test case description
+---
 
-**Best Practices**:
-- ✅ Use **real device data**, do not fabricate
-- ✅ Cover main scenarios: normal, boundary, exceptional
-- ✅ Add clear descriptions explaining data meaning
-- ✅ For multi-model scenarios, use `model` field to distinguish test cases
+## 📖 Fixture Field Reference
 
-### Step 3: Run Decode to View Actual Output
+### Top-Level Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `schemaVersion` | ✅ | Schema version, must be `1` |
+| `profile` | ✅ | Must exactly match the YAML file name (without extension), e.g. `Milesight-EM410-RDL` |
+| `evidenceLevel` | ✅ | `known-answer`, `documentation-only`, or `decoder-derived` (see below) |
+| `reviewMode` | ❌ | `single-model` (default) or `multi-model` |
+| `sources` | ✅ | Evidence sources for the payloads (at least one) |
+| `fPortPolicy` | ❌ | How fPort is treated: `fixed`, `agnostic`, or `ignored` |
+| `robustness` | ❌ | Robustness check toggles: `checkTruncation`, `checkUnknownFPort`, `checkFuzz` |
+| `strict` | ❌ | When `true`, enables stricter contract checks (see below) |
+| `testCases` | ✅ | Array of test cases (at least one) |
+
+### evidenceLevel
+
+| Value | Meaning | Requirement |
+|-------|---------|-------------|
+| `known-answer` | Expected outputs verified against an independent source (official document, customer data) | At least one `expectedOutput`; missing channel coverage is an **error** |
+| `documentation-only` | Values derived from documentation, no independent oracle | Coverage gaps are **warnings** only |
+| `decoder-derived` | Expected outputs produced by the decoder itself | At least one `expectedOutput` |
+
+### sources
+
+```json
+"source": {
+  "type": "official-document",
+  "reference": "Milesight EM410-RDL User Guide",
+  "citation": "Periodic and alarm payload examples"
+}
+```
+
+- `type`: one of `issue`, `official-document`, `vendor-decoder`, `customer-data`
+- `reference` (required): document name, URL, or issue reference
+- `citation` (optional): where exactly the test vector came from
+
+### fPortPolicy
+
+Describes how the decoder treats the LoRaWAN fPort, which changes the robustness checks:
+
+```json
+// Fixed set of known ports
+{ "mode": "fixed", "ports": [85, 86], "citation": "Port 85 for data, 86 for config" }
+
+// Decoder ignores the port (any application port decodes the same)
+{ "mode": "agnostic", "representativeFPort": 85, "citation": "Payloads are port-agnostic" }
+
+// fPort is not meaningful for this device
+{ "mode": "ignored", "representativeFPort": 85, "reason": "Device does not use fPort routing" }
+```
+
+### robustness
+
+All three checks default as shown:
+
+| Field | Default | Behavior |
+|-------|---------|----------|
+| `checkTruncation` | `true` | Truncates each input at many lengths; the decoder must return an `errors` array and no BACnet `data` |
+| `checkUnknownFPort` | `true` | Runs inputs on an unused fPort; the decoder must return an `errors` array and no `data` |
+| `checkFuzz` | `false` | Runs 16 seeded fuzz inputs; output must be deterministic and well-formed |
+
+### testCases
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | ✅ | Unique test case name |
+| `messageType` | ❌ | Optional label, e.g. `periodic`, `alarm`, `boot` |
+| `fPort` | ✅ | LoRaWAN port, integer 1–223 |
+| `input` | ✅ | Uplink payload in hex. Spaces and dashes are allowed (e.g. `"01 75 64 05"` or `"01-75-64-05"`) |
+| `description` | ❌ | Human-readable meaning of the payload |
+| `expectedOutput` | ❌ | Expected decoded `data` array (see below) |
+
+### expectedOutput
+
+`expectedOutput` is an array that directly corresponds to the `data` array returned by `decodeUplink`. Each entry has four fields:
+
+```json
+{ "name": "Temperature", "channel": 1, "value": 25.0, "unit": "degreesCelsius" }
+```
+
+- `name` — must exactly match the `datatype.<channel>.name` in the Profile
+- `channel` — positive integer, must be declared in `datatype`
+- `value` — finite number (SQLite REAL storage). Use integers for whole values and floats for scaled values
+- `unit` — must be a **canonical BACnet unit name** from the allowed list, or `null` when the object has no unit (e.g. `BinaryInputObject`)
+
+⚠️ Do not use display units like `"°C"` or `"%"`. Use the canonical names:
+
+| Measurement | Canonical unit name |
+|-------------|---------------------|
+| Temperature | `degreesCelsius` |
+| Humidity (RH) | `percent` or `percentRelativeHumidity` |
+| Battery / level | `percent` |
+| Distance | `millimeters` |
+| Gas concentration | `partsPerMillion` |
+| Signal strength | `decibels` |
+| Voltage | `millivolts` |
+| Light intensity | `luxes` |
+| Unitless (binary/status) | `null` |
+
+The full allowed unit list lives in `scripts/lib/units.js` (`ALLOWED_UNITS`). The unit in `expectedOutput` must match `datatype.<channel>.units`.
+
+---
+
+## 🔍 Running Validation
+
+### Step 3: Decode a Single Payload Interactively
 
 ```bash
 node scripts/test-codec.js \
-  -f profiles/Vendor/Model.yaml \
+  -f profiles/Vendor/Vendor-Model.yaml \
   -p 10 \
-  -u 040164010000000f41dc
+  -u 0175640500000482b3
 ```
 
-**Example Output**:
-```json
-{
-  "data": [
-    { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "°C" },
-    { "name": "Humidity", "channel": 2, "value": 60.0, "unit": "%" },
-    { "name": "Battery", "channel": 3, "value": 100, "unit": "%" }
-  ]
-}
-```
+Output shows the decoded `data` array, which is what you should put into `expectedOutput` (after independently confirming it is correct).
 
-### Step 4: Create expected-output.json
-
-After confirming the output is correct, create the expected output file:
-
-```json
-{
-  "description": "Vendor-Model expected output",
-  "testCases": [
-    {
-      "name": "Normal working data",
-      "expectedOutput": [
-        { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "°C" },
-        { "name": "Humidity", "channel": 2, "value": 60.0, "unit": "%" },
-        { "name": "Battery", "channel": 3, "value": 100, "unit": "%" }
-      ]
-    },
-    {
-      "name": "Low temperature alert",
-      "expectedOutput": [
-        { "name": "Temperature", "channel": 1, "value": -5.0, "unit": "°C" },
-        { "name": "Humidity", "channel": 2, "value": 60.0, "unit": "%" },
-        { "name": "Battery", "channel": 3, "value": 100, "unit": "%" },
-        { "name": "LowTempAlert", "channel": 4, "value": 1, "unit": null }
-      ]
-    }
-  ]
-}
-```
-
-**Important Notes**:
-- ⚠️ `expectedOutput` is an **array**, directly corresponding to the `data` field
-- ⚠️ Test case order must **exactly match** `test-data.json`
-- ⚠️ Include all fields: `name`, `channel`, `value`, `unit`
-
-### Step 5: Run Complete Validation
+### Step 4: Validate One Profile with Its Fixture
 
 ```bash
-node scripts/validate-profile.js profiles/Vendor/Model.yaml
+node scripts/run-profile-ci.js \
+  profiles/Vendor/Vendor-Model.yaml \
+  --fixture profiles/Vendor/tests/Vendor-Model.test.json
 ```
 
-**Success Output**:
+`run-profile-ci.js` is the strict CI entrypoint used by the Profile Automation workflow. It runs:
+- YAML syntax, JSON Schema, required fields
+- Codec static safety analysis and syntax
+- BACnet object configuration and file naming
+- Profile semantics (datatype ordering, units, mapping rules)
+- Full fixture execution
+
+Each check prints `PASS` or `FAIL` with detailed errors.
+
+### Step 5: Validate All Committed Fixtures
+
+```bash
+node scripts/validate-committed-fixtures.js
 ```
-🧪 Running test data validation...
-  ✓ Pass
 
-Test result details:
-  ✓ Normal working data [Output matched]
-  ✓ Low temperature alert [Output matched]
+This finds every `*.test.json` under `profiles/`, pairs it with its Profile, and validates it. It is one of the required repository checks:
 
-======================================================================
-✅ Validation passed
-======================================================================
+```bash
+node scripts/validate-all.js                  # All Profile YAML files (basic)
+node scripts/validate-committed-fixtures.js   # All committed test fixtures
+node scripts/validate-registry.js             # registry.json
+node scripts/test-profile-automation.js       # Automation regression tests
 ```
 
 ---
 
-## 📊 Validation Behavior Comparison
+## ✅ What the Fixture Validator Checks
 
-| Test File Configuration | Validation Behavior | Test Result | Recommendation |
-|------------------------|---------------------|-------------|----------------|
-| Only `test-data.json` | Only checks decode success | `[Output not verified]` | ⚠️ Basic |
-| Both files present | **Deep comparison of output** | `[Output matched]` | ✅ Recommended |
+For every test case the validator:
 
----
+1. **Runs the decoder twice** and requires identical output (determinism)
+2. **Compares the `data` array** with `expectedOutput` using deep equality (array order matters, object key order does not)
+3. **Validates each decoded entry**:
+   - `channel` is a positive integer declared in `datatype`
+   - No duplicate channels in one decode result
+   - `name` equals `datatype.<channel>.name`
+   - `unit` equals `datatype.<channel>.units` (or `null`)
+   - `value` is a finite number
+4. **Checks channel coverage**: every non-output `datatype` channel must appear in at least one test result. For `known-answer`/`decoder-derived` fixtures a gap is an error; for `documentation-only` it is a warning
+5. **Runs robustness checks** according to `robustness` and `fPortPolicy`
 
-## 🔍 Deep Comparison Mechanism
-
-The validation script performs **strict deep comparison**:
-
-### Comparison Content
-- ✅ Array length
-- ✅ All fields in each object
-- ✅ Field value types and values
-- ✅ null and undefined
-
-### Example
-
-**Expected Output**:
-```json
-[
-  { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "°C" }
-]
-```
-
-**Actual Output**:
-```json
-[
-  { "name": "Temperature", "channel": 1, "value": 25.1, "unit": "°C" }
-]
-```
-
-**Result**: ❌ Validation failed (value mismatch: 25.0 vs 25.1)
+Additional contract checks apply to `strict: true` fixtures:
+- BinaryInputObject values must be exactly `0` or `1`
+- On success the decoder must omit `errors`; on failure it must return a non-empty string array and no `data`
 
 ---
 
 ## ⚠️ Common Errors and Solutions
 
-### Error 1: Output Mismatch - Field Order
+### Error 1: Fixture profile mismatch
 
 ```
-❌ Error: Expected and actual output field order differs
+Fixture profile 'Vendor-Model' must equal 'Vendor-ModelX'
 ```
 
-**Cause**: JavaScript object field order may vary
+The `profile` field must exactly match the YAML filename (without extension).
 
-**Solution**: Deep comparison doesn't care about field order, only field existence and values. If error occurs, check for field name typos.
+### Error 2: Unit mismatch
+
+```
+Channel 1 unit '°C' does not match datatype unit 'degreesCelsius'
+```
+
+Use the canonical BACnet unit names from `scripts/lib/units.js`. Display strings such as `°C` or `%` are not allowed.
+
+### Error 3: known-answer fixture has no expectedOutput
+
+```
+known-answer fixtures must contain at least one expectedOutput
+```
+
+`known-answer` and `decoder-derived` fixtures must embed expected outputs. Only `documentation-only` fixtures may omit them.
+
+### Error 4: Decoded channel not declared in datatype
+
+```
+Decoded channel 9 is not declared in datatype
+```
+
+Every entry the decoder produces must map to a channel in the Profile's `datatype`. Add the channel or fix the decoder.
+
+### Error 5: Missing channel coverage
+
+```
+Test fixtures do not cover datatype channels: 4, 5
+```
+
+Add test cases that produce these channels, or (for `documentation-only`) accept the warning.
+
+### Error 6: Truncation / unknown fPort robustness failure
+
+```
+truncated length 4: decoder must return an errors array
+```
+
+The decoder must gracefully reject invalid input by returning `{ data: [], errors: ["..."] }` (or `{ errors: [...] }`) instead of throwing or returning partial data. `fPortPolicy` controls which fPorts are considered valid.
+
+### Error 7: Actual output does not match expectedOutput
+
+```
+Test case 'X': Actual output does not match expectedOutput
+```
+
+Re-decode the payload with `test-codec.js`, confirm the correct values, then update `expectedOutput`. Watch for numeric format (`25` vs `25.0` is fine in JSON, but the arrays must otherwise match exactly) and array element order.
 
 ---
 
-### Error 2: Output Mismatch - Numeric Types
+## 🏢 Multiple Models
 
-```json
-// Expected
-{ "value": 25 }
-
-// Actual
-{ "value": 25.0 }
-```
-
-**Cause**: In JavaScript, `25` and `25.0` are equal, but JSON serialization may differ in some cases
-
-**Solution**: Consistently use float format (`25.0`) or integer format (`25`)
-
----
-
-### Error 3: Test Case Order Inconsistent
-
-```
-❌ Error: Test case 1 in test-data.json doesn't match test case 1 in expected-output.json
-```
-
-**Cause**: Test case order differs between the two files
-
-**Solution**: Ensure the `testCases` array order is exactly the same in both files
-
----
-
-### Error 4: expectedOutput Format Error
-
-```json
-// ❌ Incorrect format
-{
-  "expectedOutput": {
-    "data": [...]
-  }
-}
-
-// ✅ Correct format
-{
-  "expectedOutput": [...]
-}
-```
-
-**Cause**: `expectedOutput` should be a direct array, not wrapped in a `data` object
-
-**Solution**: `expectedOutput` directly corresponds to the `data` field returned by `decodeUplink`
-
----
-
-## 🏢 Multi-Model Test Case Management
-
-When multiple model Profiles exist under the same vendor directory, you can use the `model` field to distinguish and filter test cases.
-
-### Use Cases
-
-Suitable for situations where:
-- A vendor has multiple product models
-- Different models use the same protocol but different data formats
-- You need to manage test cases for all models in a single `tests` directory
-
-### Directory Structure Example
+There is no `model` field inside test cases. Each fixture is bound to exactly one Profile via the `profile` field and the file name. When a vendor ships several models, create one fixture per model:
 
 ```
 profiles/Senso8/
-├── Senso8-LRS20100.yaml      # Temperature & Humidity Sensor
-├── Senso8-LRS20200.yaml      # Temperature Sensor
-├── Senso8-LRS20310.yaml      # CO2 Sensor
-├── Senso8-LRS20600.yaml      # Door Sensor
+├── Senso8-LRS20100.yaml
+├── Senso8-LRS20200.yaml
+├── Senso8-LRS20600.yaml
 └── tests/
-    ├── test-data.json         # Test inputs for all models
-    └── expected-output.json   # Expected outputs for all models
+    ├── Senso8-LRS20100.test.json
+    ├── Senso8-LRS20200.test.json
+    └── Senso8-LRS20600.test.json
 ```
 
-### Configuration Example
-
-**test-data.json**:
-```json
-{
-  "description": "Senso8 Series Test Cases",
-  "testCases": [
-    {
-      "name": "LRS20100 Temperature & Humidity Test",
-      "model": "LRS20100",
-      "fPort": 10,
-      "input": "01016400e901ef00000000"
-    },
-    {
-      "name": "LRS20200 Temperature Test",
-      "model": "LRS20200",
-      "fPort": 10,
-      "input": "01010064000000000000"
-    },
-    {
-      "name": "Generic Battery Test",
-      "fPort": 10,
-      "input": "010164006400640000"
-    }
-  ]
-}
-```
-
-**expected-output.json**:
-```json
-{
-  "description": "Expected Outputs",
-  "testCases": [
-    {
-      "name": "LRS20100 Temperature & Humidity Test",
-      "model": "LRS20100",
-      "expectedOutput": [
-        {
-          "name": "Temperature",
-          "channel": 1,
-          "value": 23.3,
-          "unit": "°C"
-        },
-        {
-          "name": "Humidity",
-          "channel": 2,
-          "value": 49.5,
-          "unit": "%"
-        }
-      ]
-    },
-    {
-      "name": "LRS20200 Temperature Test",
-      "model": "LRS20200",
-      "expectedOutput": [
-        {
-          "name": "Temperature",
-          "channel": 1,
-          "value": 10.0,
-          "unit": "°C"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### Validation Behavior
-
-#### Automatic Model Detection
-
-The validation script automatically extracts the model from the filename:
-
-- `Senso8-LRS20100.yaml` → Model: `LRS20100`
-- `Senso8-LRS20200.yaml` → Model: `LRS20200`
-- `Dragino-LDS02.yaml` → Model: `LDS02`
-
-#### Test Case Filtering Rules
-
-When validating a specific Profile:
-
-1. **Matching Model Tests** - Run test cases where `model` field matches the current model
-2. **Generic Tests** - Run test cases without a `model` field
-3. **Skip Other Models** - Skip test cases with `model` field for other models
-
-#### Validation Results Example
-
-Given the following test cases:
-
-```json
-{
-  "testCases": [
-    { "name": "Test A", "model": "LRS20100", ... },
-    { "name": "Test B", "model": "LRS20200", ... },
-    { "name": "Test C", ... }  // No model field
-  ]
-}
-```
-
-| Profile Being Validated | Test Cases Run |
-|------------------------|----------------|
-| `Senso8-LRS20100.yaml` | Test A, Test C |
-| `Senso8-LRS20200.yaml` | Test B, Test C |
-| `Senso8-LRS20600.yaml` | Test C |
-
-### Command Line Output
-
-```bash
-node scripts/validate-profile.js profiles/Senso8/Senso8-LRS20100.yaml
-```
-
-Output example:
-```
-🧪 Running test data validation...
-  Model detected: LRS20100
-  Running 2 of 5 test cases
-  ✓ Pass
-
-Test result details:
-  ✓ LRS20100 Temperature & Humidity Test [LRS20100] [Output matched]
-  ✓ Generic Battery Test [Output not verified]
-```
-
-**Description**:
-- `Model detected: LRS20100` - Automatically detected model
-- `Running 2 of 5 test cases` - Ran 2 tests out of 5 total
-- `[LRS20100]` - Displays the model this test case belongs to
-
-### Best Practices
-
-#### 1. Naming Convention
-
-Include model information in test case names:
-
-```json
-{
-  "name": "LRS20100 Normal Temperature & Humidity Test",
-  "model": "LRS20100",
-  ...
-}
-```
-
-#### 2. Generic Test Cases
-
-For functionality applicable to all models (like battery level, button), don't specify the `model` field:
-
-```json
-{
-  "name": "Battery Level Test",
-  // No model field, applies to all models
-  "fPort": 10,
-  "input": "..."
-}
-```
-
-#### 3. Group by Functionality
-
-```json
-{
-  "testCases": [
-    // Basic functionality tests
-    { "name": "LRS20100 Basic Data Report", "model": "LRS20100", ... },
-    { "name": "LRS20200 Basic Data Report", "model": "LRS20200", ... },
-    
-    // Alarm tests
-    { "name": "LRS20100 High Temperature Alarm", "model": "LRS20100", ... },
-    { "name": "LRS20100 Low Temperature Alarm", "model": "LRS20100", ... },
-    
-    // Generic tests
-    { "name": "Generic Battery Level Test", ... },
-    { "name": "Generic Button Test", ... }
-  ]
-}
-```
-
-### Troubleshooting
-
-#### Issue: Test cases are not being run
-
-**Cause**:
-- Typo in `model` field
-- Filename doesn't follow `Vendor-Model.yaml` format
-
-**Solution**:
-1. Check if `model` field matches the model in filename
-2. Ensure filename format is `Vendor-Model.yaml`
-
-#### Issue: All tests are skipped
-
-**Cause**:
-- All test cases have `model` specified, but none match the current model
-
-**Solution**:
-- Check the `model` field of test cases
-- Or remove `model` field to make them generic tests
-
-#### Issue: Cannot detect model
-
-Validation script outputs:
-```
-Model detected: null
-Running 5 of 5 test cases
-```
-
-**Cause**:
-- Filename doesn't follow `Vendor-Model.yaml` format
-
-**Solution**:
-- Rename file to standard format, e.g., `Senso8-LRS20100.yaml`
+Use `reviewMode: "multi-model"` in each fixture to signal the models share a protocol family.
 
 ---
 
-## 🎯 Test Data Best Practices
+## 🎯 Best Practices
 
-### 1. Cover Main Scenarios
+### 1. Cover Every Channel
 
-```json
-{
-  "testCases": [
-    { "name": "Normal working data", ... },
-    { "name": "Boundary value - Maximum temperature", ... },
-    { "name": "Boundary value - Minimum temperature", ... },
-    { "name": "Alarm triggered", ... },
-    { "name": "Low battery", ... },
-    { "name": "Sensor disconnected", ... }
-  ]
-}
-```
+The validator enforces that all non-output `datatype` channels appear in at least one test case. Plan test cases so each channel is produced at least once, including alarm/status channels.
 
-### 2. Use Clear Naming
+### 2. Use Real Payloads
 
-✅ **Good Naming**:
-- "Normal temperature humidity data - 25°C, 60%"
-- "Temperature sensor disconnect alarm"
-- "Low battery warning - Battery 10%"
+Prefer payloads captured from real devices, official documents, or the requesting Issue. Mark where each vector came from in `sources` with `type`, `reference`, and `citation`.
 
-❌ **Poor Naming**:
-- "Test1"
-- "test"
-- "data"
+### 3. Set the Correct evidenceLevel
 
-### 3. Add Detailed Descriptions
+- Only use `known-answer` when the expected values are independently confirmed
+- Use `documentation-only` when values are parsed from documentation alone
+- Use `decoder-derived` for outputs produced by the decoder under review
+
+### 4. Keep Units Canonical
+
+Never use display units in `expectedOutput`. Copy the unit from `datatype` (`degreesCelsius`, `percent`, `partsPerMillion`, `millimeters`, etc.) or use `null` for unitless objects.
+
+### 5. Write Clear Descriptions
 
 ```json
 {
-  "name": "High temperature alarm",
+  "name": "Low temperature alarm",
   "fPort": 10,
-  "input": "0801E40308009C0000640A",
-  "description": "Temperature=45°C, triggers high temperature alarm (threshold 40°C), Humidity=50%, Battery=100%"
+  "input": "0801640100000000ffdc",
+  "description": "Temperature=-5C, triggers low temperature alarm, battery=100%"
 }
 ```
 
-### 4. Use Real Data
+### 6. Run Validation After Every Codec Change
 
 ```bash
-# Obtain real uplink data from RAK gateway
-# ChirpStack log example:
-# Uplink: {"data":"040164010000000f41dc","fPort":10}
-```
-
-### 5. Keep Expected Output Accurate
-
-Run tests regularly to ensure expected output matches actual behavior:
-
-```bash
-# Run after each Codec modification
-node scripts/validate-profile.js profiles/Vendor/Model.yaml
+node scripts/run-profile-ci.js \
+  profiles/Vendor/Vendor-Model.yaml \
+  --fixture profiles/Vendor/tests/Vendor-Model.test.json
+node scripts/validate-committed-fixtures.js
 ```
 
 ---
 
 ## 🛠️ Debugging Tips
 
-### Tip 1: View Detailed Differences
-
-Validation failures automatically display differences:
-
-```
-✗ Normal data: Output does not match expected result
-  Expected output:
-  [
-    { "name": "Temperature", "value": 25.0 }
-  ]
-  Actual output:
-  [
-    { "name": "Temperature", "value": 25.1 }
-  ]
-```
-
-### Tip 2: Add Tests Incrementally
-
-Progress from simple to complex:
-
-```json
-// Step 1: Simplest case
-{ "testCases": [
-  { "name": "Basic data", ... }
-]}
-
-// Step 2: Add boundary cases
-{ "testCases": [
-  { "name": "Basic data", ... },
-  { "name": "Maximum value", ... },
-  { "name": "Minimum value", ... }
-]}
-```
-
-### Tip 3: Use JSON Tools to Validate Format
+### Inspect a Single Payload
 
 ```bash
-# Validate JSON format is correct
-cat profiles/Vendor/tests/test-data.json | jq .
-cat profiles/Vendor/tests/expected-output.json | jq .
+node scripts/test-codec.js -f profiles/Vendor/Vendor-Model.yaml -p 10 -u 0175640500000482b3
 ```
 
----
+### Batch-Test an Existing Data File
 
-## 📚 Complete Examples
+`test-codec.js` also supports a batch mode against a JSON test-data file:
 
-View examples in the project:
+```bash
+node scripts/test-codec.js --batch profiles/Vendor/Vendor-Model.yaml \
+  examples/minimal-profile/tests/test-data.json
+```
 
-- `examples/minimal-profile/tests/` - Minimal example
-- `examples/standard-profile/tests/` - Complete example
+### Validate JSON Syntax
+
+```bash
+jq . profiles/Vendor/tests/Vendor-Model.test.json
+```
 
 ---
 
 ## ✅ Checklist
 
-Confirm before submitting Profile:
+Confirm before submitting a Profile:
 
-- [ ] Created `tests/test-data.json`
-- [ ] Created `tests/expected-output.json`
-- [ ] Contains at least 2-3 test cases
-- [ ] Test data comes from real devices
-- [ ] Test case order is consistent in both files
-- [ ] All tests pass when running `validate-profile.js`
-- [ ] All tests show `[Output matched]`
+- [ ] Created `tests/Vendor-Model.test.json` next to the Profile
+- [ ] `schemaVersion: 1` and `profile` matches the YAML filename
+- [ ] `evidenceLevel` and `sources` describe where the vectors came from
+- [ ] At least one `expectedOutput` (unless `documentation-only`)
+- [ ] Every non-output `datatype` channel is covered by at least one test case
+- [ ] `expectedOutput` uses canonical BACnet units that match `datatype`
+- [ ] `node scripts/run-profile-ci.js` passes for the Profile and its fixture
+- [ ] `node scripts/validate-committed-fixtures.js` passes
 
 ---
 
-**Last Updated**: 2025-10-23
+## 📚 Examples
+
+Real committed fixtures:
+
+- `profiles/Milesight/tests/Milesight-EM410-RDL.test.json`
+- `profiles/Milesight/tests/Milesight-WT304.test.json`
+- `profiles/QingPing/tests/QingPing-CGP22CLH.test.json`
+- `profiles/Thermokon/tests/Thermokon-NOVOS3-OccLumCO2TempRH.test.json`
+
+---
+
+**Last Updated**: 2026-08-11

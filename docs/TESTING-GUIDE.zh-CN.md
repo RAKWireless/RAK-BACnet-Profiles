@@ -1,56 +1,44 @@
 # Profile 测试数据完整指南
 
-本指南详细介绍如何为 BACnet Profile 创建测试数据，确保 Codec 函数的正确性。
+本指南介绍如何为 BACnet Profile 创建和维护测试数据（test fixture），验证 Codec 能否正确解码真实载荷，以及解码结果是否与 Profile 的 BACnet 对象映射一致。
 
 ---
 
 ## 📂 目录结构
 
-每个 Profile 可以包含自己的测试数据：
+每个 Profile 对应一个已提交的测试 fixture 文件：
 
 ```
 profiles/
 └── Vendor/
     ├── Vendor-Model.yaml          # Profile 文件
-    └── tests/                      # 测试数据目录
-        ├── test-data.json          # 测试输入（必需）
-        └── expected-output.json    # 期望输出（可选，推荐）
+    └── tests/
+        └── Vendor-Model.test.json # 测试 fixture（必需）
 ```
 
----
-
-## 📋 两个测试文件的作用
-
-### 1. test-data.json（必需）
-
-**用途**: 定义测试输入数据
-
-**包含内容**:
-- fPort（LoRaWAN 端口号）
-- input（十六进制上行数据）
-- 测试用例名称和描述
-
-**验证行为**: 确保 Codec 函数能成功执行，不抛异常
+fixture 文件必须与所测试的 Profile 同名，例如 `Milesight-EM410-RDL.yaml` → `tests/Milesight-EM410-RDL.test.json`。
 
 ---
 
-### 2. expected-output.json（可选，推荐）
+## 📋 测试 fixture 的作用
 
-**用途**: 定义期望的解码输出结果
+一个 `.test.json` fixture 同时包含某个 Profile 的测试输入和期望输出：
 
-**包含内容**:
-- 每个测试用例期望返回的完整数据结构
+- **输入**：上行载荷（`fPort` + 十六进制 `input`）及其描述
+- **期望输出**：每个载荷应解码出的 BACnet 行数组
+- **元数据**：证据等级、数据来源、鲁棒性策略
 
-**验证行为**: **深度比对**实际输出和期望输出，确保完全匹配
+验证器会对每个测试用例执行 Profile Codec，并检查：
 
-**为什么推荐**:
-- ✅ 确保输出的正确性，而不仅是"没有错误"
-- ✅ 防止回归：代码修改后能立即发现输出变化
-- ✅ 作为文档：清晰展示每个测试数据应该解码成什么
+1. 解码成功且结果确定（幂等）
+2. 解码出的 `data` 数组与 `expectedOutput` 完全匹配（若提供）
+3. 每个解码条目均符合 `datatype` 映射（channel、name、unit、value）
+4. 所有非输出型 `datatype` 通道都被 fixture 覆盖
+5. 鲁棒性：截断载荷和未知 fPort 能被正确拒绝（可配置）
 
 ---
 
-## 🔧 创建测试数据的步骤
+## 🔧 创建测试 fixture 的步骤
 
 ### 步骤 1: 创建测试目录
 
@@ -58,574 +46,372 @@ profiles/
 mkdir -p profiles/Vendor/tests
 ```
 
-### 步骤 2: 创建 test-data.json
+### 步骤 2: 创建 fixture 文件
 
-从真实设备获取上行数据，创建测试输入文件：
+创建 `profiles/Vendor/tests/Vendor-Model.test.json`：
 
 ```json
 {
-  "description": "Vendor-Model 测试数据集",
+  "schemaVersion": 1,
+  "profile": "Vendor-Model",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "sources": [
+    {
+      "type": "official-document",
+      "reference": "Vendor-Model User Guide, payload section",
+      "citation": "Periodic and alarm payload examples used as test vectors"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": false
+  },
   "testCases": [
     {
-      "name": "正常工作数据",
-      "model": "LRS20100",
+      "name": "Normal periodic report",
       "fPort": 10,
-      "input": "040164010000000f41dc",
-      "description": "温度=25°C, 湿度=60%, 电池=100%"
+      "input": "0175640500000482b3",
+      "description": "Temperature=25.0C, Humidity=60%",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 2, "value": 60, "unit": "percent" }
+      ]
     },
     {
-      "name": "低温警报",
-      "model": "LRS20100",
+      "name": "High temperature alarm",
       "fPort": 10,
-      "input": "0801640100000000ffdc",
-      "description": "温度=-5°C, 触发低温报警"
+      "input": "0482c82701",
+      "description": "Temperature alarm triggered",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 31.0, "unit": "degreesCelsius" },
+        { "name": "High Temp Alarm", "channel": 3, "value": 1, "unit": null }
+      ]
     }
   ]
 }
 ```
 
-**字段说明**:
-- `name` (必需): 测试用例名称
-- `model` (可选): 设备型号，用于区分不同型号的测试用例
-  - 如果指定了 `model`，该测试用例只在验证对应型号的 Profile 时运行
-  - 如果不指定 `model`，该测试用例适用于所有型号（通用测试）
-  - 型号名称会从 Profile 文件名中自动提取（如 `Senso8-LRS20100.yaml` → `LRS20100`）
-- `fPort` (必需): LoRaWAN 端口号
-- `input` (必需): 十六进制格式的上行数据
-- `description` (可选): 测试用例描述
+---
 
-**最佳实践**:
-- ✅ 使用**真实设备数据**，不要编造
-- ✅ 覆盖主要场景：正常、边界、异常
-- ✅ 添加清晰的描述说明数据含义
-- ✅ 对于多型号场景，使用 `model` 字段区分测试用例
+## 📖 fixture 字段说明
 
-### 步骤 3: 运行解码查看实际输出
+### 顶层字段
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `schemaVersion` | ✅ | Schema 版本，必须为 `1` |
+| `profile` | ✅ | 必须与 YAML 文件名（不含扩展名）完全一致，如 `Milesight-EM410-RDL` |
+| `evidenceLevel` | ✅ | `known-answer`、`documentation-only` 或 `decoder-derived`（见下文） |
+| `reviewMode` | ❌ | `single-model`（默认）或 `multi-model` |
+| `sources` | ✅ | 载荷的证据来源（至少一个） |
+| `fPortPolicy` | ❌ | fPort 处理方式：`fixed`、`agnostic` 或 `ignored` |
+| `robustness` | ❌ | 鲁棒性检查开关：`checkTruncation`、`checkUnknownFPort`、`checkFuzz` |
+| `strict` | ❌ | 为 `true` 时启用更严格的契约检查（见下文） |
+| `testCases` | ✅ | 测试用例数组（至少一个） |
+
+### evidenceLevel（证据等级）
+
+| 值 | 含义 | 要求 |
+|----|------|------|
+| `known-answer` | 期望输出已由独立来源（官方文档、客户数据）验证 | 至少一个 `expectedOutput`；通道覆盖缺失是**错误** |
+| `documentation-only` | 仅依据文档解析，无独立验证基准 | 覆盖缺失仅产生**警告** |
+| `decoder-derived` | 期望输出由解码器自身产生 | 至少一个 `expectedOutput` |
+
+### sources（数据来源）
+
+```json
+"source": {
+  "type": "official-document",
+  "reference": "Milesight EM410-RDL User Guide",
+  "citation": "Periodic and alarm payload examples"
+}
+```
+
+- `type`：`issue`、`official-document`、`vendor-decoder`、`customer-data` 之一
+- `reference`（必需）：文档名称、URL 或 Issue 引用
+- `citation`（可选）：测试向量的具体出处
+
+### fPortPolicy（端口策略）
+
+描述解码器如何处理 LoRaWAN fPort，会改变鲁棒性检查的行为：
+
+```json
+// 固定的一组已知端口
+{ "mode": "fixed", "ports": [85, 86], "citation": "Port 85 for data, 86 for config" }
+
+// 解码器忽略端口（任意应用端口解码结果相同）
+{ "mode": "agnostic", "representativeFPort": 85, "citation": "Payloads are port-agnostic" }
+
+// 该设备不使用 fPort 路由
+{ "mode": "ignored", "representativeFPort": 85, "reason": "Device does not use fPort routing" }
+```
+
+### robustness（鲁棒性）
+
+三个开关的默认行为如下：
+
+| 字段 | 默认值 | 行为 |
+|------|--------|------|
+| `checkTruncation` | `true` | 将每个输入按多种长度截断；解码器必须返回 `errors` 数组且不产生 BACnet `data` |
+| `checkUnknownFPort` | `true` | 用未使用的 fPort 运行输入；解码器必须返回 `errors` 数组且不产生 `data` |
+| `checkFuzz` | `false` | 运行 16 个种子化模糊输入；输出必须确定且格式正确 |
+
+### testCases（测试用例）
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `name` | ✅ | 唯一的测试用例名称 |
+| `messageType` | ❌ | 可选的类型标签，如 `periodic`、`alarm`、`boot` |
+| `fPort` | ✅ | LoRaWAN 端口，整数 1–223 |
+| `input` | ✅ | 十六进制上行载荷。允许空格和连字符（如 `"01 75 64 05"` 或 `"01-75-64-05"`） |
+| `description` | ❌ | 载荷含义的人可读描述 |
+| `expectedOutput` | ❌ | 期望解码出的 `data` 数组（见下文） |
+
+### expectedOutput（期望输出）
+
+`expectedOutput` 是数组，直接对应 `decodeUplink` 返回的 `data` 字段。每个条目包含四个字段：
+
+```json
+{ "name": "Temperature", "channel": 1, "value": 25.0, "unit": "degreesCelsius" }
+```
+
+- `name` — 必须与 Profile 中 `datatype.<channel>.name` 完全一致
+- `channel` — 正整数，必须在 `datatype` 中声明
+- `value` — 有限数字（SQLite REAL 存储）。整数值用整数，缩放值用浮点数
+- `unit` — 必须是**规范 BACnet 单位名**（见允许列表），无单位的对象（如 `BinaryInputObject`）用 `null`
+
+⚠️ 不要使用 `"°C"`、`"%"` 这类显示单位，请使用规范名称：
+
+| 测量量 | 规范单位名 |
+|--------|-----------|
+| 温度 | `degreesCelsius` |
+| 湿度（RH） | `percent` 或 `percentRelativeHumidity` |
+| 电池 / 百分比 | `percent` |
+| 距离 | `millimeters` |
+| 气体浓度 | `partsPerMillion` |
+| 信号强度 | `decibels` |
+| 电压 | `millivolts` |
+| 光照强度 | `luxes` |
+| 无单位（二进制/状态） | `null` |
+
+完整允许单位列表在 `scripts/lib/units.js`（`ALLOWED_UNITS`）。`expectedOutput` 中的单位必须与 `datatype.<channel>.units` 一致。
+
+---
+
+## 🔍 运行验证
+
+### 步骤 3: 交互式解码单个载荷
 
 ```bash
 node scripts/test-codec.js \
-  -f profiles/Vendor/Model.yaml \
+  -f profiles/Vendor/Vendor-Model.yaml \
   -p 10 \
-  -u 040164010000000f41dc
+  -u 0175640500000482b3
 ```
 
-**输出示例**:
-```json
-{
-  "data": [
-    { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "°C" },
-    { "name": "Humidity", "channel": 2, "value": 60.0, "unit": "%" },
-    { "name": "Battery", "channel": 3, "value": 100, "unit": "%" }
-  ]
-}
-```
+输出会显示解码出的 `data` 数组，可据此填写 `expectedOutput`（需先独立确认其正确性）。
 
-### 步骤 4: 创建 expected-output.json
-
-确认输出正确后，创建期望输出文件：
-
-```json
-{
-  "description": "Vendor-Model 期望输出",
-  "testCases": [
-    {
-      "name": "正常工作数据",
-      "expectedOutput": [
-        { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "°C" },
-        { "name": "Humidity", "channel": 2, "value": 60.0, "unit": "%" },
-        { "name": "Battery", "channel": 3, "value": 100, "unit": "%" }
-      ]
-    },
-    {
-      "name": "低温警报",
-      "expectedOutput": [
-        { "name": "Temperature", "channel": 1, "value": -5.0, "unit": "°C" },
-        { "name": "Humidity", "channel": 2, "value": 60.0, "unit": "%" },
-        { "name": "Battery", "channel": 3, "value": 100, "unit": "%" },
-        { "name": "LowTempAlert", "channel": 4, "value": 1, "unit": null }
-      ]
-    }
-  ]
-}
-```
-
-**重要提示**:
-- ⚠️ `expectedOutput` 是**数组**，直接对应 `data` 字段
-- ⚠️ 测试用例顺序必须与 `test-data.json` **完全一致**
-- ⚠️ 包括 `name`、`channel`、`value`、`unit` 所有字段
-
-### 步骤 5: 运行完整验证
+### 步骤 4: 验证单个 Profile 及其 fixture
 
 ```bash
-node scripts/validate-profile.js profiles/Vendor/Model.yaml
+node scripts/run-profile-ci.js \
+  profiles/Vendor/Vendor-Model.yaml \
+  --fixture profiles/Vendor/tests/Vendor-Model.test.json
 ```
 
-**成功输出**:
+`run-profile-ci.js` 是 Profile Automation 工作流使用的严格 CI 入口，依次执行：
+
+- YAML 语法、JSON Schema、必填字段
+- Codec 静态安全检查与语法
+- BACnet 对象配置与文件命名
+- Profile 语义（datatype 字段顺序、单位、映射规则）
+- 完整 fixture 执行
+
+每项检查输出 `PASS` 或 `FAIL`，并给出详细错误信息。
+
+### 步骤 5: 验证所有已提交的 fixture
+
+```bash
+node scripts/validate-committed-fixtures.js
 ```
-🧪 运行测试数据验证...
-  ✓ 通过
 
-测试结果详情:
-  ✓ 正常工作数据 [输出匹配]
-  ✓ 低温警报 [输出匹配]
+该命令会查找 `profiles/` 下所有 `*.test.json`，与对应 Profile 配对并验证。它是仓库必需的检查之一：
 
-======================================================================
-✅ 验证通过
-======================================================================
+```bash
+node scripts/validate-all.js                  # 所有 Profile YAML 文件（基础检查）
+node scripts/validate-committed-fixtures.js   # 所有已提交的测试 fixture
+node scripts/validate-registry.js             # registry.json
+node scripts/test-profile-automation.js       # 自动化回归测试
 ```
 
 ---
 
-## 📊 验证行为对比
+## ✅ fixture 验证器检查内容
 
-| 测试文件配置 | 验证行为 | 测试结果 | 推荐度 |
-|-------------|---------|---------|--------|
-| 只有 `test-data.json` | 只检查解码成功 | `[未验证输出]` | ⚠️ 基础 |
-| 两个文件都有 | **深度比对输出** | `[输出匹配]` | ✅ 推荐 |
+对每个测试用例，验证器会：
 
----
+1. **运行两次解码器**，要求输出一致（确定性）
+2. **深度比对 `data` 数组**与 `expectedOutput`（数组顺序敏感，对象键顺序不敏感）
+3. **校验每个解码条目**：
+   - `channel` 是在 `datatype` 中声明的正整数
+   - 单次解码结果中无重复 channel
+   - `name` 等于 `datatype.<channel>.name`
+   - `unit` 等于 `datatype.<channel>.units`（或 `null`）
+   - `value` 是有限数字
+4. **检查通道覆盖**：所有非输出型 `datatype` 通道必须至少在一条测试结果中出现。`known-answer`/`decoder-derived` 缺失为错误，`documentation-only` 缺失仅警告
+5. **按 `robustness` 和 `fPortPolicy` 执行鲁棒性检查**
 
-## 🔍 深度比对机制
-
-验证脚本会进行**严格的深度比对**：
-
-### 比对内容
-- ✅ 数组长度
-- ✅ 每个对象的所有字段
-- ✅ 字段值的类型和值
-- ✅ null 和 undefined
-
-### 示例
-
-**期望输出**:
-```json
-[
-  { "name": "Temperature", "channel": 1, "value": 25.0, "unit": "°C" }
-]
-```
-
-**实际输出**:
-```json
-[
-  { "name": "Temperature", "channel": 1, "value": 25.1, "unit": "°C" }
-]
-```
-
-**结果**: ❌ 验证失败（value 不匹配: 25.0 vs 25.1）
+对 `strict: true` 的 fixture 还有额外契约：
+- BinaryInputObject 的值必须恰好是 `0` 或 `1`
+- 成功时解码器必须省略 `errors`；失败时返回非空字符串数组且不返回 `data`
 
 ---
 
 ## ⚠️ 常见错误和解决方案
 
-### 错误 1: 输出不匹配 - 字段顺序
+### 错误 1: fixture 的 profile 不匹配
 
 ```
-❌ 错误: 期望和实际输出字段顺序不同
+Fixture profile 'Vendor-Model' must equal 'Vendor-ModelX'
 ```
 
-**原因**: JavaScript 对象字段顺序可能不同
+`profile` 字段必须与 YAML 文件名（不含扩展名）完全一致。
 
-**解决**: 深度比对不关心字段顺序，只关心字段存在性和值。如果报错，检查字段名是否拼写错误。
+### 错误 2: 单位不匹配
+
+```
+Channel 1 unit '°C' does not match datatype unit 'degreesCelsius'
+```
+
+请使用 `scripts/lib/units.js` 中的规范 BACnet 单位名，不允许 `°C`、`%` 等显示字符串。
+
+### 错误 3: known-answer fixture 没有 expectedOutput
+
+```
+known-answer fixtures must contain at least one expectedOutput
+```
+
+`known-answer` 和 `decoder-derived` 必须包含期望输出，只有 `documentation-only` 可以省略。
+
+### 错误 4: 解码出的通道未在 datatype 中声明
+
+```
+Decoded channel 9 is not declared in datatype
+```
+
+解码器输出的每个条目都必须映射到 Profile `datatype` 中声明的通道。请补充通道或修正解码器。
+
+### 错误 5: 通道覆盖缺失
+
+```
+Test fixtures do not cover datatype channels: 4, 5
+```
+
+请添加能产生这些通道的测试用例；`documentation-only` 可以接受警告。
+
+### 错误 6: 截断 / 未知 fPort 鲁棒性检查失败
+
+```
+truncated length 4: decoder must return an errors array
+```
+
+解码器必须以 `{ data: [], errors: ["..."] }`（或 `{ errors: [...] }`）优雅地拒绝无效输入，而不是抛异常或返回部分数据。`fPortPolicy` 决定哪些 fPort 视为合法。
+
+### 错误 7: 实际输出与 expectedOutput 不一致
+
+```
+Test case 'X': Actual output does not match expectedOutput
+```
+
+用 `test-codec.js` 重新解码载荷，确认正确数值后更新 `expectedOutput`。注意 JSON 中 `25` 与 `25.0` 等价，但数组其余部分必须完全一致，且数组元素顺序必须相同。
 
 ---
 
-### 错误 2: 输出不匹配 - 数值类型
+## 🏢 多型号管理
 
-```json
-// 期望
-{ "value": 25 }
-
-// 实际
-{ "value": 25.0 }
-```
-
-**原因**: JavaScript 中 `25` 和 `25.0` 相等，但某些情况下 JSON 序列化可能不同
-
-**解决**: 统一使用浮点数格式（`25.0`）或整数格式（`25`）
-
----
-
-### 错误 3: 测试用例顺序不一致
-
-```
-❌ 错误: test-data.json 第 1 个用例和 expected-output.json 第 1 个用例不对应
-```
-
-**原因**: 两个文件的测试用例顺序不同
-
-**解决**: 确保两个文件的 `testCases` 数组顺序完全一致
-
----
-
-### 错误 4: expectedOutput 格式错误
-
-```json
-// ❌ 错误格式
-{
-  "expectedOutput": {
-    "data": [...]
-  }
-}
-
-// ✅ 正确格式
-{
-  "expectedOutput": [...]
-}
-```
-
-**原因**: `expectedOutput` 应该直接是数组，不需要包装在 `data` 对象中
-
-**解决**: `expectedOutput` 直接对应 `decodeUplink` 返回的 `data` 字段
-
----
-
-## 🏢 多型号测试用例管理
-
-当同一厂商目录下有多个型号的 Profile 时，可以使用 `model` 字段来区分和过滤测试用例。
-
-### 使用场景
-
-适用于以下情况：
-- 同一厂商有多个产品型号
-- 不同型号使用相同的协议但数据格式不同
-- 需要在一个 `tests` 目录中管理所有型号的测试用例
-
-### 目录结构示例
+测试用例中不再有 `model` 字段。每个 fixture 通过 `profile` 字段和文件名绑定到唯一一个 Profile。厂商有多个型号时，为每个型号各建一个 fixture：
 
 ```
 profiles/Senso8/
-├── Senso8-LRS20100.yaml      # 温湿度传感器
-├── Senso8-LRS20200.yaml      # 温度传感器
-├── Senso8-LRS20310.yaml      # CO2 传感器
-├── Senso8-LRS20600.yaml      # 门磁传感器
+├── Senso8-LRS20100.yaml
+├── Senso8-LRS20200.yaml
+├── Senso8-LRS20600.yaml
 └── tests/
-    ├── test-data.json         # 所有型号的测试输入
-    └── expected-output.json   # 所有型号的期望输出
+    ├── Senso8-LRS20100.test.json
+    ├── Senso8-LRS20200.test.json
+    └── Senso8-LRS20600.test.json
 ```
 
-### 配置示例
-
-**test-data.json**:
-```json
-{
-  "description": "Senso8 系列测试用例",
-  "testCases": [
-    {
-      "name": "LRS20100 温湿度测试",
-      "model": "LRS20100",
-      "fPort": 10,
-      "input": "01016400e901ef00000000"
-    },
-    {
-      "name": "LRS20200 温度测试",
-      "model": "LRS20200",
-      "fPort": 10,
-      "input": "01010064000000000000"
-    },
-    {
-      "name": "通用电池测试",
-      "fPort": 10,
-      "input": "010164006400640000"
-    }
-  ]
-}
-```
-
-**expected-output.json**:
-```json
-{
-  "description": "期望输出",
-  "testCases": [
-    {
-      "name": "LRS20100 温湿度测试",
-      "model": "LRS20100",
-      "expectedOutput": [
-        {
-          "name": "Temperature",
-          "channel": 1,
-          "value": 23.3,
-          "unit": "°C"
-        },
-        {
-          "name": "Humidity",
-          "channel": 2,
-          "value": 49.5,
-          "unit": "%"
-        }
-      ]
-    },
-    {
-      "name": "LRS20200 温度测试",
-      "model": "LRS20200",
-      "expectedOutput": [
-        {
-          "name": "Temperature",
-          "channel": 1,
-          "value": 10.0,
-          "unit": "°C"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### 验证行为
-
-#### 型号自动识别
-
-验证脚本会从文件名中自动提取型号：
-
-- `Senso8-LRS20100.yaml` → Model: `LRS20100`
-- `Senso8-LRS20200.yaml` → Model: `LRS20200`
-- `Dragino-LDS02.yaml` → Model: `LDS02`
-
-#### 测试用例过滤规则
-
-验证特定 Profile 时：
-
-1. **匹配型号的测试** - 运行 `model` 字段与当前型号相同的测试用例
-2. **通用测试** - 运行没有 `model` 字段的测试用例
-3. **跳过其他型号** - 跳过 `model` 字段为其他型号的测试用例
-
-#### 验证结果示例
-
-假设有以下测试用例：
-
-```json
-{
-  "testCases": [
-    { "name": "Test A", "model": "LRS20100", ... },
-    { "name": "Test B", "model": "LRS20200", ... },
-    { "name": "Test C", ... }  // 无 model 字段
-  ]
-}
-```
-
-| 验证的 Profile | 运行的测试用例 |
-|--------------|--------------|
-| `Senso8-LRS20100.yaml` | Test A, Test C |
-| `Senso8-LRS20200.yaml` | Test B, Test C |
-| `Senso8-LRS20600.yaml` | Test C |
-
-### 命令行输出
-
-```bash
-node scripts/validate-profile.js profiles/Senso8/Senso8-LRS20100.yaml
-```
-
-输出示例：
-```
-🧪 Running test data validation...
-  Model detected: LRS20100
-  Running 2 of 5 test cases
-  ✓ Pass
-
-Test result details:
-  ✓ LRS20100 温湿度测试 [LRS20100] [Output matched]
-  ✓ 通用电池测试 [Output not verified]
-```
-
-**说明**：
-- `Model detected: LRS20100` - 自动识别的型号
-- `Running 2 of 5 test cases` - 运行了 2 个测试（共 5 个）
-- `[LRS20100]` - 显示测试用例所属型号
-
-### 最佳实践
-
-#### 1. 命名规范
-
-测试用例名称建议包含型号信息：
-
-```json
-{
-  "name": "LRS20100 温湿度正常值测试",
-  "model": "LRS20100",
-  ...
-}
-```
-
-#### 2. 通用测试用例
-
-对于所有型号都适用的功能（如电池电量、按钮），不要指定 `model` 字段：
-
-```json
-{
-  "name": "电池电量测试",
-  // 不指定 model，适用于所有型号
-  "fPort": 10,
-  "input": "..."
-}
-```
-
-#### 3. 按功能分组
-
-```json
-{
-  "testCases": [
-    // 基本功能测试
-    { "name": "LRS20100 基本数据上报", "model": "LRS20100", ... },
-    { "name": "LRS20200 基本数据上报", "model": "LRS20200", ... },
-    
-    // 告警测试
-    { "name": "LRS20100 温度高告警", "model": "LRS20100", ... },
-    { "name": "LRS20100 温度低告警", "model": "LRS20100", ... },
-    
-    // 通用测试
-    { "name": "通用电池电量测试", ... },
-    { "name": "通用按钮测试", ... }
-  ]
-}
-```
-
-### 故障排查
-
-#### 问题：测试用例没有被运行
-
-**原因**：
-- `model` 字段拼写错误
-- 文件名格式不符合 `Vendor-Model.yaml` 规范
-
-**解决**：
-1. 检查 `model` 字段是否与文件名中的型号一致
-2. 确保文件名格式为 `Vendor-Model.yaml`
-
-#### 问题：所有测试都被跳过
-
-**原因**：
-- 所有测试用例都指定了 `model`，但与当前型号不匹配
-
-**解决**：
-- 检查测试用例的 `model` 字段
-- 或者移除 `model` 字段使其成为通用测试
-
-#### 问题：无法识别型号
-
-验证脚本输出：
-```
-Model detected: null
-Running 5 of 5 test cases
-```
-
-**原因**：
-- 文件名不符合 `Vendor-Model.yaml` 格式
-
-**解决**：
-- 重命名文件为标准格式，如 `Senso8-LRS20100.yaml`
+如果这些型号共享同一协议族，可在各 fixture 中设置 `reviewMode: "multi-model"`。
 
 ---
 
-## 🎯 测试数据最佳实践
+## 🎯 最佳实践
 
-### 1. 覆盖主要场景
+### 1. 覆盖所有通道
 
-```json
-{
-  "testCases": [
-    { "name": "正常工作数据", ... },
-    { "name": "边界值 - 最高温度", ... },
-    { "name": "边界值 - 最低温度", ... },
-    { "name": "报警触发", ... },
-    { "name": "低电量", ... },
-    { "name": "传感器断线", ... }
-  ]
-}
-```
+验证器要求所有非输出型 `datatype` 通道至少在一条测试用例中出现。请规划测试用例，让每个通道（包括告警/状态通道）至少被产生一次。
 
-### 2. 使用清晰的命名
+### 2. 使用真实载荷
 
-✅ **好的命名**:
-- "正常温湿度数据 - 25°C, 60%"
-- "温度传感器断线报警"
-- "低电量警告 - 电池 10%"
+优先使用来自真实设备、官方文档或请求 Issue 的载荷。在 `sources` 中用 `type`、`reference`、`citation` 标注每个向量的出处。
 
-❌ **不好的命名**:
-- "测试1"
-- "test"
-- "数据"
+### 3. 设置正确的 evidenceLevel
 
-### 3. 添加详细描述
+- 期望值经独立确认时才用 `known-answer`
+- 仅依据文档解析时用 `documentation-only`
+- 由被审查解码器自身产生输出时用 `decoder-derived`
+
+### 4. 单位保持规范
+
+`expectedOutput` 中不要使用显示单位。从 `datatype` 复制单位（`degreesCelsius`、`percent`、`partsPerMillion`、`millimeters` 等），无单位对象使用 `null`。
+
+### 5. 写清晰的描述
 
 ```json
 {
-  "name": "高温报警",
+  "name": "Low temperature alarm",
   "fPort": 10,
-  "input": "0801E40308009C0000640A",
-  "description": "温度=45°C, 触发高温报警（阈值40°C）, 湿度=50%, 电池=100%"
+  "input": "0801640100000000ffdc",
+  "description": "Temperature=-5C, triggers low temperature alarm, battery=100%"
 }
 ```
 
-### 4. 使用真实数据
+### 6. 每次修改 Codec 后运行验证
 
 ```bash
-# 从 RAK 网关获取真实上行数据
-# ChirpStack 日志示例:
-# Uplink: {"data":"040164010000000f41dc","fPort":10}
-```
-
-### 5. 保持期望输出准确
-
-定期运行测试，确保期望输出与实际行为一致：
-
-```bash
-# 每次修改 Codec 后运行
-node scripts/validate-profile.js profiles/Vendor/Model.yaml
+node scripts/run-profile-ci.js \
+  profiles/Vendor/Vendor-Model.yaml \
+  --fixture profiles/Vendor/tests/Vendor-Model.test.json
+node scripts/validate-committed-fixtures.js
 ```
 
 ---
 
 ## 🛠️ 调试技巧
 
-### 技巧 1: 查看详细差异
-
-验证失败时会自动显示差异：
-
-```
-✗ 正常数据: Output does not match expected result
-  期望输出:
-  [
-    { "name": "Temperature", "value": 25.0 }
-  ]
-  实际输出:
-  [
-    { "name": "Temperature", "value": 25.1 }
-  ]
-```
-
-### 技巧 2: 逐个添加测试
-
-从简单到复杂，逐步添加：
-
-```json
-// 第一步：最简单的用例
-{ "testCases": [
-  { "name": "基本数据", ... }
-]}
-
-// 第二步：添加边界情况
-{ "testCases": [
-  { "name": "基本数据", ... },
-  { "name": "最大值", ... },
-  { "name": "最小值", ... }
-]}
-```
-
-### 技巧 3: 使用 JSON 工具验证格式
+### 检查单个载荷
 
 ```bash
-# 验证 JSON 格式正确
-cat profiles/Vendor/tests/test-data.json | jq .
-cat profiles/Vendor/tests/expected-output.json | jq .
+node scripts/test-codec.js -f profiles/Vendor/Vendor-Model.yaml -p 10 -u 0175640500000482b3
 ```
 
----
+### 对现有数据文件批量测试
 
-## 📚 完整示例
+`test-codec.js` 支持针对 JSON 测试数据文件的批量模式：
 
-查看项目中的示例：
+```bash
+node scripts/test-codec.js --batch profiles/Vendor/Vendor-Model.yaml \
+  examples/minimal-profile/tests/test-data.json
+```
 
-- `examples/minimal-profile/tests/` - 最小示例
-- `examples/standard-profile/tests/` - 完整示例
+### 校验 JSON 语法
+
+```bash
+jq . profiles/Vendor/tests/Vendor-Model.test.json
+```
 
 ---
 
@@ -633,15 +419,26 @@ cat profiles/Vendor/tests/expected-output.json | jq .
 
 提交 Profile 前确认：
 
-- [ ] 创建了 `tests/test-data.json`
-- [ ] 创建了 `tests/expected-output.json`
-- [ ] 至少包含 2-3 个测试用例
-- [ ] 测试数据来自真实设备
-- [ ] 两个文件的测试用例顺序一致
-- [ ] 运行 `validate-profile.js` 全部通过
-- [ ] 所有测试显示 `[输出匹配]`
+- [ ] 已在 Profile 旁创建 `tests/Vendor-Model.test.json`
+- [ ] `schemaVersion: 1`，且 `profile` 与 YAML 文件名一致
+- [ ] `evidenceLevel` 和 `sources` 说明了向量的来源
+- [ ] 至少包含一个 `expectedOutput`（`documentation-only` 除外）
+- [ ] 所有非输出型 `datatype` 通道至少被一条测试用例覆盖
+- [ ] `expectedOutput` 使用与 `datatype` 一致的规范 BACnet 单位
+- [ ] `node scripts/run-profile-ci.js` 对 Profile 及其 fixture 通过
+- [ ] `node scripts/validate-committed-fixtures.js` 通过
 
 ---
 
-**最后更新**: 2025-10-23
+## 📚 完整示例
 
+仓库中已提交的真实 fixture：
+
+- `profiles/Milesight/tests/Milesight-EM410-RDL.test.json`
+- `profiles/Milesight/tests/Milesight-WT304.test.json`
+- `profiles/QingPing/tests/QingPing-CGP22CLH.test.json`
+- `profiles/Thermokon/tests/Thermokon-NOVOS3-OccLumCO2TempRH.test.json`
+
+---
+
+**最后更新**: 2026-08-11
