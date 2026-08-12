@@ -71,9 +71,14 @@ function normalizeObjectType(value) {
   const normalized = raw.toLowerCase().replace(/[^a-z]/g, '');
   if (!normalized) return null;
   for (const [alias, type] of OBJECT_TYPE_ALIASES) {
-    if (alias.length <= 3 ? normalized === alias : (normalized === alias || normalized.startsWith(alias))) {
-      return type;
-    }
+    if (normalized === alias) return type;
+  }
+
+  const supportedPrefix = raw.match(/^\s*(octet\s*string\s*value(?:\s*object)?|(?:analog|binary)\s*(?:input|output|value)(?:\s*object)?)(?=$|[^A-Za-z])/i);
+  if (supportedPrefix) {
+    const prefix = supportedPrefix[1].toLowerCase().replace(/[^a-z]/g, '');
+    const direct = OBJECT_TYPE_ALIASES.find(([alias]) => alias === prefix);
+    if (direct) return direct[1];
   }
   return null;
 }
@@ -122,11 +127,12 @@ function cleanMappingLine(line) {
     .replace(/^\|\s*/, '')
     .replace(/\s*\|$/, '')
     .replace(/^[-*]\s+/, '')
+    .replace(/\*\*|__|`/g, '')
     .trim();
 }
 
 function splitLooseMapping(line) {
-  const arrowOrTable = line.match(/^(.+?)\s*(?:→|->|\|)\s*(.+)$/);
+  const arrowOrTable = line.match(/^(.+?)\s*(?:→|->|[–—]\s*>|=>|\|)\s*(.+)$/);
   if (arrowOrTable) return [arrowOrTable[1].trim(), arrowOrTable[2].trim()];
   const colon = line.match(/^(.+?)\s*:\s*(.+)$/);
   if (colon) return [colon[1].trim(), colon[2].trim()];
@@ -144,8 +150,26 @@ function extractUnit(typeText) {
 }
 
 function parseRequestedMappings(value) {
+  return parseRequestedMappingDetails(value).mappings;
+}
+
+function unsupportedObjectType(line, loose) {
+  if (!loose) return null;
+  const hasExplicitMappingArrow = /(?:→|->|[–—]\s*>|=>|\|)/.test(line);
+  const rawType = loose[1].trim();
+  if (!hasExplicitMappingArrow && !/^(?:Analog|Binary|OctetString)[A-Za-z]+/i.test(rawType)) return null;
+  const candidate = rawType.match(/^([A-Za-z][A-Za-z0-9]*)/);
+  if (!candidate || !/(?:Analog|Binary|OctetString)/i.test(candidate[1])) return null;
+  return {
+    name: loose[0].trim(),
+    type: candidate[1]
+  };
+}
+
+function parseRequestedMappingDetails(value) {
   const mappings = [];
-  const strictExpression = new RegExp(`^\\s*(.+?)\\s*(?:→|->|\\||:|-)\\s*(${OBJECT_TYPE})(?:\\s*\\(([^)]+)\\))?\\s*$`, 'i');
+  const errors = [];
+  const strictExpression = new RegExp(`^\\s*(.+?)\\s*(?:→|->|[–—]\\s*>|=>|\\||:|-)\\s*(${OBJECT_TYPE})(?:\\s*\\(([^)]+)\\))?\\s*$`, 'i');
   for (const rawLine of String(value || '').split(/\r?\n/)) {
     if (/parameter name|bacnet object type/i.test(rawLine)) continue;
     const line = cleanMappingLine(rawLine);
@@ -164,7 +188,13 @@ function parseRequestedMappings(value) {
     const loose = splitLooseMapping(line);
     if (!loose) continue;
     const resolvedType = normalizeObjectType(loose[1]);
-    if (!resolvedType) continue;
+    if (!resolvedType) {
+      const unsupported = unsupportedObjectType(line, loose);
+      if (unsupported) {
+        errors.push(`Unsupported BACnet object type '${unsupported.type}' for '${unsupported.name}'`);
+      }
+      continue;
+    }
     mappings.push({
       name: loose[0].trim(),
       type: resolvedType,
@@ -172,7 +202,7 @@ function parseRequestedMappings(value) {
       rawType: loose[1].trim()
     });
   }
-  return mappings;
+  return { mappings, errors };
 }
 
 function extractMappingReferences(value) {
@@ -193,11 +223,14 @@ function extractMappingReferences(value) {
 }
 
 function analyzeRequestedMappings(value) {
-  const mappings = parseRequestedMappings(value);
-  if (mappings.length > 0) return { status: 'explicit', mappings, references: [] };
+  const parsed = parseRequestedMappingDetails(value);
+  if (parsed.errors.length > 0) {
+    return { status: 'invalid', mappings: parsed.mappings, references: [], errors: parsed.errors };
+  }
+  if (parsed.mappings.length > 0) return { status: 'explicit', mappings: parsed.mappings, references: [], errors: [] };
   const references = extractMappingReferences(value);
-  if (references.length > 0) return { status: 'deferred', mappings: [], references };
-  return { status: 'missing', mappings: [], references: [] };
+  if (references.length > 0) return { status: 'deferred', mappings: [], references, errors: [] };
+  return { status: 'missing', mappings: [], references: [], errors: [] };
 }
 
 function normalizeMappingEntries(entries) {

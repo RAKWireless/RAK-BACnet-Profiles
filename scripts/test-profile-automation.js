@@ -19,8 +19,8 @@ const {
   patchPaths,
   seedPreviousFromCandidate
 } = require('../automation/src/agent-artifact');
-const { automationMeta } = require('../automation/src/status');
-const { isPrivateAddress, createPinnedLookup } = require('../automation/src/source-loader');
+const { automationMeta, intakeComment } = require('../automation/src/status');
+const { isPrivateAddress, createPinnedLookup, sharePointDownloadUrl } = require('../automation/src/source-loader');
 const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require('../automation/src/decoder-loader');
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
 const { validateProfileSemantics, validateDecodedData } = require('./lib/validation/profile-semantics');
@@ -28,6 +28,7 @@ const { validateTestFixture } = require('./lib/validation/test-fixture');
 const { candidateContractChecks, validateFixtureContract } = require('./lib/validation/agent-candidate');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./evaluate-shadow-run');
+const { mergeLastUpdatesFromRegistry } = require('./update-registry');
 
 const ROOT = path.resolve(__dirname, '..');
 const PERMISSION_LEVELS = { none: 0, read: 1, write: 2 };
@@ -392,6 +393,34 @@ function testIssueParsingAndPII() {
   assert(scrubPII('mail me at user@example.com').includes('[email removed]'));
 }
 
+function testManualIssueMappingDiagnostics() {
+  const issue = syntheticIssue();
+  issue.body = issue.body
+    .replace('No - uplink only', 'Yes - supports downlink commands')
+    .replace('- Temperature → AnalogInputObject (degreesCelsius)', `**Flow Rate –> AnalogInputObject** Bytes 4-5 for Payloads: 0x12
+**Odometer –> AnalogValueObject** Bytes 6-9 for Payload: 0x12
+**Valve Operation Status –> AnalogValueInput** (Meter Status Byte 0), Bit 5-7
+**Minor Flow Alert –> BinaryInputObject** (Meter Status Byte 1), Bit 3
+**Valve Control –> BinaryOutputObject**`);
+  const intake = parseIssue(issue, { allowExisting: true });
+  assert.equal(intake.status, 'manual');
+  assert.deepEqual(intake.manualReasons, ['Profile Automation only handles uplink-only devices']);
+  assert.deepEqual(intake.requestedMappings.map(mapping => [mapping.name, mapping.type]), [
+    ['Flow Rate', 'AnalogInputObject'],
+    ['Odometer', 'AnalogValueObject'],
+    ['Minor Flow Alert', 'BinaryInputObject'],
+    ['Valve Control', 'BinaryOutputObject']
+  ]);
+  assert.deepEqual(intake.errors, ["Unsupported BACnet object type 'AnalogValueInput' for 'Valve Operation Status'"]);
+  assert(!intake.errors.some(error => error.includes('must contain mapping rows')));
+
+  const comment = intakeComment(intake, { state: 'manual' });
+  assert(comment.includes('Manual scope reasons:'));
+  assert(comment.includes('Profile Automation only handles uplink-only devices'));
+  assert(comment.includes('Additional Intake diagnostics (these do not change the manual routing):'));
+  assert(comment.includes("Unsupported BACnet object type 'AnalogValueInput'"));
+}
+
 function testTrustAndApprovalStateMachine() {
   const external = syntheticIssue();
   const intake = parseIssue(external, { allowExisting: true });
@@ -595,6 +624,16 @@ function testNetworkBoundary() {
   lookup('example.com', { all: true }, (error, addresses) => { result = { error, addresses }; });
   assert.equal(result.error, null);
   assert.deepEqual(result.addresses, [{ address: '203.0.113.10', family: 4 }]);
+
+  const shareUrl = 'https://eddysmarthomesolutions-my.sharepoint.com/:b:/g/personal/kdias_eddysolutions_com/IQAuUNjUy3tCSKOivgV4vmf_AR0DEeeP5w6Hl9MVHahX-II?e=jnayYR';
+  assert.equal(
+    sharePointDownloadUrl(shareUrl),
+    'https://eddysmarthomesolutions-my.sharepoint.com/personal/kdias_eddysolutions_com/_layouts/15/download.aspx?share=IQAuUNjUy3tCSKOivgV4vmf_AR0DEeeP5w6Hl9MVHahX-II'
+  );
+  assert.equal(sharePointDownloadUrl('https://sharepoint.com.evil.example/:b:/g/personal/a/token1234567890123456'), null);
+  assert.equal(sharePointDownloadUrl('https://user:pass@tenant.sharepoint.com/:b:/g/personal/a/token1234567890123456'), null);
+  assert.equal(sharePointDownloadUrl('https://tenant.sharepoint.com/:b:/g/personal/%2e%2e/token1234567890123456'), null);
+  assert.equal(sharePointDownloadUrl('https://tenant.sharepoint.com/:b:/g/personal/a/short'), null);
 }
 
 async function testDecoderTrustClassification() {
@@ -708,6 +747,40 @@ function testMetadataAndShadowEvaluation() {
   assert.equal(undersizedRollout.sampleSizeSufficient, false);
 }
 
+function testRegistryMetadataPreservation() {
+  const profiles = [{
+    path: 'profiles/Example/Example-Device-V2.yaml',
+    contentSha256: 'a'.repeat(64),
+    version: '2.0.0',
+    verified: false,
+    description: 'Generated description',
+    deviceType: 'Sensor',
+    lorawanClass: ['A']
+  }];
+  mergeLastUpdatesFromRegistry({
+    profiles: [{
+      path: profiles[0].path,
+      contentSha256: profiles[0].contentSha256,
+      lastUpdate: '2026-08-12',
+      version: '1.0.0',
+      verified: true,
+      description: 'Curated smart water meter',
+      deviceType: 'Water Flow Meter',
+      lorawanClass: ['C']
+    }]
+  }, profiles);
+  assert.deepEqual(profiles[0], {
+    path: 'profiles/Example/Example-Device-V2.yaml',
+    contentSha256: 'a'.repeat(64),
+    lastUpdate: '2026-08-12',
+    version: '1.0.0',
+    verified: true,
+    description: 'Curated smart water meter',
+    deviceType: 'Water Flow Meter',
+    lorawanClass: ['C']
+  });
+}
+
 async function main() {
   const tests = [
     testReusableWorkflowPermissionCeilings,
@@ -723,6 +796,7 @@ async function main() {
     testShadowWorkflowDAG,
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,
+    testManualIssueMappingDiagnostics,
     testTrustAndApprovalStateMachine,
     testProviderConfiguration,
     testPreparedInputWhitelist,
@@ -733,7 +807,8 @@ async function main() {
     testDecoderTrustClassification,
     testIssue31Golden,
     testStrictFixtureRequiresExplicitRobustness,
-    testMetadataAndShadowEvaluation
+    testMetadataAndShadowEvaluation,
+    testRegistryMetadataPreservation
   ];
   for (const test of tests) {
     await test();

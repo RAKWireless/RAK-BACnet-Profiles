@@ -104,9 +104,27 @@ async function requestDocument(url, addresses) {
   throw lastError || new Error('Source hostname did not resolve to a usable address');
 }
 
+function sharePointDownloadUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password ||
+      !/^[a-z0-9-]+(?:-my)?\.sharepoint\.com$/i.test(url.hostname)) return null;
+  const sharedPath = url.pathname.match(/^\/:([a-z]):\/[a-z]\/((?:personal|sites|teams)\/[A-Za-z0-9_.-]+)\/([A-Za-z0-9_-]{16,})\/?$/i);
+  if (!sharedPath) return null;
+  const download = new URL(url.origin);
+  download.pathname = `/${sharedPath[2]}/_layouts/15/download.aspx`;
+  download.searchParams.set('share', sharedPath[3]);
+  return download.toString();
+}
+
 async function fetchDocument(value, redirects = 0) {
   if (redirects > 3) throw new Error('Too many source redirects');
-  const { url, addresses } = await resolveRemoteUrl(value);
+  const directDownload = sharePointDownloadUrl(value);
+  const { url, addresses } = await resolveRemoteUrl(directDownload || value);
   const response = await requestDocument(url, addresses);
   const location = response.headers.location;
   if (response.status >= 300 && response.status < 400 && location) {
@@ -187,5 +205,6 @@ module.exports = {
   loadOfficialSource,
   isInlineDecoder,
   decoderFallbackSource,
-  createPinnedLookup
+  createPinnedLookup,
+  sharePointDownloadUrl
 };

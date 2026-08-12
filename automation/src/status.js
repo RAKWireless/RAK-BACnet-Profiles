@@ -21,8 +21,16 @@ function intakeComment(intake, decision) {
     return `The request passed the content gate, but it was opened by an external contributor. A maintainer must review the current Issue body and add \`profile:approved\`. Editing the Issue invalidates that approval.${warnings ? `\n\nCurrent rollout notes:\n\n${warnings}` : ''}`;
   }
   if (decision.state === 'manual') {
-    const reasons = [...(intake.errors || []), ...(intake.warnings || [])];
-    return `This request is outside the first Profile Automation scope and requires manual handling.\n\n${reasons.map(item => `- ${safeMarkdown(item)}`).join('\n')}`;
+    const manualReasons = intake.manualReasons || [];
+    const diagnostics = [...(intake.errors || []), ...(intake.warnings || [])];
+    if (manualReasons.length === 0) {
+      return `This request is outside the first Profile Automation scope and requires manual handling.\n\n${diagnostics.map(item => `- ${safeMarkdown(item)}`).join('\n')}`;
+    }
+    const reasons = manualReasons.map(item => `- ${safeMarkdown(item)}`).join('\n');
+    const additional = diagnostics.length > 0
+      ? `\n\nAdditional Intake diagnostics (these do not change the manual routing):\n\n${diagnostics.map(item => `- ${safeMarkdown(item)}`).join('\n')}`
+      : '';
+    return `This request is outside the first Profile Automation scope and requires manual handling.\n\nManual scope reasons:\n\n${reasons}${additional}`;
   }
   return `Please edit the original Issue to resolve these items; answers added only in comments are not used.\n\n${(intake.errors || []).map(item => `- ${safeMarkdown(item)}`).join('\n')}`;
 }

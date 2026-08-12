@@ -171,14 +171,17 @@ function parseIssue(issue, options = {}) {
   const bacnetMappingRequest = analyzeRequestedMappings(bacnetMapping);
   if (bacnetMappingRequest.status === 'missing') {
     errors.push('BACnet Object Mapping Requirements must contain mapping rows or an explicit official-document page reference');
+  } else if (bacnetMappingRequest.status === 'invalid') {
+    errors.push(...bacnetMappingRequest.errors);
   } else if (bacnetMappingRequest.status === 'deferred') {
     warnings.push('BACnet mappings will be extracted from the cited official-document pages before generation');
   }
 
   const downlinkSupport = field(sections, 'downlinkSupport');
   const isUplinkOnly = /^No\s*-?\s*uplink only/i.test(downlinkSupport);
+  const manualReasons = [];
   const status = !isUplinkOnly ? 'manual' : (errors.length > 0 ? 'needs-info' : 'ready');
-  if (!isUplinkOnly) warnings.push('Profile Automation only handles uplink-only devices');
+  if (!isUplinkOnly) manualReasons.push('Profile Automation only handles uplink-only devices');
 
   const profilePath = profileName ? path.join(WORKSPACE_ROOT, 'profiles', vendor, `${profileName}.yaml`) : null;
   if (status === 'ready' && profilePath && fs.existsSync(profilePath) && !options.allowExisting) {
@@ -214,6 +217,7 @@ function parseIssue(issue, options = {}) {
     uplinkExamples,
     decoder: scrubPII(field(sections, 'decoder')),
     downlinkSupport,
+    manualReasons,
     bacnetMapping: scrubPII(bacnetMapping),
     bacnetMappingStatus: bacnetMappingRequest.status,
     bacnetMappingReferences: bacnetMappingRequest.references,

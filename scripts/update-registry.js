@@ -129,13 +129,14 @@ function hashProfileContent(yamlContent) {
 }
 
 /**
- * Preserve per-profile lastUpdate and verified when merging with existing registry.
+ * Preserve per-profile dates and manually curated metadata when merging with
+ * the existing registry.
  *
  * - lastUpdate: kept when YAML content is unchanged (content hash match), otherwise
  *   refreshed from file mtime.
- * - verified: always preserved from the existing registry so manual approvals
- *   (verified: true) survive re-runs. New profiles that don't exist yet default
- *   to false.
+ * - verified and descriptive metadata: always preserved from the existing
+ *   registry so manual review survives re-runs. New profiles use generated
+ *   defaults until a maintainer curates them.
  */
 function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
   const byPath = new Map();
@@ -163,6 +164,12 @@ function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
       profile.verified = old.verified;
     } else {
       profile.verified = false;
+    }
+
+    if (old) {
+      for (const field of ['version', 'description', 'deviceType', 'lorawanClass']) {
+        if (old[field] !== undefined) profile[field] = old[field];
+      }
     }
   }
 }
