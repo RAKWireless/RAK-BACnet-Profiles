@@ -1,8 +1,8 @@
 {
-  "$schema": "https://raw.githubusercontent.com/RAKWireless/RAK-BACnet-Profiles/main/registry-schema.json",
+  "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-08-06",
-  "totalProfiles": 26,
+  "lastUpdate": "2026-08-12",
+  "totalProfiles": 27,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -147,6 +147,22 @@
       ],
       "contentSha256": "ec6bd00b66f02bbc08dc5b9f9a929d0622355b89ee95e8bca4a2ce817c853c65",
       "lastUpdate": "2026-04-24"
+    },
+    {
+      "id": "eddy-solutions-lora-iq-v2",
+      "vendor": "Eddy-Solutions",
+      "model": "Eddy-Solutions-LoRa-IQ-V2",
+      "version": "1.0.0",
+      "path": "profiles/Eddy-Solutions/Eddy-Solutions-LoRa-IQ-V2.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "Eddy Solutions LoRa IQ V2 smart water flow meter and shutoff valve",
+      "deviceType": "Water Flow Meter",
+      "lorawanClass": [
+        "C"
+      ],
+      "contentSha256": "bdabc13c389aff861c446d1995163c906831b4141a978d373f4a4b9c86633024",
+      "lastUpdate": "2026-08-12"
     },
     {
       "id": "kaiterra-se-300",
@@ -426,6 +442,7 @@
       "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
+      "Eddy-Solutions": 1,
       "Kaiterra": 1,
       "Milesight": 4,
       "Moko": 1,
@@ -433,7 +450,7 @@
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 4,
+    "withTests": 5,
     "withoutTests": 22
   }
 }

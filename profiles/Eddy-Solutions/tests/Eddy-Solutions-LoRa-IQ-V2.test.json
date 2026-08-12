@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "strict": false,
+  "profile": "Eddy-Solutions-LoRa-IQ-V2",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [3],
+    "citation": "Issue #38 supplies every uplink example on fPort 3; its downlink examples use fPort 5."
+  },
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/38",
+      "citation": "Five real uplink payloads, requested BACnet mappings, and four downlink examples."
+    },
+    {
+      "type": "official-document",
+      "reference": "Lora IQ Technical Specifications.pdf supplied with Issue #38",
+      "citation": "Sections 5-7; 17-page PDF SHA-256 63d4bfd8a31a283cc55a618bd5d0995b24289849a8b6488dfa4d16b4237cd733."
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "Flow Report",
+      "messageType": "0x12 full flow report",
+      "fPort": 3,
+      "input": "120003012006000011624900505500000000",
+      "description": "Issue #38 flow report: 0.6 L/min, odometer 4450, valve open, no flow alerts.",
+      "expectedOutput": [
+        { "name": "Flow Rate", "channel": 1, "value": 0.6, "unit": "litersPerMinute" },
+        { "name": "Odometer", "channel": 2, "value": 4450, "unit": null },
+        { "name": "Valve Operation Status", "channel": 5, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 6, "value": 3, "unit": null },
+        { "name": "Minor Flow Alert", "channel": 7, "value": 0, "unit": null },
+        { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
+        { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "No-Flow Report",
+      "messageType": "0x12 short no-flow report",
+      "fPort": 3,
+      "input": "12040314D000000011624A",
+      "description": "Issue #38 no-flow report: zero flow, odometer 4450, valve open, no flow alerts.",
+      "expectedOutput": [
+        { "name": "Flow Rate", "channel": 1, "value": 0, "unit": "litersPerMinute" },
+        { "name": "Odometer", "channel": 2, "value": 4450, "unit": null },
+        { "name": "Valve Operation Status", "channel": 5, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 6, "value": 3, "unit": null },
+        { "name": "Minor Flow Alert", "channel": 7, "value": 0, "unit": null },
+        { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
+        { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "Describe",
+      "messageType": "0x01 describe",
+      "fPort": 3,
+      "input": "010438030000010018",
+      "description": "Issue #38 describe packet: firmware 4.3.8 encoded as protocol code 0x0438 and report period 1 minute.",
+      "expectedOutput": [
+        { "name": "Get Report Period", "channel": 3, "value": 1, "unit": "minutes" },
+        { "name": "Firmware Version", "channel": 4, "value": 1080, "unit": null },
+        { "name": "Set Meter Report Period", "channel": 11, "value": 1, "unit": "minutes" }
+      ]
+    },
+    {
+      "name": "Valve Report",
+      "messageType": "0x13 standalone valve report",
+      "fPort": 3,
+      "input": "13240300B000",
+      "description": "Issue #38 valve report: button-triggered operation, valve open, and zero flow.",
+      "expectedOutput": [
+        { "name": "Flow Rate", "channel": 1, "value": 0, "unit": "litersPerMinute" },
+        { "name": "Valve Operation Status", "channel": 5, "value": 1, "unit": null },
+        { "name": "Valve Status", "channel": 6, "value": 3, "unit": null },
+        { "name": "Minor Flow Alert", "channel": 7, "value": 0, "unit": null },
+        { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
+        { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "Alert Report",
+      "messageType": "0x14 alert report",
+      "fPort": 3,
+      "input": "14000B01300B000011634913333300000000",
+      "description": "Issue #38 alert report: 1.1 L/min, odometer 4451, valve open, and minor-flow alert active.",
+      "expectedOutput": [
+        { "name": "Flow Rate", "channel": 1, "value": 1.1, "unit": "litersPerMinute" },
+        { "name": "Odometer", "channel": 2, "value": 4451, "unit": null },
+        { "name": "Valve Operation Status", "channel": 5, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 6, "value": 3, "unit": null },
+        { "name": "Minor Flow Alert", "channel": 7, "value": 1, "unit": null },
+        { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
+        { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
+      ]
+    }
+  ]
+}

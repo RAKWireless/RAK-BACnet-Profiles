@@ -1,0 +1,268 @@
+codec: |
+  function readUint16(data, offset) {
+    return (data[offset] << 8) | data[offset + 1];
+  }
+
+  function readUint32(data, offset) {
+    return data[offset] * 0x1000000 +
+      data[offset + 1] * 0x10000 +
+      data[offset + 2] * 0x100 +
+      data[offset + 3];
+  }
+
+  function flowRate(data, offset) {
+    return (readUint16(data, offset) & 0x0FFF) / 10;
+  }
+
+  function statusIsValid(data, offset) {
+    var operation = (data[offset] >> 5) & 0x07;
+    var valve = data[offset + 1] & 0x07;
+    return operation <= 3 && valve <= 5;
+  }
+
+  function validatePayload(fPort, data) {
+    if (fPort !== 3) {
+      return "unsupported fPort";
+    }
+    if (!Array.isArray(data) || data.length > 255) {
+      return "invalid payload";
+    }
+
+    for (var index = 0; index < data.length; index += 1) {
+      if (!Number.isInteger(data[index]) || data[index] < 0 || data[index] > 255) {
+        return "invalid payload byte";
+      }
+    }
+
+    if (data.length === 0) {
+      return "empty payload";
+    }
+
+    var type = data[0];
+    if (type === 0x01) {
+      if (data.length !== 9) {
+        return "invalid Describe length";
+      }
+      if (data[3] > 4 || data[4] > 5) {
+        return "invalid Describe enum";
+      }
+      return null;
+    }
+
+    if (type === 0x12) {
+      if (data.length !== 11 && data.length !== 18) {
+        return "invalid Flow Report length";
+      }
+      if (!statusIsValid(data, 1)) {
+        return "invalid meter status";
+      }
+      if (data.length === 11 && flowRate(data, 4) !== 0) {
+        return "short Flow Report must be a no-flow frame";
+      }
+      return null;
+    }
+
+    if (type === 0x82) {
+      if (data.length !== 11) {
+        return "invalid aligned Flow Report length";
+      }
+      return statusIsValid(data, 1) ? null : "invalid meter status";
+    }
+
+    if (type === 0x13) {
+      if (data.length !== 6 && data.length !== 18) {
+        return "invalid Valve Report length";
+      }
+      if (!statusIsValid(data, 1)) {
+        return "invalid meter status";
+      }
+      var angleOffset = data.length === 6 ? 3 : 10;
+      return data[angleOffset] <= 100 ? null : "invalid valve angle";
+    }
+
+    if (type === 0x14) {
+      if (data.length !== 18) {
+        return "invalid Alert Report length";
+      }
+      return statusIsValid(data, 1) ? null : "invalid meter status";
+    }
+
+    if (type === 0x15) {
+      if (data.length !== 11) {
+        return "invalid Backup Data length";
+      }
+      if (data[5] !== 0x12 && data[5] !== 0x13 && data[5] !== 0x14) {
+        return "invalid Backup Data source type";
+      }
+      if (!statusIsValid(data, 6)) {
+        return "invalid meter status";
+      }
+      if (data[5] === 0x13 && data[8] > 100) {
+        return "invalid valve angle";
+      }
+      return null;
+    }
+
+    return "unsupported message type";
+  }
+
+  function appendStatus(values, data, offset) {
+    var operation = (data[offset] >> 5) & 0x07;
+    var status = data[offset + 1];
+    var valve = status & 0x07;
+
+    // Operation codes: 0=steady, 1=button, 2=cloud command, 3=automatic shutoff.
+    values.push({ name: "Valve Operation Status", channel: 5, value: operation, unit: null });
+    // Valve codes: 0=closed, 1=opening, 2=closing, 3=open, 4=error, 5=communication error.
+    values.push({ name: "Valve Status", channel: 6, value: valve, unit: null });
+    values.push({ name: "Minor Flow Alert", channel: 7, value: (status >> 3) & 0x01, unit: null });
+    values.push({ name: "Major Flow Alert", channel: 8, value: (status >> 4) & 0x01, unit: null });
+    values.push({ name: "Extreme Flow Alert", channel: 9, value: (status >> 5) & 0x01, unit: null });
+  }
+
+  function appendFlow(values, data, flowOffset, odometerOffset, statusOffset) {
+    values.push({ name: "Flow Rate", channel: 1, value: flowRate(data, flowOffset), unit: "litersPerMinute" });
+    if (odometerOffset >= 0) {
+      values.push({ name: "Odometer", channel: 2, value: readUint32(data, odometerOffset), unit: null });
+    }
+    appendStatus(values, data, statusOffset);
+  }
+
+  function Decode(fPort, data, variables) {
+    var error = validatePayload(fPort, data);
+    if (error !== null) {
+      return [];
+    }
+
+    var values = [];
+    var type = data[0];
+
+    if (type === 0x01) {
+      var reportPeriod = readUint16(data, 5);
+      values.push({ name: "Get Report Period", channel: 3, value: reportPeriod, unit: "minutes" });
+      // The preserved 16-bit protocol code 0x0438 represents firmware version 4.3.8.
+      values.push({ name: "Firmware Version", channel: 4, value: readUint16(data, 1), unit: null });
+      values.push({ name: "Set Meter Report Period", channel: 11, value: reportPeriod, unit: "minutes" });
+      return values;
+    }
+
+    if (type === 0x12 || type === 0x82 || type === 0x14) {
+      appendFlow(values, data, 4, 6, 1);
+      return values;
+    }
+
+    if (type === 0x13) {
+      appendFlow(values, data, 4, data.length === 18 ? 6 : -1, 1);
+      return values;
+    }
+
+    appendFlow(values, data, 9, -1, 6);
+    return values;
+  }
+
+  function Encode(data, variables) {
+    if (!data || !Number.isInteger(data.channel) || !Number.isFinite(data.value)) {
+      return [];
+    }
+
+    if (data.channel === 10 && (data.value === 0 || data.value === 1)) {
+      return [0x73, data.value];
+    }
+
+    if (data.channel === 11 && Number.isInteger(data.value) && data.value >= 0 && data.value <= 255) {
+      return [0x71, data.value];
+    }
+
+    return [];
+  }
+
+  function decodeUplink(input) {
+    if (!input) {
+      return { data: [], errors: ["invalid input"] };
+    }
+    var error = validatePayload(input.fPort, input.bytes);
+    if (error !== null) {
+      return { data: [], errors: [error] };
+    }
+    return { data: Decode(input.fPort, input.bytes, input.variables) };
+  }
+
+  function encodeDownlink(input) {
+    if (!input) {
+      return { bytes: [], errors: ["invalid input"] };
+    }
+    var bytes = Encode(input.data, input.variables);
+    if (bytes.length === 0) {
+      return { bytes: [], errors: ["unsupported channel or value"] };
+    }
+    return { bytes: bytes, fPort: 5 };
+  }
+datatype:
+  "1":
+    name: Flow Rate
+    type: AnalogInputObject
+    units: litersPerMinute
+    covIncrement: 0.1
+    channel: 1
+  "2":
+    name: Odometer
+    type: AnalogValueObject
+    covIncrement: 1
+    channel: 2
+  "3":
+    name: Get Report Period
+    type: AnalogValueObject
+    units: minutes
+    covIncrement: 1
+    channel: 3
+  "4":
+    name: Firmware Version
+    type: AnalogValueObject
+    covIncrement: 1
+    channel: 4
+  "5":
+    name: Valve Operation Status
+    type: AnalogInputObject
+    covIncrement: 1
+    channel: 5
+  "6":
+    name: Valve Status
+    type: AnalogInputObject
+    covIncrement: 1
+    channel: 6
+  "7":
+    name: Minor Flow Alert
+    type: BinaryInputObject
+    channel: 7
+  "8":
+    name: Major Flow Alert
+    type: BinaryInputObject
+    channel: 8
+  "9":
+    name: Extreme Flow Alert
+    type: BinaryInputObject
+    channel: 9
+  "10":
+    name: Valve Control
+    type: BinaryOutputObject
+    fport: 5
+    channel: 10
+  "11":
+    name: Set Meter Report Period
+    type: AnalogValueObject
+    units: minutes
+    fport: 5
+    channel: 11
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_4
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: true
+  supportOTAA: true
+model: Eddy-Solutions-LoRa-IQ-V2
+profileVersion: 1.0.0
+name: LoRa-IQ-V2
+vendor: Eddy-Solutions
+id: bccddb2b-1656-469e-8b24-fbbea447465d
