@@ -8,6 +8,7 @@ const Ajv = require('ajv');
 const {
   WORKSPACE_ROOT,
   AGENT_OUTPUT_SCHEMA_PATH,
+  MAX_AGENT_RESULT_BYTES,
   MAX_PATCH_BYTES,
   MAX_PROFILE_BYTES,
   MAX_FIXTURE_BYTES
@@ -43,6 +44,57 @@ function validateAgentResult(result) {
     throw new Error('Blocked Agent result must contain a blocker and null candidate fields');
   }
   return result;
+}
+
+function parseAgentResultText(text) {
+  const raw = String(text);
+  if (Buffer.byteLength(raw, 'utf8') > MAX_AGENT_RESULT_BYTES) {
+    throw new Error(`Agent result exceeds ${MAX_AGENT_RESULT_BYTES} bytes`);
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (strictError) {
+    const lines = raw.replace(/\r\n?/g, '\n').split('\n');
+    const fences = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      if (/^\s*```/.test(lines[index])) fences.push(index);
+    }
+    if (fences.length === 0) throw strictError;
+    if (fences.length !== 2) {
+      throw new Error('Agent result must contain exactly one JSON code block when it is not pure JSON');
+    }
+
+    const [openingIndex, closingIndex] = fences;
+    if (!/^\s*```json\s*$/i.test(lines[openingIndex]) || !/^\s*```\s*$/.test(lines[closingIndex]) || closingIndex <= openingIndex) {
+      throw new Error('Agent result fallback accepts only one fenced JSON document');
+    }
+    const surrounding = [...lines.slice(0, openingIndex), ...lines.slice(closingIndex + 1)].join('\n');
+    if (/[{}]/.test(surrounding)) {
+      throw new Error('Agent result contains JSON-like content outside the fenced JSON document');
+    }
+
+    const fenced = lines.slice(openingIndex + 1, closingIndex).join('\n');
+    try {
+      return JSON.parse(fenced);
+    } catch (error) {
+      throw new Error(`Agent result fenced JSON is invalid: ${error.message}`);
+    }
+  }
+}
+
+function readAgentResult(resultPath) {
+  const stat = fs.lstatSync(resultPath);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Agent result must be a regular file');
+  if (stat.size > MAX_AGENT_RESULT_BYTES) throw new Error(`Agent result exceeds ${MAX_AGENT_RESULT_BYTES} bytes`);
+  return parseAgentResultText(fs.readFileSync(resultPath, 'utf8'));
+}
+
+function preserveRawAgentResult(resultPath, outputDirectory) {
+  if (!fs.existsSync(resultPath)) return;
+  const stat = fs.lstatSync(resultPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_AGENT_RESULT_BYTES) return;
+  fs.copyFileSync(resultPath, path.join(outputDirectory, 'agent-result.raw'));
 }
 
 function sourceMetadata(source) {
@@ -179,7 +231,7 @@ function captureAgentOutput(resultPath, requestPath, outputDirectory) {
   };
   let result;
   try {
-    result = validateAgentResult(readJson(resultPath));
+    result = validateAgentResult(readAgentResult(resultPath));
   } catch (error) {
     fs.mkdirSync(outputDirectory, { recursive: true });
     const manifest = {
@@ -191,7 +243,7 @@ function captureAgentOutput(resultPath, requestPath, outputDirectory) {
       reason: error.message
     };
     writeJson(path.join(outputDirectory, 'manifest.json'), manifest);
-    if (fs.existsSync(resultPath)) fs.copyFileSync(resultPath, path.join(outputDirectory, 'agent-result.raw'));
+    preserveRawAgentResult(resultPath, outputDirectory);
     return manifest;
   }
 
@@ -347,6 +399,8 @@ function removeShadowTargets(requestPath) {
 module.exports = {
   expectedPaths,
   validateAgentResult,
+  parseAgentResultText,
+  readAgentResult,
   prepareAgentInput,
   captureAgentOutput,
   validateCandidatePatch,

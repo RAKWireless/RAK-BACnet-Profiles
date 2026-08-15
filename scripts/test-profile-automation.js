@@ -10,12 +10,14 @@ const yaml = require('js-yaml');
 const { parseIssue } = require('../automation/src/issue-parser');
 const { scrubPII } = require('../automation/src/pii-scrubber');
 const { decideIntake } = require('../automation/src/intake-policy');
-const { providerCatalog, resolveProvider, resolveAgentRuntime } = require('../automation/src/config');
+const { providerCatalog, resolveProvider, resolveAgentRuntime, MAX_AGENT_RESULT_BYTES } = require('../automation/src/config');
 const { parseArgs } = require('../automation/src/io');
 const { normalizeCollectionExpectedSha, assertCollectionIssueSha } = require('../automation/src/issue-sha');
 const {
   expectedPaths,
   validateAgentResult,
+  parseAgentResultText,
+  readAgentResult,
   prepareAgentInput,
   patchPaths,
   seedPreviousFromCandidate,
@@ -633,6 +635,60 @@ function testAgentResultSchemaAndPatchPaths() {
   assert.throws(() => patchPaths('diff --git a/a b/b\n'), /Renames/);
 }
 
+function testAgentResultParsingCompatibility() {
+  const result = {
+    schemaVersion: 1,
+    status: 'blocked',
+    issueNumber: 31,
+    issueBodySha: 'a'.repeat(64),
+    summary: 'Evidence conflicts.',
+    profilePath: null,
+    fixturePath: null,
+    evidenceLevel: null,
+    resolvedMappings: [],
+    fPortPolicy: null,
+    warnings: [],
+    evidenceMatrix: [],
+    blocker: { code: 'evidence-conflict', message: 'Offset conflict.', retryable: false }
+  };
+  const serialized = JSON.stringify(result, null, 2);
+  assert.deepEqual(parseAgentResultText(serialized), result);
+
+  const fenced = `All checks pass. Final result:\r\n\r\n\`\`\`json\r\n${serialized}\r\n\`\`\`\r\n`;
+  assert.deepEqual(parseAgentResultText(fenced), result);
+  assert.throws(
+    () => parseAgentResultText(`${fenced}\n${fenced}`),
+    /exactly one JSON code block/
+  );
+  assert.throws(
+    () => parseAgentResultText(`Context {"status":"generated"}\n\`\`\`json\n${serialized}\n\`\`\``),
+    /JSON-like content outside/
+  );
+  assert.throws(
+    () => parseAgentResultText('Final result:\n```json\n{"schemaVersion":\n```'),
+    /fenced JSON is invalid/
+  );
+  assert.throws(
+    () => parseAgentResultText(`Final result:\n\`\`\`text\n${serialized}\n\`\`\``),
+    /only one fenced JSON document/
+  );
+  assert.throws(
+    () => parseAgentResultText('x'.repeat(MAX_AGENT_RESULT_BYTES + 1)),
+    /Agent result exceeds/
+  );
+
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-agent-result-'));
+  try {
+    const resultPath = path.join(temporary, 'agent-result.json');
+    fs.writeFileSync(resultPath, fenced);
+    assert.deepEqual(readAgentResult(resultPath), result);
+    fs.writeFileSync(resultPath, 'x'.repeat(MAX_AGENT_RESULT_BYTES + 1));
+    assert.throws(() => readAgentResult(resultPath), /Agent result exceeds/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 function testRetryableAttemptSeedingWithoutCandidatePatch() {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-agent-retry-'));
   const requestPath = path.join(temporary, 'input', 'request.json');
@@ -1172,6 +1228,7 @@ async function main() {
     testPreparedInputWhitelist,
     testDynamicCodecSafety,
     testAgentResultSchemaAndPatchPaths,
+    testAgentResultParsingCompatibility,
     testRetryableAttemptSeedingWithoutCandidatePatch,
     testNetworkBoundary,
     testStructuredSourceExtraction,
