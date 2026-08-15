@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const Ajv = require('ajv');
 const yaml = require('js-yaml');
 const { parseIssue } = require('../automation/src/issue-parser');
 const { scrubPII } = require('../automation/src/pii-scrubber');
@@ -151,6 +152,30 @@ function testCodexActionContracts() {
   assert.equal(advisoryAction.with['permission-profile'], ':read-only');
   assert.equal(advisoryAction.with.sandbox, undefined, 'Permission profiles must not be combined with the legacy sandbox input');
   assert(advisorySteps.some(step => step.name === 'Verify the selected provider API key'), 'Advisory Agent must fail clearly before Codex starts without its provider Repository secret');
+}
+
+function testAgentExecutionContracts() {
+  const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
+  const prompt = fs.readFileSync(path.join(ROOT, '.github', 'codex', 'prompts', 'generate-bacnet-profile.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'SKILL.md'), 'utf8');
+  const fixtureContract = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'references', 'fixture-contract.md'), 'utf8');
+
+  for (const source of [agents, prompt, skill]) {
+    assert(source.includes("rg -n --no-heading ''"), 'Profile Agent instructions must prohibit whole-file line-prefixed searches');
+  }
+  for (const source of [prompt, skill]) {
+    assert(source.includes('consolidated'), 'Profile Agent instructions must batch candidate writes and validation repairs');
+    assert(source.includes('repository-wide'), 'Profile Agent instructions must leave repository-wide checks to clean validation');
+    assert(!source.includes('read-agent-evidence'), 'Profile Agent instructions must not restore the noisy evidence-reader workflow');
+  }
+  assert(agents.includes('run only the\ncandidate validation command'), 'Prepared generation must run only the request candidate validation command');
+
+  const exampleMatch = fixtureContract.match(/<!-- canonical-fixture:start -->\s*```json\s*([\s\S]*?)\s*```\s*<!-- canonical-fixture:end -->/);
+  assert(exampleMatch, 'Fixture contract must contain a marked canonical JSON example');
+  const example = JSON.parse(exampleMatch[1]);
+  const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'schemas', 'profile-test-schema.json'), 'utf8'));
+  const validate = new Ajv({ allErrors: true, strict: false }).compile(schema);
+  assert(validate(example), `Canonical fixture example must match profile-test-schema.json: ${JSON.stringify(validate.errors)}`);
 }
 
 function testProviderSecretRouting() {
@@ -1130,6 +1155,7 @@ async function main() {
     testReusableWorkflowPermissionCeilings,
     testReusableWorkflowSecretContracts,
     testCodexActionContracts,
+    testAgentExecutionContracts,
     testProviderSecretRouting,
     testStructuredOutputSchemas,
     testCodexPermissionProfile,

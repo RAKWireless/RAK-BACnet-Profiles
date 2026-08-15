@@ -18,6 +18,12 @@ Read these files before editing anything:
    `.profile-agent/input/validation-report.json` in repair mode
 5. All four contract references linked below
 
+Read known files directly. Never enumerate a whole Skill, contract, prepared
+input, or repository file with `path:line:content` output. In particular, do
+not run the empty-pattern command `rg -n --no-heading ''`, a broad `grep -n`,
+or an equivalent catch-all search. Use a targeted, non-empty search only when
+the exact location is unknown.
+
 The request file is the only authority for the Issue identity, allowed output
 paths, requested BACnet mappings, known payloads, fPort policy inputs, run mode,
 and authorized reviewer feedback.
@@ -40,23 +46,32 @@ inspect and independently re-implement.
    material conflict cannot be resolved by a known payload. Do not write a
    partial Profile in that case. Return null candidate paths, evidence level,
    and fPort policy, an empty `resolvedMappings`, and the non-null blocker.
-4. Inspect similar repository Profiles only for repository shape and BACnet
-   conventions. Never copy a protocol assumption without request-specific
-   evidence. Treat existing committed fixtures as legacy shape references
-   only: never copy their `robustness` values into a new strict fixture. Follow
-   the current fixture contract instead.
-5. Write exactly the two allowed paths from `request.json`. Never edit
-   `registry.json` or any other file.
+4. Use the linked contracts as the authority for repository shape and BACnet
+   conventions. Do not search the repository broadly for examples. Inspect one
+   exact existing Profile only when a contract leaves a necessary shape
+   question unresolved, and never copy a protocol assumption without
+   request-specific evidence.
+5. Determine the complete Profile and strict fixture structure before writing.
+   Follow the canonical fixture shape in `fixture-contract.md`, then write
+   exactly the two allowed paths from `request.json` in one consolidated edit
+   when practical. Never leave an intentionally incomplete candidate, and
+   never edit `registry.json` or any other file.
 6. Implement a deterministic, fail-closed uplink codec and a strict fixture
    covering every Issue payload. Dynamic-length cursor parsing, bounded
    `while`, `for`, `do...while`, varint parsing, and `try/catch` are allowed
    under the codec contract. Follow its SQLite `REAL` output rule for every
    decoded `value`; strings, booleans, nulls, and non-finite numbers are not
    publishable BACnet values.
-7. Run the candidate command named in `request.json`. Fix candidate errors
-   within the current attempt. Do not weaken tests or validation code. Do not
-   echo, print, or copy raw Issue, document, decoder, prompt, or model content
-   into terminal output.
+7. Run the candidate command named in `request.json` only after both output
+   files are structurally complete. Do not run `test-profile-automation.js`,
+   `validate-all.js`, `validate-committed-fixtures.js`, `validate-registry.js`,
+   or other repository-wide checks inside the Profile Agent. If candidate
+   validation fails, inspect every diagnostic, make one consolidated repair
+   for all understood failures, and then rerun. Do not validate after each
+   individual field or edit. After the first write, avoid further repository or
+   evidence searches unless a validation diagnostic is genuinely ambiguous.
+   Fix candidate errors within the current attempt without weakening tests or
+   validation code.
 8. Return only JSON matching the configured Agent output schema. Report every
    generated BACnet mapping in `resolvedMappings`, and use `blocker: null` for
    a generated result. Keep source
@@ -95,3 +110,6 @@ inspect and independently re-implement.
 
 The deterministic validator, not the model's confidence, decides whether a
 candidate is publishable.
+
+Do not echo, print, or copy raw Issue, document, decoder, prompt, model content,
+or whole-file line-number listings into terminal output.

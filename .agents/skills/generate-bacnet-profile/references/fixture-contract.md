@@ -4,6 +4,58 @@ Use schema version 1, set `strict: true`, and cover every unique Issue uplink pa
 `expectedOutput` for every payload whose values can be recomputed. Fixture
 output order must match codec output order.
 
+Use this canonical top-level and nested shape. Replace the example values but
+do not rename keys, turn source objects into strings, wrap the payload in an
+object, or omit `name`, `fPort`, or string `input` from a test case.
+
+<!-- canonical-fixture:start -->
+```json
+{
+  "schemaVersion": 1,
+  "strict": true,
+  "profile": "Vendor-Model",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [85],
+    "citation": "Prepared evidence citation"
+  },
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "Prepared Issue evidence",
+      "citation": "Known uplink payload"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "Known uplink sample",
+      "fPort": 85,
+      "input": "0102",
+      "expectedOutput": [
+        {
+          "name": "Temperature",
+          "channel": 1,
+          "value": 23.5,
+          "unit": "degreesCelsius"
+        }
+      ]
+    }
+  ]
+}
+```
+<!-- canonical-fixture:end -->
+
+The `profile` value is the Profile filename without `.yaml`. Allowed source
+`type` values are `issue`, `official-document`, `vendor-decoder`, and
+`customer-data`.
+
 Select one evidence level: `known-answer`, `documentation-only`, or
 `decoder-derived`. List sources without embedding private contact information,
 full documents, or decoder source.
