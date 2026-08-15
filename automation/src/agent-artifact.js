@@ -115,17 +115,7 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
       authorizedReviewerFeedback: scrubPII(options.feedback || ''),
       profilePath: paths.profilePath,
       fixturePath: paths.fixturePath,
-      evidenceReadCommand: 'node automation/src/cli.js read-agent-evidence --request .profile-agent/input/request.json',
-      evidenceReadLimits: {
-        maxLines: 120,
-        maxCharacters: 8192,
-        maxSearchMatches: 8
-      },
       validationCommand: `node scripts/run-profile-ci.js ${paths.profilePath} --fixture ${paths.fixturePath}`,
-      validationPolicy: {
-        completeCandidateBeforeFirstRun: true,
-        consolidateFailuresBeforeRerun: true
-      },
       maxPayloadBytes: 255
     }
   };

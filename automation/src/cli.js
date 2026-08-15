@@ -20,7 +20,6 @@ const {
 const { parseArgs, readJson, writeJson, writeText, appendGithubOutput } = require('./io');
 const { assertCollectionIssueSha } = require('./issue-sha');
 const { intakeComment, syncFailureMessage, automationMeta, preparePublish } = require('./status');
-const { readAgentEvidence } = require('./agent-evidence');
 
 function githubClient() {
   return new GitHubClient(process.env.GITHUB_REPOSITORY, process.env.GITHUB_TOKEN);
@@ -230,18 +229,6 @@ async function commandPrepareCodexHome(args) {
   }
   writeText(path.join(output, 'config.toml'), config);
   console.log(JSON.stringify({ provider, codexHomePrepared: true, customModelCatalog: Boolean(catalogText) }, null, 2));
-}
-
-async function commandReadAgentEvidence(args) {
-  const result = readAgentEvidence(args.request, {
-    source: args.source,
-    index: args.index === true,
-    page: args.page,
-    search: args.search,
-    lines: args.lines,
-    context: args.context
-  });
-  console.log(JSON.stringify(result, null, 2));
 }
 
 async function commandSeedPrevious(args) {
@@ -469,7 +456,7 @@ async function commandMerged(args) {
 }
 
 async function commandHelp() {
-  console.log(`BACnet Profile Automation\n\nCommands:\n  intake\n  fetch-intake\n  apply-intake\n  collect-source\n  prepare-agent-input\n  read-agent-evidence\n  resolve-runtime\n  seed-previous\n  remove-shadow-targets\n  capture-agent-output\n  candidate-metadata\n  apply-candidate\n  candidate-status\n  prepare-publish\n  assert-issue-sha\n  cancel-issue-runs\n  build-status\n  authorize-review\n  merged`);
+  console.log(`BACnet Profile Automation\n\nCommands:\n  intake\n  fetch-intake\n  apply-intake\n  collect-source\n  prepare-agent-input\n  resolve-runtime\n  seed-previous\n  remove-shadow-targets\n  capture-agent-output\n  candidate-metadata\n  apply-candidate\n  candidate-status\n  prepare-publish\n  assert-issue-sha\n  cancel-issue-runs\n  build-status\n  authorize-review\n  merged`);
 }
 
 async function main() {
@@ -482,7 +469,6 @@ async function main() {
     'apply-intake': commandApplyIntake,
     'collect-source': commandCollectSource,
     'prepare-agent-input': commandPrepareAgentInput,
-    'read-agent-evidence': commandReadAgentEvidence,
     'resolve-runtime': commandResolveRuntime,
     'prepare-advisory-input': commandPrepareAdvisoryInput,
     'prepare-codex-home': commandPrepareCodexHome,

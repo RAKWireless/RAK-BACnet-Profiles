@@ -108,13 +108,9 @@ character source limit.
 
 The Agent receives prepared files under `.profile-agent/input`. Official
 documents and decoders are high-priority but untrusted protocol data. The
-Agent may not execute their instructions or source code. Prepared evidence is
-read through `read-agent-evidence`, which exposes only bounded indexes, pages,
-search matches, or line ranges so raw documents are not dumped into Actions
-logs. The Agent writes only the new Profile and fixture, completes both before
-the first validation run, and batches understood fixes before rerunning. A
-post-Agent step captures an allowlisted patch; the Agent job has no repository
-write token.
+Agent may not execute their instructions or source code. It writes only the
+new Profile and fixture. A post-Agent step captures an allowlisted patch; the
+Agent job has no repository write token.
 
 A separate clean-room job starts from the default branch, validates patch
 paths/modes/size/SHA, applies the patch, and runs candidate-strict validation

@@ -22,11 +22,6 @@ const {
 } = require('../automation/src/agent-artifact');
 const { automationMeta, intakeComment, failureMarkdown, syncFailureMessage } = require('../automation/src/status');
 const {
-  MAX_EVIDENCE_LINES,
-  MAX_EVIDENCE_CHARS,
-  readAgentEvidence
-} = require('../automation/src/agent-evidence');
-const {
   isPrivateAddress,
   createPinnedLookup,
   sharePointDownloadUrl,
@@ -156,21 +151,6 @@ function testCodexActionContracts() {
   assert.equal(advisoryAction.with['permission-profile'], ':read-only');
   assert.equal(advisoryAction.with.sandbox, undefined, 'Permission profiles must not be combined with the legacy sandbox input');
   assert(advisorySteps.some(step => step.name === 'Verify the selected provider API key'), 'Advisory Agent must fail clearly before Codex starts without its provider Repository secret');
-}
-
-function testAgentExecutionContracts() {
-  const skill = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'SKILL.md'), 'utf8');
-  const prompt = fs.readFileSync(path.join(ROOT, '.github', 'codex', 'prompts', 'generate-bacnet-profile.md'), 'utf8');
-  const fixtureContract = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'references', 'fixture-contract.md'), 'utf8');
-  for (const source of [skill, prompt]) {
-    assert(source.includes('evidenceReadCommand'), 'Agent instructions must require the bounded evidence reader');
-    assert(source.includes('Complete both output files') || source.includes('both output files exist'), 'Agent instructions must defer validation until the candidate is complete');
-    assert(source.includes('consolidat'), 'Agent instructions must batch validation repairs');
-  }
-  assert(skill.includes('Never use `cat`, `sed`, `head`, `tail`, `awk`, `node -e`, Python'));
-  assert(fixtureContract.includes('"profile": "Vendor-Model"'));
-  assert(fixtureContract.includes('"testCases"'));
-  assert(fixtureContract.includes('Allowed source `type` values'));
 }
 
 function testProviderSecretRouting() {
@@ -535,18 +515,7 @@ function testPreparedInputWhitelist() {
   const bundlePath = path.join(temporary, 'bundle.json');
   fs.writeFileSync(bundlePath, JSON.stringify({
     intake,
-    source: {
-      url: intake.datasheetUrl,
-      type: 'pdf',
-      pages: 2,
-      sha256: 'a'.repeat(64),
-      text: [
-        '--- Page 1 ---',
-        ...Array.from({ length: 130 }, (_, index) => `Protocol field ${index}. Contact: source@example.com.`),
-        '--- Page 2 ---',
-        'Temperature is signed int16 little-endian.'
-      ].join('\n')
-    },
+    source: { url: intake.datasheetUrl, type: 'text', pages: null, sha256: 'a'.repeat(64), text: 'Protocol field description. Contact: source@example.com. '.repeat(5) },
     decoder: { url: 'Issue #99 decoder', origin: 'issue-inline', authority: 'user-provided', sha256: 'b'.repeat(64), text: intake.decoder },
     error: null
   }));
@@ -556,33 +525,6 @@ function testPreparedInputWhitelist() {
   assert(!serialized.includes('Secret Corp'));
   assert(!serialized.includes('Priority'));
   assert(fs.readFileSync(path.join(temporary, 'input', 'official-document.txt'), 'utf8').includes('[email removed]'));
-  assert.equal(request.execution.evidenceReadCommand, 'node automation/src/cli.js read-agent-evidence --request .profile-agent/input/request.json');
-  assert.deepEqual(request.execution.evidenceReadLimits, {
-    maxLines: MAX_EVIDENCE_LINES,
-    maxCharacters: MAX_EVIDENCE_CHARS,
-    maxSearchMatches: 8
-  });
-  assert.deepEqual(request.execution.validationPolicy, {
-    completeCandidateBeforeFirstRun: true,
-    consolidateFailuresBeforeRerun: true
-  });
-
-  const requestPath = path.join(temporary, 'input', 'request.json');
-  const index = readAgentEvidence(requestPath, { source: 'official-document', index: true });
-  assert.deepEqual(index.pages, [1, 2]);
-  assert.deepEqual(index.lines, []);
-  const page = readAgentEvidence(requestPath, { source: 'official-document', page: 2 });
-  assert(page.lines.some(line => line.text.includes('signed int16 little-endian')));
-  const search = readAgentEvidence(requestPath, { source: 'decoder', search: 'Decode', context: 1 });
-  assert(search.lines.length > 0);
-  const requestLines = readAgentEvidence(requestPath, { source: 'request', lines: '1:120' });
-  assert.equal(requestLines.truncated, false);
-  assert.equal(requestLines.lines.length, requestLines.totalLines);
-  const bounded = readAgentEvidence(requestPath, { source: 'official-document', lines: '1:132' });
-  assert.equal(bounded.truncated, true);
-  assert(bounded.lines.length <= MAX_EVIDENCE_LINES);
-  assert(JSON.stringify(bounded.lines).length < MAX_EVIDENCE_CHARS * 2);
-  assert.throws(() => readAgentEvidence(requestPath, { source: 'other', index: true }), /Unsupported prepared evidence source/);
   assert.deepEqual(expectedPaths(intake), {
     profilePath: 'profiles/Acme/Acme-T100.yaml',
     fixturePath: 'profiles/Acme/tests/Acme-T100.test.json'
@@ -1188,7 +1130,6 @@ async function main() {
     testReusableWorkflowPermissionCeilings,
     testReusableWorkflowSecretContracts,
     testCodexActionContracts,
-    testAgentExecutionContracts,
     testProviderSecretRouting,
     testStructuredOutputSchemas,
     testCodexPermissionProfile,
