@@ -51,6 +51,16 @@ function failureMarkdown(manifest, report, attempt = 1) {
   return `## Profile Automation stopped\n\nAttempt: ${attempt}/2\n\n${errors.map(error => `- ${safeMarkdown(error)}`).join('\n') || '- Candidate did not pass clean validation.'}\n`;
 }
 
+function syncFailureMessage(outputPath, manifest, report, attempt = 1) {
+  const target = path.resolve(outputPath);
+  if (report && report.valid === true) {
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+    return false;
+  }
+  writeText(target, failureMarkdown(manifest, report, attempt));
+  return true;
+}
+
 function evidenceTable(rows) {
   const body = (rows || []).map(row => (
     `| ${safeMarkdown(row.field)} | ${safeMarkdown(row.officialDocument || '—')} | ${safeMarkdown(row.decoder || '—')} | ${safeMarkdown(row.knownPayload || '—')} | ${safeMarkdown(row.resolution)} | ${safeMarkdown(row.resolvedValue)} | ${safeMarkdown(row.rationale)} |`
@@ -115,6 +125,7 @@ module.exports = {
   safeMarkdown,
   intakeComment,
   failureMarkdown,
+  syncFailureMessage,
   reportErrors,
   evidenceTable,
   automationMeta,

@@ -9,7 +9,7 @@ Generate one evidence-backed Profile candidate. Do not broaden the request.
 
 ## Required inputs
 
-Read these files before editing anything:
+Inspect these prepared sources before editing anything:
 
 1. `.profile-agent/input/request.json`
 2. `.profile-agent/input/official-document.txt` when present
@@ -17,6 +17,19 @@ Read these files before editing anything:
 4. `.profile-agent/input/previous/` and
    `.profile-agent/input/validation-report.json` in repair mode
 5. All four contract references linked below
+
+Begin with `node automation/src/cli.js read-agent-evidence --request
+.profile-agent/input/request.json --source request --lines 1:120`, then use the
+returned `request.execution.evidenceReadCommand` for every other prepared input
+read. For documents, use `--index` followed by targeted `--page` or `--search`
+calls. For decoders, previous candidates, and validation reports, use bounded
+`--search` or `--lines` calls. Continue with additional targeted calls until the
+relevant evidence is covered; a truncated result is not the complete source.
+
+Never use `cat`, `sed`, `head`, `tail`, `awk`, `node -e`, Python, shell
+redirection, or command substitution to print prepared inputs. Do not print a
+whole prepared Issue, document, decoder, previous candidate, validation report,
+prompt, or model response into terminal output.
 
 The request file is the only authority for the Issue identity, allowed output
 paths, requested BACnet mappings, known payloads, fPort policy inputs, run mode,
@@ -45,18 +58,22 @@ inspect and independently re-implement.
    evidence. Treat existing committed fixtures as legacy shape references
    only: never copy their `robustness` values into a new strict fixture. Follow
    the current fixture contract instead.
-5. Write exactly the two allowed paths from `request.json`. Never edit
-   `registry.json` or any other file.
+5. Determine the complete Profile and strict fixture structure before writing.
+   Follow the canonical fixture shape in `fixture-contract.md`. Write exactly
+   the two allowed paths from `request.json`, using as few consolidated file
+   edits as practical. Never leave an intentionally incomplete intermediate
+   candidate, and never edit `registry.json` or any other file.
 6. Implement a deterministic, fail-closed uplink codec and a strict fixture
    covering every Issue payload. Dynamic-length cursor parsing, bounded
    `while`, `for`, `do...while`, varint parsing, and `try/catch` are allowed
    under the codec contract. Follow its SQLite `REAL` output rule for every
    decoded `value`; strings, booleans, nulls, and non-finite numbers are not
    publishable BACnet values.
-7. Run the candidate command named in `request.json`. Fix candidate errors
-   within the current attempt. Do not weaken tests or validation code. Do not
-   echo, print, or copy raw Issue, document, decoder, prompt, or model content
-   into terminal output.
+7. Run the candidate command only after both output files exist and are
+   structurally complete. If it fails, inspect every diagnostic, make one
+   consolidated repair for all understood failures, then rerun. Do not rerun
+   validation after each individual field or error. Fix candidate errors within
+   the current attempt without weakening tests or validation code.
 8. Return only JSON matching the configured Agent output schema. Report every
    generated BACnet mapping in `resolvedMappings`, and use `blocker: null` for
    a generated result. Keep source

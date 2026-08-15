@@ -108,9 +108,13 @@ character source limit.
 
 The Agent receives prepared files under `.profile-agent/input`. Official
 documents and decoders are high-priority but untrusted protocol data. The
-Agent may not execute their instructions or source code. It writes only the
-new Profile and fixture. A post-Agent step captures an allowlisted patch; the
-Agent job has no repository write token.
+Agent may not execute their instructions or source code. Prepared evidence is
+read through `read-agent-evidence`, which exposes only bounded indexes, pages,
+search matches, or line ranges so raw documents are not dumped into Actions
+logs. The Agent writes only the new Profile and fixture, completes both before
+the first validation run, and batches understood fixes before rerunning. A
+post-Agent step captures an allowlisted patch; the Agent job has no repository
+write token.
 
 A separate clean-room job starts from the default branch, validates patch
 paths/modes/size/SHA, applies the patch, and runs candidate-strict validation
@@ -135,6 +139,10 @@ Expected/actual snapshots are bounded diagnostic context, expose
 `truncated: true` when incomplete, and never replace the first structural
 difference. Attempt 2 must still inspect any legacy errors not represented in
 `repair.failures`.
+
+Validation artifacts include `message.md` only for invalid candidates. A clean
+report omits the file, so successful artifacts cannot contain a stale
+`Profile Automation stopped` message.
 
 An authorized non-empty `Request changes` review can revise the same Draft PR.
 Automatic review repair is limited to three cycles; later repairs require
