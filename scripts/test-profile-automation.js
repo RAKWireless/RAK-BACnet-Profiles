@@ -17,15 +17,36 @@ const {
   validateAgentResult,
   prepareAgentInput,
   patchPaths,
-  seedPreviousFromCandidate
+  seedPreviousFromCandidate,
+  blockedManifest
 } = require('../automation/src/agent-artifact');
-const { automationMeta, intakeComment } = require('../automation/src/status');
-const { isPrivateAddress, createPinnedLookup, sharePointDownloadUrl } = require('../automation/src/source-loader');
+const { automationMeta, intakeComment, failureMarkdown } = require('../automation/src/status');
+const {
+  isPrivateAddress,
+  createPinnedLookup,
+  sharePointDownloadUrl,
+  extractSourceText,
+  normalizeStructuredText,
+  compactText,
+  htmlToText,
+  reconstructPdfItems,
+  renderPdfPage,
+  boundedSourceText
+} = require('../automation/src/source-loader');
 const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require('../automation/src/decoder-loader');
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
 const { validateProfileSemantics, validateDecodedData } = require('./lib/validation/profile-semantics');
 const { validateTestFixture } = require('./lib/validation/test-fixture');
-const { candidateContractChecks, validateFixtureContract } = require('./lib/validation/agent-candidate');
+const { validateRequestedMapping } = require('./lib/validation/requested-mapping');
+const { firstDifference, boundedExpectedActual } = require('./lib/validation/diagnostics');
+const {
+  candidateContractChecks,
+  validateFixtureContract,
+  validateIssueCoverage,
+  validateAgentCandidate,
+  repairFailures,
+  ALLOWED_CHECK_PATHS
+} = require('./lib/validation/agent-candidate');
 const { runGeneratedProfileCI } = require('./run-profile-ci');
 const { evaluate: evaluateShadowRun, parseExpectedIssueNumbers } = require('./evaluate-shadow-run');
 const { mergeLastUpdatesFromRegistry } = require('./update-registry');
@@ -607,11 +628,26 @@ function testRetryableAttemptSeedingWithoutCandidatePatch() {
     retryable: true,
     reason: 'The Agent runtime did not produce a result file'
   }));
-  fs.writeFileSync(reportPath, JSON.stringify({ valid: false, retryable: true }));
+  const validationReport = {
+    valid: false,
+    retryable: true,
+    repair: {
+      primaryFailure: {
+        code: 'FIXTURE_EXPECTED_OUTPUT_MISMATCH',
+        checkPath: 'candidateStrict.checks.fixture',
+        payload: '00FA',
+        fPort: 1
+      },
+      failures: []
+    }
+  };
+  const serializedReport = `${JSON.stringify(validationReport, null, 2)}\n`;
+  fs.writeFileSync(reportPath, serializedReport);
   const seeded = seedPreviousFromCandidate(candidatePath, requestPath, reportPath);
   assert.deepEqual(seeded, { status: 'invalid-agent-output', candidateSeeded: false });
   assert(fs.existsSync(path.join(temporary, 'input', 'previous', 'manifest.json')));
   assert(fs.existsSync(path.join(temporary, 'input', 'validation-report.json')));
+  assert.equal(fs.readFileSync(path.join(temporary, 'input', 'validation-report.json'), 'utf8'), serializedReport);
 }
 
 function testNetworkBoundary() {
@@ -636,6 +672,160 @@ function testNetworkBoundary() {
   assert.equal(sharePointDownloadUrl('https://tenant.sharepoint.com/:b:/g/personal/a/short'), null);
 }
 
+async function testStructuredSourceExtraction() {
+  assert.equal(normalizeStructuredText(' alpha  \r\n\r\n\r\n beta\t \r'), 'alpha\n\n beta');
+  assert.equal(compactText('--- Page 1 ---\n\n \t'), '');
+
+  const html = '<html><body><h1>Protocol</h1><table>' +
+    '<tr><th>Field</th><th>Offset</th></tr>' +
+    '<tr><td>Temperature</td><td>2</td></tr></table>' +
+    '<p>Email: docs@example.com</p><script>ignored()</script></body></html>';
+  const htmlText = htmlToText(html);
+  assert(htmlText.includes('Protocol'));
+  assert(htmlText.includes('Field\tOffset'));
+  assert(htmlText.includes('Temperature\t2'));
+  assert(!htmlText.includes('ignored()'));
+  assert(!scrubPII(htmlText).includes('docs@example.com'));
+  const extractedHtml = await extractSourceText({
+    contentType: 'text/html; charset=utf-8',
+    buffer: Buffer.from(`${html}<p>${'machine readable '.repeat(10)}</p>`)
+  });
+  assert.equal(extractedHtml.type, 'html');
+  assert.equal(extractedHtml.pages, null);
+  assert(extractedHtml.text.includes('Temperature\t2'));
+
+  const items = [
+    { str: 'Value', transform: [1, 0, 0, 10, 100, 99], width: 24, height: 10 },
+    { str: 'Header', transform: [1, 0, 0, 10, 10, 100], width: 35, height: 10 },
+    { str: '42', transform: [1, 0, 0, 10, 100, 80], width: 10, height: 10 },
+    { str: 'Row', transform: [1, 0, 0, 10, 10, 80], width: 18, height: 10 },
+    { str: 'A', transform: [1, 0, 0, 10, 10, 60], width: 5, height: 10 },
+    { str: 'B', transform: [1, 0, 0, 10, 10, 60], width: 5, height: 10 },
+    { str: 'ignored', transform: null }
+  ];
+  assert.equal(reconstructPdfItems(items), 'Header\tValue\nRow\t42\nAB');
+
+  const pageOne = await renderPdfPage({
+    pageNumber: 1,
+    getTextContent: async options => {
+      assert.deepEqual(options, { normalizeWhitespace: false, disableCombineTextItems: false });
+      return { items };
+    }
+  });
+  const pageTwo = await renderPdfPage({
+    pageNumber: 2,
+    getTextContent: async () => ({
+      items: [{ str: 'Second page', transform: [1, 0, 0, 10, 10, 100], width: 50, height: 10 }]
+    })
+  });
+  assert.equal(pageOne, '--- Page 1 ---\nHeader\tValue\nRow\t42\nAB');
+  assert.equal(pageTwo, '--- Page 2 ---\nSecond page');
+  assert.equal(`${pageOne}\n\n${pageTwo}`.match(/^--- Page \d+ ---$/gm).length, 2);
+  assert.equal(await renderPdfPage({ pageNumber: 3, getTextContent: async () => { throw new Error('bad page'); } }), '--- Page 3 ---');
+  assert.equal(compactText(`${pageOne}\n${pageTwo}`).includes('--- Page'), false);
+  const bounded = boundedSourceText(`${'x'.repeat(120000)} user@example.com`);
+  assert.equal(bounded.length, 120000);
+  assert(!bounded.includes('@'));
+}
+
+function testStructuredRepairDiagnostics() {
+  const golden = path.join(ROOT, 'automation', 'test', 'golden', 'issue-31');
+  const profilePath = path.join(golden, 'profiles', 'QingPing', 'QingPing-CGP22CLH.yaml');
+  const sourceFixturePath = path.join(golden, 'profiles', 'QingPing', 'tests', 'QingPing-CGP22CLH.test.json');
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-repair-diagnostics-'));
+  const fixturePath = path.join(temporary, 'QingPing-CGP22CLH.test.json');
+  try {
+    const fixture = JSON.parse(fs.readFileSync(sourceFixturePath, 'utf8'));
+    fixture.testCases[0].expectedOutput[0].value = -99;
+    fs.writeFileSync(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+    const report = validateTestFixture(profilePath, fixturePath);
+    assert.equal(report.valid, false);
+    assert(report.errors.includes('Issue 31 real-time known answer: Actual output does not match expectedOutput'));
+    assert(report.results[0].errors.includes('Actual output does not match expectedOutput'));
+    const mismatch = report.failures.find(failure => failure.code === 'FIXTURE_EXPECTED_OUTPUT_MISMATCH');
+    assert(mismatch);
+    assert.equal(mismatch.checkPath, 'candidateStrict.checks.fixture');
+    assert.equal(mismatch.payload, fixture.testCases[0].input);
+    assert.equal(mismatch.fPort, 1);
+    assert.deepEqual(mismatch.difference, { path: '[0].value', expected: -99, actual: 26.4 });
+    assert.equal(mismatch.truncated, false);
+
+    const fallbackMessage = 'Legacy validator wording can change without changing a stable code';
+    const aggregated = repairFailures({
+      checks: {
+        candidateStrict: { valid: false, checks: { fixture: report } },
+        requestedMapping: { valid: false, errors: [fallbackMessage], warnings: [] }
+      }
+    });
+    assert.equal(aggregated[0].code, 'FIXTURE_EXPECTED_OUTPUT_MISMATCH');
+    assert(aggregated.some(failure => failure.code === 'VALIDATION_ERROR' && failure.message === fallbackMessage));
+    assert(aggregated.every(failure => ALLOWED_CHECK_PATHS.includes(failure.checkPath)));
+
+    const mapping = validateRequestedMapping({
+      datatype: { '1': { name: 'Temperature', type: 'BinaryInputObject', units: null } }
+    }, 'Temperature -> AnalogInputObject (degreesCelsius)');
+    assert.equal(mapping.valid, false);
+    assert(mapping.failures.some(failure => failure.code === 'REQUESTED_MAPPING_TYPE_MISMATCH'));
+    assert(mapping.failures.some(failure => failure.code === 'REQUESTED_MAPPING_UNITS_MISMATCH'));
+
+    const ignoredCoverage = validateIssueCoverage({
+      uplinkExamples: [{ hex: '00FA', fPort: 10 }]
+    }, {
+      fPortPolicy: { mode: 'ignored' },
+      testCases: []
+    });
+    assert(ignoredCoverage.failures.some(failure => failure.code === 'IGNORED_FPORT_CONFLICT'));
+    assert(ignoredCoverage.failures.some(failure => failure.code === 'ISSUE_PAYLOAD_NOT_COVERED'));
+    const fixedCoverage = validateIssueCoverage({
+      uplinkExamples: [{ hex: '00FA', fPort: 10 }]
+    }, {
+      fPortPolicy: { mode: 'fixed', ports: [10] },
+      testCases: [{ input: '00FA', fPort: 11 }]
+    });
+    assert(fixedCoverage.failures.some(failure => failure.code === 'ISSUE_FPORT_NOT_COVERED'));
+
+    const longString = 'x'.repeat(2000);
+    const bounded = boundedExpectedActual(
+      Array.from({ length: 40 }, () => ({ value: longString })),
+      [undefined, Number.NaN, Number.POSITIVE_INFINITY]
+    );
+    assert.equal(bounded.truncated, true);
+    assert(bounded.truncatedFields.includes('expected'));
+    assert.deepEqual(bounded.actual, [
+      { kind: 'undefined' },
+      { kind: 'non-finite-number', value: 'NaN' },
+      { kind: 'non-finite-number', value: 'Infinity' }
+    ]);
+    assert.doesNotThrow(() => JSON.stringify(bounded));
+    assert(Buffer.byteLength(JSON.stringify(bounded.expected), 'utf8') <= 8 * 1024);
+    assert.deepEqual(firstDifference([{ value: 1 }], [{ value: 2 }]), { path: '[0].value', expected: 1, actual: 2 });
+
+    assert.deepEqual(ALLOWED_CHECK_PATHS, [
+      'identity',
+      'fixtureContract',
+      'issueCoverage',
+      'requestedMapping',
+      'candidateStrict.checks.yaml',
+      'candidateStrict.checks.schema',
+      'candidateStrict.checks.requiredFields',
+      'candidateStrict.checks.codecSafety',
+      'candidateStrict.checks.codecSyntax',
+      'candidateStrict.checks.bacnet',
+      'candidateStrict.checks.naming',
+      'candidateStrict.checks.semantics',
+      'candidateStrict.checks.fixture',
+      'repositoryProfiles',
+      'repositoryFixtures',
+      'registryUpdate',
+      'registryValidation',
+      'validation'
+    ]);
+    assert(!ALLOWED_CHECK_PATHS.includes('fixture'));
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 async function testDecoderTrustClassification() {
   const decoderText = 'function decodeUplink(input) { return { data: { model: "T100" } }; }';
   assert.equal(isDecoderCode(decoderText), true);
@@ -655,26 +845,42 @@ async function testDecoderTrustClassification() {
   assert.equal(searched.authority, 'supporting');
 }
 
-function testIssue31Golden() {
-  const golden = path.join(ROOT, 'automation', 'test', 'golden', 'issue-31');
-  const issue = JSON.parse(fs.readFileSync(path.join(golden, 'issue.json'), 'utf8'));
+function goldenCaseDirectories() {
+  const root = path.join(ROOT, 'automation', 'test', 'golden');
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && fs.existsSync(path.join(root, entry.name, 'golden.json')))
+    .map(entry => path.join(root, entry.name))
+    .sort();
+}
+
+function preparedGolden(directory) {
+  const config = JSON.parse(fs.readFileSync(path.join(directory, 'golden.json'), 'utf8'));
+  const issue = JSON.parse(fs.readFileSync(path.join(directory, 'issue.json'), 'utf8'));
   const intake = parseIssue(issue, { allowExisting: true });
   assert.equal(intake.status, 'ready');
-  assert.equal(intake.fPortStatus, 'deferred');
   assert(!JSON.stringify(intake).includes('@'));
+  return { config, issue, intake };
+}
 
-  const profilePath = path.join(golden, 'profiles', 'QingPing', 'QingPing-CGP22CLH.yaml');
-  const fixturePath = path.join(golden, 'profiles', 'QingPing', 'tests', 'QingPing-CGP22CLH.test.json');
-  const strict = runGeneratedProfileCI(profilePath, fixturePath);
-  assert.equal(strict.valid, true, JSON.stringify(strict, null, 2));
-
-  const result = JSON.parse(fs.readFileSync(path.join(golden, 'agent-result.json'), 'utf8'));
+function goldenResult(directory, intake) {
+  const result = JSON.parse(fs.readFileSync(path.join(directory, 'agent-result.json'), 'utf8'));
   result.issueBodySha = intake.issueBodySha;
   validateAgentResult(result);
+  return result;
+}
+
+function runGeneratedGolden(directory, config, intake) {
+  const result = goldenResult(directory, intake);
+  assert.equal(result.status, config.expectedStatus);
+  const profilePath = path.join(directory, result.profilePath);
+  const fixturePath = path.join(directory, result.fixturePath);
+  const strict = runGeneratedProfileCI(profilePath, fixturePath);
+  assert.equal(strict.valid, true, `${path.basename(directory)}: ${JSON.stringify(strict, null, 2)}`);
+
   const manifest = {
     schemaVersion: 1,
     status: 'candidate',
-    issueNumber: 31,
+    issueNumber: intake.issueNumber,
     issueBodySha: intake.issueBodySha,
     profilePath: result.profilePath,
     fixturePath: result.fixturePath
@@ -686,10 +892,119 @@ function testIssue31Golden() {
     result,
     sourceBundle: { intake }
   });
-  assert.equal(contract.valid, true, JSON.stringify(contract, null, 2));
+  assert.equal(contract.valid, true, `${path.basename(directory)}: ${JSON.stringify(contract, null, 2)}`);
   const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-  assert.equal(fixture.evidenceLevel, 'known-answer');
-  assert.equal(fixture.fPortPolicy.mode, 'ignored');
+  assert.equal(fixture.evidenceLevel, config.expectedEvidenceLevel);
+  assert.equal(fixture.fPortPolicy.mode, config.expectedFPortMode);
+  const values = fixture.testCases.flatMap(testCase => (testCase.expectedOutput || []).map(item => item.value));
+  for (const value of config.expectedValues || []) assert(values.includes(value), `${path.basename(directory)} must cover value ${value}`);
+}
+
+function runBlockedGolden(directory, config, intake) {
+  const result = goldenResult(directory, intake);
+  assert.equal(result.status, config.expectedStatus);
+  assert.equal(result.blocker.code, config.expectedBlockerCode);
+  assert.equal(result.profilePath, null);
+  assert.equal(result.fixturePath, null);
+  const manifest = blockedManifest(result);
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.retryable, config.expectedRetryable);
+  assert.equal(manifest.blocker.code, config.expectedBlockerCode);
+  assert(fs.existsSync(path.join(directory, 'official-document.txt')));
+  assert(fs.existsSync(path.join(directory, 'decoder.txt')));
+}
+
+function runRepairGolden(directory, config, intake) {
+  const base = path.join(ROOT, 'automation', 'test', 'golden', config.baseGolden);
+  const baseResult = goldenResult(base, intake);
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-golden-repair-'));
+  const profilePath = path.join(temporary, baseResult.profilePath);
+  const fixturePath = path.join(temporary, baseResult.fixturePath);
+  const candidateDirectory = path.join(temporary, 'candidate');
+  const sourceBundlePath = path.join(temporary, 'source-bundle.json');
+  try {
+    fs.mkdirSync(path.dirname(profilePath), { recursive: true });
+    fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
+    fs.mkdirSync(candidateDirectory, { recursive: true });
+    fs.copyFileSync(path.join(base, baseResult.profilePath), profilePath);
+    fs.copyFileSync(path.join(directory, config.attempt1Fixture), fixturePath);
+    const manifest = {
+      schemaVersion: 1,
+      status: 'candidate',
+      issueNumber: intake.issueNumber,
+      issueBodySha: intake.issueBodySha,
+      profilePath: baseResult.profilePath,
+      fixturePath: baseResult.fixturePath
+    };
+    fs.writeFileSync(path.join(candidateDirectory, 'manifest.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(candidateDirectory, 'agent-result.json'), JSON.stringify(baseResult));
+    fs.writeFileSync(sourceBundlePath, JSON.stringify({ intake }));
+
+    const attemptOne = validateAgentCandidate({
+      root: temporary,
+      candidateDirectory,
+      sourceBundlePath,
+      includeRepositoryChecks: false
+    });
+    assert.equal(attemptOne.valid, false);
+    assert.equal(attemptOne.repair.primaryFailure.code, config.expectedPrimaryCode);
+    assert.deepEqual(attemptOne.repair.primaryFailure, attemptOne.repair.failures[0]);
+    assert.equal(attemptOne.repair.primaryFailure.checkPath, 'candidateStrict.checks.fixture');
+    assert(attemptOne.repair.primaryFailure.payload);
+    assert(Object.prototype.hasOwnProperty.call(attemptOne.repair.primaryFailure, 'expected'));
+    assert(Object.prototype.hasOwnProperty.call(attemptOne.repair.primaryFailure, 'actual'));
+
+    const reportPath = path.join(temporary, 'validation-report.json');
+    const serializedReport = `${JSON.stringify(attemptOne, null, 2)}\n`;
+    fs.writeFileSync(reportPath, serializedReport);
+    const requestPath = path.join(temporary, 'input', 'request.json');
+    const retryDirectory = path.join(temporary, 'retryable-candidate');
+    fs.mkdirSync(path.dirname(requestPath), { recursive: true });
+    fs.mkdirSync(retryDirectory, { recursive: true });
+    fs.writeFileSync(requestPath, JSON.stringify({
+      issue: { number: intake.issueNumber, bodySha: intake.issueBodySha },
+      execution: { profilePath: baseResult.profilePath, fixturePath: baseResult.fixturePath }
+    }));
+    fs.writeFileSync(path.join(retryDirectory, 'manifest.json'), JSON.stringify({
+      schemaVersion: 1,
+      status: 'invalid-agent-output',
+      issueNumber: intake.issueNumber,
+      issueBodySha: intake.issueBodySha,
+      retryable: true,
+      reason: 'Golden report seeding fixture'
+    }));
+    seedPreviousFromCandidate(retryDirectory, requestPath, reportPath);
+    assert.equal(fs.readFileSync(path.join(temporary, 'input', 'validation-report.json'), 'utf8'), serializedReport);
+
+    fs.copyFileSync(path.join(base, baseResult.fixturePath), fixturePath);
+    const attemptTwo = validateAgentCandidate({
+      root: temporary,
+      candidateDirectory,
+      sourceBundlePath,
+      includeRepositoryChecks: false
+    });
+    assert.equal(attemptTwo.valid, true, JSON.stringify(attemptTwo, null, 2));
+    assert.equal(Object.prototype.hasOwnProperty.call(attemptTwo, 'repair'), false);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+function testAutomationGoldens() {
+  const directories = goldenCaseDirectories();
+  assert.deepEqual(directories.map(directory => path.basename(directory)), [
+    'issue-31',
+    'issue-31-repair',
+    'issue-conflict-99',
+    'issue-em410'
+  ]);
+  for (const directory of directories) {
+    const { config, intake } = preparedGolden(directory);
+    if (config.kind === 'generated') runGeneratedGolden(directory, config, intake);
+    else if (config.kind === 'blocked') runBlockedGolden(directory, config, intake);
+    else if (config.kind === 'repair') runRepairGolden(directory, config, intake);
+    else assert.fail(`Unsupported Golden kind '${config.kind}' in ${directory}`);
+  }
 }
 
 function testStrictFixtureRequiresExplicitRobustness() {
@@ -713,6 +1028,8 @@ function testStrictFixtureRequiresExplicitRobustness() {
     });
     assert.equal(contract.valid, false);
     assert(contract.errors.includes('ignored fPort policy must set robustness.checkUnknownFPort to false'));
+    assert(contract.failures.some(failure => failure.code === 'FIXTURE_STRICT_REQUIRED'));
+    assert(contract.failures.some(failure => failure.code === 'FIXTURE_FPORT_POLICY_MISMATCH'));
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
@@ -722,7 +1039,7 @@ function testMetadataAndShadowEvaluation() {
   const meta = { issueNumber: 31, issueBodySha: 'a'.repeat(64), reviewCycle: 2 };
   assert.deepEqual(automationMeta(`x\n<!-- profile-automation:meta ${JSON.stringify(meta)} -->\ny`), meta);
   const evaluation = evaluateShadowRun([
-    { eligible: true, evidencePassed: true, candidateProduced: true, valid: true },
+    { eligible: true, evidencePassed: true, candidateProduced: true, valid: true, repair: { primaryFailure: null, failures: [] } },
     { eligible: true, evidencePassed: false, candidateProduced: false, valid: false }
   ], 0.5);
   assert.equal(evaluation.valid, true);
@@ -745,6 +1062,17 @@ function testMetadataAndShadowEvaluation() {
   ], 0.85, { expectedIssueNumbers: [31], enforceRolloutGate: true });
   assert.equal(undersizedRollout.valid, false);
   assert.equal(undersizedRollout.sampleSizeSufficient, false);
+
+  assert.equal(failureMarkdown({}, {
+    checks: {
+      fixtureContract: {
+        valid: false,
+        errors: ['legacy contract error'],
+        warnings: [],
+        failures: [{ code: 'VALIDATION_ERROR', checkPath: 'fixtureContract', message: 'ignored by legacy comment' }]
+      }
+    }
+  }, 1), '## Profile Automation stopped\n\nAttempt: 1/2\n\n- fixtureContract: legacy contract error\n');
 }
 
 function testRegistryMetadataPreservation() {
@@ -804,8 +1132,10 @@ async function main() {
     testAgentResultSchemaAndPatchPaths,
     testRetryableAttemptSeedingWithoutCandidatePatch,
     testNetworkBoundary,
+    testStructuredSourceExtraction,
+    testStructuredRepairDiagnostics,
     testDecoderTrustClassification,
-    testIssue31Golden,
+    testAutomationGoldens,
     testStrictFixtureRequiresExplicitRobustness,
     testMetadataAndShadowEvaluation,
     testRegistryMetadataPreservation

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "status": "generated",
+  "issueNumber": 410,
+  "issueBodySha": "REPLACED_BY_TEST",
+  "summary": "Generated a strict uplink-only EM410 temperature Profile with fixed fPort handling.",
+  "profilePath": "profiles/Milesight/Milesight-EM410-RDL.yaml",
+  "fixturePath": "profiles/Milesight/tests/Milesight-EM410-RDL.test.json",
+  "evidenceLevel": "known-answer",
+  "resolvedMappings": [
+    { "name": "Temperature", "type": "AnalogInputObject", "units": "degreesCelsius" }
+  ],
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [85],
+    "citation": "Both prepared Issue payloads explicitly declare fPort 85"
+  },
+  "warnings": [],
+  "blocker": null,
+  "evidenceMatrix": [
+    {
+      "field": "Temperature",
+      "officialDocument": "TLV 03/67 carries signed int16 little-endian temperature in tenths of a degree Celsius",
+      "decoder": "Reads bytes 2-3 as signed int16 little-endian and divides by 10",
+      "knownPayload": "0367EB00 = 23.5 C and 0367D3FF = -4.5 C",
+      "resolution": "payload-verified",
+      "resolvedValue": "signed int16 little-endian / 10",
+      "rationale": "Positive and negative known payloads reproduce the documented values"
+    }
+  ]
+}

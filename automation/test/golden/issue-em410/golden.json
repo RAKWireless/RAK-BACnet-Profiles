@@ -1,0 +1,7 @@
+{
+  "kind": "generated",
+  "expectedStatus": "generated",
+  "expectedEvidenceLevel": "known-answer",
+  "expectedFPortMode": "fixed",
+  "expectedValues": [23.5, -4.5]
+}

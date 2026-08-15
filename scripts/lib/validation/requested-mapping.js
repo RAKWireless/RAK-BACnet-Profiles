@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const { ALLOWED_UNITS } = require('../units');
+const { boundedExpectedActual } = require('./diagnostics');
 
 const OBJECT_TYPE = '(?:Analog|Binary|OctetString)(?:Input|Output|Value)?Object';
 const OBJECT_TYPE_ALIASES = [
@@ -274,24 +275,74 @@ function findDatatypeEntry(profile, requestedName) {
 function validateRequestedMapping(profile, mappingText) {
   const errors = [];
   const warnings = [];
+  const failures = [];
   const requested = parseRequestedMappings(mappingText);
   if (requested.length === 0) {
-    return { valid: false, errors: ['No resolved machine-readable BACnet mapping rows were found'], warnings, requested };
+    const message = 'No resolved machine-readable BACnet mapping rows were found';
+    errors.push(message);
+    failures.push({
+      code: 'REQUESTED_MAPPING_MISSING',
+      checkPath: 'requestedMapping',
+      message,
+      field: 'datatype',
+      rule: 'Every resolved requested BACnet mapping must have a machine-readable row',
+      hint: 'Add the resolved Issue mapping rows to the Agent result and matching datatype entries'
+    });
+    return { valid: false, errors, warnings, requested, failures };
   }
   for (const mapping of requested) {
     const config = findDatatypeEntry(profile, mapping.name);
     if (!config) {
-      errors.push(`Requested BACnet parameter '${mapping.name}' is missing from datatype`);
+      const message = `Requested BACnet parameter '${mapping.name}' is missing from datatype`;
+      errors.push(message);
+      failures.push({
+        code: 'REQUESTED_MAPPING_MISSING',
+        checkPath: 'requestedMapping',
+        message,
+        field: mapping.name,
+        rule: 'Every requested BACnet parameter must be declared in datatype',
+        hint: `Add a datatype entry whose name is exactly '${mapping.name}'`
+      });
       continue;
     }
     if (String(config.type).toLowerCase() !== mapping.type.toLowerCase()) {
-      errors.push(`Requested BACnet parameter '${mapping.name}' must use ${mapping.type}, not ${config.type}`);
+      const message = `Requested BACnet parameter '${mapping.name}' must use ${mapping.type}, not ${config.type}`;
+      const snapshots = boundedExpectedActual(mapping.type, config.type);
+      errors.push(message);
+      failures.push({
+        code: 'REQUESTED_MAPPING_TYPE_MISMATCH',
+        checkPath: 'requestedMapping',
+        message,
+        field: mapping.name,
+        rule: `Requested mapping requires BACnet type ${mapping.type}`,
+        hint: `Change datatype '${mapping.name}' to ${mapping.type}`,
+        expected: snapshots.expected,
+        actual: snapshots.actual,
+        difference: { path: 'type', expected: snapshots.expected, actual: snapshots.actual },
+        truncated: snapshots.truncated,
+        truncatedFields: snapshots.truncatedFields
+      });
     }
     if (mapping.units && !equivalentUnits(config.units, mapping.units)) {
-      errors.push(`Requested BACnet parameter '${mapping.name}' must use units '${mapping.units}', not '${config.units ?? 'null'}'`);
+      const message = `Requested BACnet parameter '${mapping.name}' must use units '${mapping.units}', not '${config.units ?? 'null'}'`;
+      const snapshots = boundedExpectedActual(mapping.units, config.units ?? null);
+      errors.push(message);
+      failures.push({
+        code: 'REQUESTED_MAPPING_UNITS_MISMATCH',
+        checkPath: 'requestedMapping',
+        message,
+        field: mapping.name,
+        rule: `Requested mapping requires units '${mapping.units}'`,
+        hint: `Change datatype '${mapping.name}' units to '${mapping.units}'`,
+        expected: snapshots.expected,
+        actual: snapshots.actual,
+        difference: { path: 'units', expected: snapshots.expected, actual: snapshots.actual },
+        truncated: snapshots.truncated,
+        truncatedFields: snapshots.truncatedFields
+      });
     }
   }
-  return { valid: errors.length === 0, errors, warnings, requested };
+  return { valid: errors.length === 0, errors, warnings, requested, failures };
 }
 
 function main() {

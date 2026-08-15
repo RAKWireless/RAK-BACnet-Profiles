@@ -8,6 +8,7 @@ const { loadYAML } = require('../yaml-parser');
 const { hexToBytes } = require('../hex-converter');
 const { testDecode } = require('../../test-codec');
 const { validateDecodedData } = require('./profile-semantics');
+const { firstDifference, boundedExpectedActual } = require('./diagnostics');
 
 function deepEqual(actual, expected) {
   return JSON.stringify(actual) === JSON.stringify(expected);
@@ -23,19 +24,53 @@ function validateFixtureSchema(fixture) {
   };
 }
 
-function validateStrictFixtureRobustness(fixture) {
-  if (fixture.strict !== true) return [];
-  const errors = [];
-  if (!fixture.robustness || fixture.robustness.checkTruncation !== true) {
-    errors.push('Strict fixture must set robustness.checkTruncation to true');
-  }
-  if (!fixture.robustness || fixture.robustness.checkFuzz !== true) {
-    errors.push('Strict fixture must set robustness.checkFuzz to true');
-  }
-  return errors;
+function validationErrorFailure(checkPath, message, extra = {}) {
+  return {
+    code: 'VALIDATION_ERROR',
+    checkPath,
+    message,
+    rule: 'The deterministic validator must pass without errors',
+    hint: 'Resolve this validation error without weakening the fixture or validation rules',
+    ...extra
+  };
 }
 
-function validateResult(profile, testCase, result, valueOptions = {}) {
+function validateStrictFixtureRobustnessDetails(fixture, checkPath = 'candidateStrict.checks.fixture') {
+  if (fixture.strict !== true) return { errors: [], failures: [] };
+  const errors = [];
+  const failures = [];
+  if (!fixture.robustness || fixture.robustness.checkTruncation !== true) {
+    const message = 'Strict fixture must set robustness.checkTruncation to true';
+    errors.push(message);
+    failures.push({
+      code: 'FIXTURE_STRICT_REQUIRED',
+      checkPath,
+      message,
+      field: 'robustness.checkTruncation',
+      rule: 'Strict generated fixtures must enable truncation checks',
+      hint: 'Set robustness.checkTruncation to true and make the codec fail closed on every truncated payload'
+    });
+  }
+  if (!fixture.robustness || fixture.robustness.checkFuzz !== true) {
+    const message = 'Strict fixture must set robustness.checkFuzz to true';
+    errors.push(message);
+    failures.push({
+      code: 'FIXTURE_STRICT_REQUIRED',
+      checkPath,
+      message,
+      field: 'robustness.checkFuzz',
+      rule: 'Strict generated fixtures must enable deterministic fuzz checks',
+      hint: 'Set robustness.checkFuzz to true and make malformed payloads fail closed deterministically'
+    });
+  }
+  return { errors, failures };
+}
+
+function validateStrictFixtureRobustness(fixture) {
+  return validateStrictFixtureRobustnessDetails(fixture).errors;
+}
+
+function validateResult(profile, testCase, result, valueOptions = {}, failureOptions = {}) {
   const errors = [];
   if (!result || typeof result !== 'object' || Array.isArray(result)) return ['decodeUplink must return an object'];
   if (result.data !== undefined && !Array.isArray(result.data)) errors.push('decodeUplink.data must be an array when present');
@@ -50,7 +85,29 @@ function validateResult(profile, testCase, result, valueOptions = {}) {
   const semantic = validateDecodedData(profile, result.data || [], valueOptions);
   errors.push(...semantic.errors);
   if (Object.prototype.hasOwnProperty.call(testCase, 'expectedOutput') && !deepEqual(result.data || [], testCase.expectedOutput)) {
-    errors.push('Actual output does not match expectedOutput');
+    const message = 'Actual output does not match expectedOutput';
+    errors.push(message);
+    if (Array.isArray(failureOptions.failures)) {
+      const expected = testCase.expectedOutput;
+      const actual = result.data || [];
+      const snapshots = boundedExpectedActual(expected, actual);
+      failureOptions.failures.push({
+        code: 'FIXTURE_EXPECTED_OUTPUT_MISMATCH',
+        checkPath: failureOptions.checkPath || 'candidateStrict.checks.fixture',
+        message,
+        testCase: testCase.name,
+        payload: String(testCase.input || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase(),
+        fPort: testCase.fPort,
+        field: 'expectedOutput',
+        rule: 'Decoded BACnet rows must exactly match expectedOutput',
+        hint: 'Compare the first difference with the protocol evidence and repair the codec unless the fixture oracle is proven wrong',
+        expected: snapshots.expected,
+        actual: snapshots.actual,
+        difference: firstDifference(expected, actual),
+        truncated: snapshots.truncated,
+        truncatedFields: snapshots.truncatedFields
+      });
+    }
   }
   return errors;
 }
@@ -190,11 +247,21 @@ function validateTestFixture(profilePath, fixturePath) {
   const errors = [];
   const warnings = [];
   const results = [];
+  const failures = [];
+  const coveredErrors = new Set();
   const observedChannels = new Set();
   const schemaCheck = validateFixtureSchema(fixture);
   errors.push(...schemaCheck.errors);
-  if (!schemaCheck.valid) return { valid: false, errors, warnings, results };
-  errors.push(...validateStrictFixtureRobustness(fixture));
+  if (!schemaCheck.valid) {
+    for (const [index, message] of schemaCheck.errors.entries()) {
+      failures.push(validationErrorFailure('candidateStrict.checks.fixture', message, { field: `errors[${index}]` }));
+    }
+    return { valid: false, errors, warnings, results, failures };
+  }
+  const robustness = validateStrictFixtureRobustnessDetails(fixture);
+  errors.push(...robustness.errors);
+  failures.push(...robustness.failures);
+  for (const message of robustness.errors) coveredErrors.add(message);
   const valueOptions = {
     requireBinary01: fixture.strict === true,
     requireCanonicalReturn: fixture.strict === true
@@ -215,11 +282,15 @@ function validateTestFixture(profilePath, fixturePath) {
 
   for (const testCase of fixture.testCases) {
     const testErrors = [];
+    const testFailures = [];
     try {
       const first = testDecode(profile.codec, testCase.fPort, testCase.input);
       const second = testDecode(profile.codec, testCase.fPort, testCase.input);
       if (!deepEqual(first, second)) testErrors.push('Decoder output is not deterministic');
-      testErrors.push(...validateResult(profile, testCase, first, valueOptions));
+      testErrors.push(...validateResult(profile, testCase, first, valueOptions, {
+        failures: testFailures,
+        checkPath: 'candidateStrict.checks.fixture'
+      }));
       for (const item of first.data || []) observedChannels.add(item.channel);
       if ((fixture.robustness && fixture.robustness.checkTruncation) !== false) {
         testErrors.push(...validateTruncation(profile, testCase, valueOptions));
@@ -237,7 +308,20 @@ function validateTestFixture(profilePath, fixturePath) {
     } catch (error) {
       testErrors.push(error.message);
     }
+    const structuredMessages = new Set(testFailures.map(failure => failure.message));
+    for (const [index, message] of testErrors.entries()) {
+      if (!structuredMessages.has(message)) {
+        testFailures.push(validationErrorFailure('candidateStrict.checks.fixture', message, {
+          testCase: testCase.name,
+          payload: String(testCase.input || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase(),
+          fPort: testCase.fPort,
+          field: `errors[${index}]`
+        }));
+      }
+    }
     if (testErrors.length > 0) errors.push(...testErrors.map(error => `${testCase.name}: ${error}`));
+    failures.push(...testFailures);
+    for (const failure of testFailures) coveredErrors.add(`${testCase.name}: ${failure.message}`);
     results.push({ name: testCase.name, valid: testErrors.length === 0, errors: testErrors });
   }
 
@@ -254,7 +338,13 @@ function validateTestFixture(profilePath, fixturePath) {
   }
   if (fixture.evidenceLevel === 'documentation-only') warnings.push('No independent known-answer oracle is available');
 
-  return { valid: errors.length === 0, errors, warnings, results, observedChannels: [...observedChannels].sort((a, b) => a - b) };
+  for (const [index, message] of errors.entries()) {
+    if (!coveredErrors.has(message)) {
+      failures.push(validationErrorFailure('candidateStrict.checks.fixture', message, { field: `errors[${index}]` }));
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings, results, failures, observedChannels: [...observedChannels].sort((a, b) => a - b) };
 }
 
 function main() {
@@ -271,4 +361,8 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { validateTestFixture, validateStrictFixtureRobustness };
+module.exports = {
+  validateTestFixture,
+  validateStrictFixtureRobustness,
+  validateStrictFixtureRobustnessDetails
+};

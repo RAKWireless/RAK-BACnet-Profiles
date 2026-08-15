@@ -1,0 +1,9 @@
+{
+  "number": 99,
+  "title": "[Profile Request] Acme - Conflict99",
+  "html_url": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/99",
+  "updated_at": "2026-08-15T00:00:00Z",
+  "author_association": "MEMBER",
+  "labels": ["profile-request"],
+  "body": "### Device Vendor\n\nAcme\n\n### Device Model\n\nConflict99\n\n### Product Manual/Datasheet Link\n\nhttps://example.com/acme-conflict99.pdf\n\n### LoRaWAN Class\n\nClass A\n\n### LoRaWAN Protocol Version\n\nLORAWAN_1_0_3\n\n### Uplink Data Examples\n\nfPort: 10 Payload: 01 00\n\n### Decode Function (Optional)\n\n```code\nfunction Decoder(bytes) { return { temperature: bytes[1] }; }\n```\n\n### Downlink Support\n\nNo - uplink only\n\n### BACnet Object Mapping Requirements\n\nTemperature -> AnalogInputObject (degreesCelsius)\n\n### Priority\n\nMedium\n\n### Email\n\n[removed]\n\n### Company or organization\n\n[removed]"
+}

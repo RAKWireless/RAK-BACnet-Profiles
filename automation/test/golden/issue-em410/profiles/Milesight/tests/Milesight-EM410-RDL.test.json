@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "strict": true,
+  "profile": "Milesight-EM410-RDL",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [85],
+    "citation": "Both prepared Issue payloads explicitly declare fPort 85"
+  },
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "Synthetic EM410 Golden Issue",
+      "citation": "Positive and negative signed temperature payloads on fPort 85"
+    },
+    {
+      "type": "official-document",
+      "reference": "EM410 protocol description",
+      "citation": "TLV 03/67 signed int16 little-endian temperature"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "EM410 positive signed temperature",
+      "fPort": 85,
+      "input": "0367EB00",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": 23.5, "unit": "degreesCelsius" }
+      ]
+    },
+    {
+      "name": "EM410 negative signed temperature",
+      "fPort": 85,
+      "input": "0367D3FF",
+      "expectedOutput": [
+        { "name": "Temperature", "channel": 1, "value": -4.5, "unit": "degreesCelsius" }
+      ]
+    }
+  ]
+}

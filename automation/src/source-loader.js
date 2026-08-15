@@ -138,25 +138,132 @@ async function fetchDocument(value, redirects = 0) {
   };
 }
 
+function normalizeStructuredText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+$/g, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function compactText(value) {
+  return String(value || '')
+    .replace(/^--- Page \d+ ---$/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function htmlToText(html) {
-  return html
+  const block = '(?:address|article|aside|blockquote|div|dl|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|tfoot|thead|tr|ul)';
+  return normalizeStructuredText(String(html || '')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--([\s\S]*?)-->/g, ' ')
+    .replace(/<br\b[^>]*\/?\s*>/gi, '\n')
+    .replace(new RegExp(`<\\/?${block}\\b[^>]*>`, 'gi'), '\n')
+    .replace(/<\/(?:td|th)\s*>/gi, '\t')
+    .replace(/<(?:td|th)\b[^>]*>/gi, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/[^\S\n\t]+/g, ' ')
+    .replace(/ *\t */g, '\t')
+    .replace(/\t+\n/g, '\n')
+    .replace(/[ \t]*\n[ \t]*/g, '\n'));
+}
+
+function median(values) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+function pdfItem(item, index) {
+  if (!item || typeof item.str !== 'string' || item.str.length === 0 ||
+      !Array.isArray(item.transform) || item.transform.length < 6) return null;
+  const x = Number(item.transform[4]);
+  const y = Number(item.transform[5]);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const transformHeight = Math.hypot(Number(item.transform[2]) || 0, Number(item.transform[3]) || 0);
+  const height = Number.isFinite(Number(item.height)) && Number(item.height) > 0
+    ? Number(item.height)
+    : transformHeight;
+  return {
+    str: item.str,
+    x,
+    y,
+    width: Number.isFinite(Number(item.width)) && Number(item.width) > 0 ? Number(item.width) : 0,
+    height: height > 0 ? height : 1,
+    index
+  };
+}
+
+function reconstructPdfItems(rawItems) {
+  const items = (Array.isArray(rawItems) ? rawItems : [])
+    .map(pdfItem)
+    .filter(Boolean);
+  if (items.length === 0) return '';
+  const medianHeight = median(items.map(item => item.height));
+  const yTolerance = Math.max(1, medianHeight * 0.35);
+  items.sort((left, right) => right.y - left.y || left.x - right.x || left.index - right.index);
+
+  const lines = [];
+  for (const item of items) {
+    const line = lines[lines.length - 1];
+    if (!line || Math.abs(line.y - item.y) > yTolerance) {
+      lines.push({ y: item.y, items: [item] });
+      continue;
+    }
+    line.items.push(item);
+    line.y = line.items.reduce((sum, entry) => sum + entry.y, 0) / line.items.length;
+  }
+
+  return lines.map(line => {
+    line.items.sort((left, right) => left.x - right.x || left.index - right.index);
+    const lineHeight = median(line.items.map(item => item.height)) || medianHeight || 1;
+    let text = '';
+    let previous = null;
+    for (const item of line.items) {
+      if (previous) {
+        const gap = item.x - (previous.x + previous.width);
+        if (gap > lineHeight * 1.5) text += '\t';
+        else if (gap > lineHeight * 0.35) text += ' ';
+      }
+      text += item.str;
+      previous = item;
+    }
+    return text;
+  }).join('\n');
+}
+
+async function renderPdfPage(pageData) {
+  const pageNumber = Number.isInteger(pageData && pageData.pageNumber) && pageData.pageNumber > 0
+    ? pageData.pageNumber
+    : 1;
+  const marker = `--- Page ${pageNumber} ---`;
+  try {
+    const content = await pageData.getTextContent({
+      normalizeWhitespace: false,
+      disableCombineTextItems: false
+    });
+    const body = reconstructPdfItems(content && content.items);
+    return normalizeStructuredText(body ? `${marker}\n${body}` : marker);
+  } catch {
+    return marker;
+  }
 }
 
 async function extractSourceText(download) {
   const isPdf = /application\/pdf/i.test(download.contentType) || download.buffer.subarray(0, 4).toString() === '%PDF';
   if (isPdf) {
-    const parsed = await pdf(download.buffer);
-    const text = String(parsed.text || '').replace(/\s+/g, ' ').trim();
-    if (text.length < 200) {
+    const parsed = await pdf(download.buffer, { pagerender: renderPdfPage });
+    const text = normalizeStructuredText(parsed.text || '');
+    if (compactText(text).length < 200) {
       const error = new Error('PDF appears to be scanned or has insufficient extractable text; OCR is not supported');
       error.code = 'OCR_UNSUPPORTED';
       throw error;
@@ -166,9 +273,16 @@ async function extractSourceText(download) {
   const isText = /^text\//i.test(download.contentType) || /application\/(?:json|xml|xhtml\+xml)/i.test(download.contentType);
   if (!isText) throw new Error(`Unsupported source content type: ${download.contentType || 'unknown'}`);
   const raw = download.buffer.toString('utf8');
-  const text = /text\/html/i.test(download.contentType) || /<html/i.test(raw) ? htmlToText(raw) : raw.trim();
-  if (text.length < 100) throw new Error('Source document contains insufficient machine-readable text');
+  const isHtml = /text\/html/i.test(download.contentType) || /<html/i.test(raw);
+  const text = isHtml
+    ? htmlToText(raw)
+    : normalizeStructuredText(raw);
+  if ((isHtml ? compactText(text).length : text.length) < 100) throw new Error('Source document contains insufficient machine-readable text');
   return { text, type: /html/i.test(download.contentType) ? 'html' : 'text', pages: null };
+}
+
+function boundedSourceText(value) {
+  return scrubPII(value).slice(0, MAX_SOURCE_TEXT);
 }
 
 async function loadOfficialSource(intake) {
@@ -179,7 +293,7 @@ async function loadOfficialSource(intake) {
     type: extracted.type,
     pages: extracted.pages,
     sha256: crypto.createHash('sha256').update(download.buffer).digest('hex'),
-    text: scrubPII(extracted.text).slice(0, MAX_SOURCE_TEXT)
+    text: boundedSourceText(extracted.text)
   };
 }
 
@@ -193,7 +307,7 @@ function decoderFallbackSource(intake, decoder) {
     type: 'decoder',
     pages: null,
     sha256: decoder.sha256 || null,
-    text: scrubPII(decoder.text || '').slice(0, MAX_SOURCE_TEXT)
+    text: boundedSourceText(decoder.text || '')
   };
 }
 
@@ -206,5 +320,11 @@ module.exports = {
   isInlineDecoder,
   decoderFallbackSource,
   createPinnedLookup,
-  sharePointDownloadUrl
+  sharePointDownloadUrl,
+  normalizeStructuredText,
+  compactText,
+  htmlToText,
+  reconstructPdfItems,
+  renderPdfPage,
+  boundedSourceText
 };

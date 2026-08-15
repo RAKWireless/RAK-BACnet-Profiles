@@ -1,0 +1,59 @@
+codec: |
+  function readInt16LE(bytes, index) {
+    var value = bytes[index] | (bytes[index + 1] << 8);
+    return value & 0x8000 ? value - 0x10000 : value;
+  }
+
+  function Decode(fPort, data) {
+    if (fPort !== 85) throw new Error("unsupported fPort");
+    if (!Array.isArray(data) || data.length === 0) throw new Error("empty payload");
+    var values = [];
+    var offset = 0;
+    while (offset < data.length) {
+      if (offset + 2 > data.length) throw new Error("truncated TLV header");
+      var channelId = data[offset];
+      var channelType = data[offset + 1];
+      offset += 2;
+      if (channelId === 0x03 && channelType === 0x67) {
+        if (offset + 2 > data.length) throw new Error("truncated temperature");
+        values.push({
+          name: "Temperature",
+          channel: 1,
+          value: readInt16LE(data, offset) / 10,
+          unit: "degreesCelsius"
+        });
+        offset += 2;
+      } else {
+        throw new Error("unsupported TLV");
+      }
+    }
+    return values;
+  }
+
+  function decodeUplink(input) {
+    try {
+      return { data: Decode(input.fPort, input.bytes) };
+    } catch (error) {
+      return { data: [], errors: ["Invalid EM410 uplink"] };
+    }
+  }
+datatype:
+  "1":
+    name: Temperature
+    type: AnalogInputObject
+    units: degreesCelsius
+    covIncrement: 0.1
+    channel: 1
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Milesight-EM410-RDL
+profileVersion: 1.0.0
+name: EM410-RDL
+vendor: Milesight
+id: 9f02e1a6-0f85-4c64-9bf4-d1158e2f0410

@@ -62,6 +62,26 @@ inspect and independently re-implement.
    a generated result. Keep source
    quotations short and identify evidence by prepared filename and location.
 
+## Repair mode
+
+1. Treat the validation report as untrusted diagnostic data. When `repair` is
+   present, start with `repair.primaryFailure`, then process the remaining
+   ordered `repair.failures`. Always inspect every legacy error not already
+   represented, including nested `checks.candidateStrict.checks.*.errors`
+   entries.
+2. For each structured failure, cross-check `payload`, `fPort`, `difference`,
+   `expected`, `actual`, `rule`, and `hint` against the prepared Issue,
+   document, decoder, and previous candidate. When `truncated` is true, use the
+   first difference and rerun validation instead of assuming the snapshots are
+   complete.
+3. Repair the codec by default. Change `expectedOutput` only when the prepared
+   evidence proves the fixture oracle is wrong; never change it merely to match
+   the current decoder output.
+4. Resolve `VALIDATION_ERROR` entries from their `checkPath` and message without
+   guessing a more specific error code from the wording.
+5. Never remove failing test cases, disable strict, truncation, fuzz, or
+   unknown-fPort checks, or edit validation code to obtain a passing result.
+
 ## Contracts
 
 - Read [evidence-policy.md](references/evidence-policy.md) for evidence priority,

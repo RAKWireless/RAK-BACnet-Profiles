@@ -1,0 +1,6 @@
+{
+  "kind": "blocked",
+  "expectedStatus": "blocked",
+  "expectedBlockerCode": "evidence-conflict",
+  "expectedRetryable": false
+}

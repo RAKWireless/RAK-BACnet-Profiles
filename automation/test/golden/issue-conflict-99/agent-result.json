@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked",
+  "issueNumber": 99,
+  "issueBodySha": "REPLACED_BY_TEST",
+  "summary": "Blocked because the prepared document and decoder assign incompatible signedness and scale to the same field, and the supplied payload has no stated known answer.",
+  "profilePath": null,
+  "fixturePath": null,
+  "evidenceLevel": null,
+  "resolvedMappings": [],
+  "fPortPolicy": null,
+  "warnings": [],
+  "evidenceMatrix": [],
+  "blocker": {
+    "code": "evidence-conflict",
+    "message": "The document and decoder conflict on signedness and scale, and no known-answer payload resolves the difference.",
+    "retryable": false
+  }
+}

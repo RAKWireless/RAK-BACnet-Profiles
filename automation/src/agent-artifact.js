@@ -160,6 +160,17 @@ function assertRegularFile(relativePath, maximumBytes) {
   if (stat.size > maximumBytes) throw new Error(`Candidate file exceeds ${maximumBytes} bytes: ${relativePath}`);
 }
 
+function blockedManifest(result) {
+  return {
+    schemaVersion: 1,
+    status: 'blocked',
+    issueNumber: result.issueNumber,
+    issueBodySha: result.issueBodySha,
+    retryable: false,
+    blocker: result.blocker
+  };
+}
+
 function captureAgentOutput(resultPath, requestPath, outputDirectory) {
   const request = readJson(requestPath);
   const expected = {
@@ -196,14 +207,7 @@ function captureAgentOutput(resultPath, requestPath, outputDirectory) {
   fs.mkdirSync(outputDirectory, { recursive: true });
   writeJson(path.join(outputDirectory, 'agent-result.json'), result);
   if (result.status === 'blocked') {
-    const manifest = {
-      schemaVersion: 1,
-      status: 'blocked',
-      issueNumber: result.issueNumber,
-      issueBodySha: result.issueBodySha,
-      retryable: false,
-      blocker: result.blocker
-    };
+    const manifest = blockedManifest(result);
     writeJson(path.join(outputDirectory, 'manifest.json'), manifest);
     return manifest;
   }
@@ -351,5 +355,6 @@ module.exports = {
   seedPreviousFromRef,
   removeShadowTargets,
   changedPaths,
-  patchPaths
+  patchPaths,
+  blockedManifest
 };

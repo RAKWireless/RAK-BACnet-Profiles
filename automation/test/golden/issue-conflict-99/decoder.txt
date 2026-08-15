@@ -1,0 +1,1 @@
+The supplied decoder interprets field 0x01 as a signed value scaled by 0.1 at byte offset 1.

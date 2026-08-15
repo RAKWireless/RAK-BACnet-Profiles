@@ -1,0 +1,7 @@
+{
+  "kind": "repair",
+  "expectedStatus": "generated",
+  "baseGolden": "issue-31",
+  "attempt1Fixture": "attempt-1.test.json",
+  "expectedPrimaryCode": "FIXTURE_EXPECTED_OUTPUT_MISMATCH"
+}

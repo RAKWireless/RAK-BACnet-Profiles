@@ -100,7 +100,11 @@ bypass. Do not make the optional advisory review a required check.
 The source collection job has network access but no model key. It parses only
 the Issue form field allowlist, removes contact fields and HTML comments,
 downloads bounded HTTPS sources with DNS pinning and private-address rejection,
-and stores source artifacts for one day.
+and stores source artifacts for one day. HTML extraction preserves block and
+table-cell boundaries. PDF extraction reconstructs rows from text-item
+coordinates and adds stable `--- Page N ---` markers. OCR eligibility still
+uses compact non-marker text, and PII scrubbing still runs before the 120,000
+character source limit.
 
 The Agent receives prepared files under `.profile-agent/input`. Official
 documents and decoders are high-priority but untrusted protocol data. The
@@ -121,6 +125,17 @@ unsupported scope are non-retryable. Each attempt has a 30-minute job timeout;
 provider-side 429/5xx retry behavior remains inside Codex/Responses, and a
 provider switch requires a label or manual dispatch.
 
+Invalid candidate reports retain the legacy `checks.*.errors` string arrays and
+may also contain an additive top-level `repair` object. `repair.primaryFailure`
+is the first item in the priority-ordered `repair.failures` array. Source
+validators assign stable failure codes directly; unstructured legacy errors use
+`VALIDATION_ERROR` without parsing their wording. `checkPath` values are
+relative to `report.checks`, for example `candidateStrict.checks.fixture`.
+Expected/actual snapshots are bounded diagnostic context, expose
+`truncated: true` when incomplete, and never replace the first structural
+difference. Attempt 2 must still inspect any legacy errors not represented in
+`repair.failures`.
+
 An authorized non-empty `Request changes` review can revise the same Draft PR.
 Automatic review repair is limited to three cycles; later repairs require
 Manual Generate. The optional second reviewer model posts only an advisory
@@ -138,11 +153,14 @@ node scripts/validate-committed-fixtures.js
 node scripts/validate-registry.js
 ```
 
-Issue #31 is committed as a sanitized `known-answer + ignored` golden case and
-must pass the same strict codec, truncation, seeded fuzz, mapping, and fixture
-contracts.
+The parameterized deterministic Golden suite covers Issue #31 as the sanitized
+`known-answer + ignored` baseline, a strict fixed-fPort EM410 signed little-
+endian TLV case, a non-retryable synthetic evidence conflict, and an
+expectedOutput mismatch that seeds Attempt 2 and passes after a known repair.
+These Goldens validate pipeline contracts and do not call or measure a model.
 
 Before enabling external approval, run Shadow Evaluation for at least 10
-historical Issues with both OpenAI and DeepSeek. Release requires at least 85%
-automatic success among eligible requests and zero path escapes, bad
-publications, secret exposure, or PII exposure.
+historical Issues with both OpenAI and DeepSeek. The Shadow rollout gate—not an
+individual production-request SLA—requires at least 85% automatic success among
+eligible requests and zero path escapes, bad publications, secret exposure, or
+PII exposure.

@@ -5,27 +5,106 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { loadYAML } = require('../yaml-parser');
 const { validateRequestedMapping } = require('./requested-mapping');
-const { validateStrictFixtureRobustness } = require('./test-fixture');
+const { validateStrictFixtureRobustnessDetails } = require('./test-fixture');
+const { firstDifference, boundedExpectedActual } = require('./diagnostics');
 const { runGeneratedProfileCI } = require('../../run-profile-ci');
+
+const ALLOWED_CHECK_PATHS = Object.freeze([
+  'identity',
+  'fixtureContract',
+  'issueCoverage',
+  'requestedMapping',
+  'candidateStrict.checks.yaml',
+  'candidateStrict.checks.schema',
+  'candidateStrict.checks.requiredFields',
+  'candidateStrict.checks.codecSafety',
+  'candidateStrict.checks.codecSyntax',
+  'candidateStrict.checks.bacnet',
+  'candidateStrict.checks.naming',
+  'candidateStrict.checks.semantics',
+  'candidateStrict.checks.fixture',
+  'repositoryProfiles',
+  'repositoryFixtures',
+  'registryUpdate',
+  'registryValidation',
+  'validation'
+]);
+const ALLOWED_CHECK_PATH_SET = new Set(ALLOWED_CHECK_PATHS);
 
 function deepEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function check(valid, errors = [], warnings = []) {
-  return { valid, errors, warnings };
+function check(valid, errors = [], warnings = [], failures = []) {
+  return { valid, errors, warnings, failures };
+}
+
+function validationErrorFailure(checkPath, message, field) {
+  return {
+    code: 'VALIDATION_ERROR',
+    checkPath,
+    message,
+    field,
+    rule: 'The deterministic validator must pass without errors',
+    hint: 'Resolve this validation error without weakening tests or validation rules'
+  };
+}
+
+function addFailure(errors, failures, code, checkPath, message, detail = {}) {
+  errors.push(message);
+  failures.push({ code, checkPath, message, ...detail });
+}
+
+function addLegacyFailures(errors, failures, checkPath) {
+  const covered = new Set(failures.map(failure => failure.message));
+  for (const [index, message] of errors.entries()) {
+    if (!covered.has(message)) failures.push(validationErrorFailure(checkPath, message, `errors[${index}]`));
+  }
 }
 
 function validateFixtureContract(fixture, result) {
   const errors = [];
   const warnings = [];
-  if (fixture.strict !== true) errors.push('Generated candidate fixture must set strict: true');
-  if (!fixture.fPortPolicy) errors.push('Strict candidate fixture must declare fPortPolicy');
-  if (!deepEqual(fixture.fPortPolicy, result.fPortPolicy)) errors.push('Fixture and Agent result fPortPolicy must match exactly');
+  const failures = [];
+  if (fixture.strict !== true) {
+    addFailure(errors, failures, 'FIXTURE_STRICT_REQUIRED', 'fixtureContract', 'Generated candidate fixture must set strict: true', {
+      field: 'strict',
+      rule: 'Generated candidate fixtures must set strict to true',
+      hint: 'Set strict to true and satisfy all strict robustness checks'
+    });
+  }
+  if (!fixture.fPortPolicy) {
+    addFailure(errors, failures, 'FIXTURE_FPORT_POLICY_MISMATCH', 'fixtureContract', 'Strict candidate fixture must declare fPortPolicy', {
+      field: 'fPortPolicy',
+      rule: 'Every strict fixture must declare the evidence-backed fPort policy',
+      hint: 'Add a fixed, agnostic, or ignored fPortPolicy supported by the prepared evidence'
+    });
+  }
+  if (!deepEqual(fixture.fPortPolicy, result.fPortPolicy)) {
+    const snapshots = boundedExpectedActual(result.fPortPolicy, fixture.fPortPolicy);
+    addFailure(errors, failures, 'FIXTURE_FPORT_POLICY_MISMATCH', 'fixtureContract', 'Fixture and Agent result fPortPolicy must match exactly', {
+      field: 'fPortPolicy',
+      rule: 'Fixture and Agent result fPortPolicy values must be identical',
+      hint: 'Resolve the evidence-backed policy once and use the same object in the fixture and Agent result',
+      expected: snapshots.expected,
+      actual: snapshots.actual,
+      difference: firstDifference(result.fPortPolicy, fixture.fPortPolicy),
+      truncated: snapshots.truncated,
+      truncatedFields: snapshots.truncatedFields
+    });
+  }
   if (fixture.evidenceLevel !== result.evidenceLevel) errors.push('Fixture and Agent result evidenceLevel must match');
-  errors.push(...validateStrictFixtureRobustness(fixture));
+  const robustness = validateStrictFixtureRobustnessDetails(fixture, 'fixtureContract');
+  errors.push(...robustness.errors);
+  failures.push(...robustness.failures);
   if (fixture.fPortPolicy && fixture.fPortPolicy.mode === 'ignored') {
-    if (!fixture.robustness || fixture.robustness.checkUnknownFPort !== false) errors.push('ignored fPort policy must set robustness.checkUnknownFPort to false');
+    if (!fixture.robustness || fixture.robustness.checkUnknownFPort !== false) {
+      addFailure(errors, failures, 'FIXTURE_FPORT_POLICY_MISMATCH', 'fixtureContract', 'ignored fPort policy must set robustness.checkUnknownFPort to false', {
+        field: 'robustness.checkUnknownFPort',
+        rule: 'An ignored fPort policy must not run the unknown-fPort rejection check',
+        hint: 'Set robustness.checkUnknownFPort to false only when the evidence supports an ignored fPort policy'
+      });
+    }
     if (fixture.fPortPolicy.representativeFPort !== 1) warnings.push('ignored fPort convention should use representativeFPort 1 as a test-call placeholder');
   }
   if ((fixture.evidenceLevel === 'known-answer' || fixture.evidenceLevel === 'decoder-derived') &&
@@ -33,28 +112,46 @@ function validateFixtureContract(fixture, result) {
     errors.push(`${fixture.evidenceLevel} fixtures require expectedOutput for every test case`);
   }
   if ((result.evidenceMatrix || []).some(row => row.resolution === 'conflict')) errors.push('Agent evidence matrix contains an unresolved conflict');
-  return check(errors.length === 0, errors, warnings);
+  addLegacyFailures(errors, failures, 'fixtureContract');
+  return check(errors.length === 0, errors, warnings, failures);
 }
 
 function validateIssueCoverage(intake, fixture) {
   const errors = [];
+  const failures = [];
   const fixtureCases = fixture.testCases || [];
   if (fixture.fPortPolicy && fixture.fPortPolicy.mode === 'ignored' &&
       (intake.uplinkExamples || []).some(example => Number.isInteger(example.fPort))) {
-    errors.push('ignored fPort policy cannot discard an explicit Issue fPort');
+    addFailure(errors, failures, 'IGNORED_FPORT_CONFLICT', 'issueCoverage', 'ignored fPort policy cannot discard an explicit Issue fPort', {
+      field: 'fPortPolicy',
+      rule: 'An explicit Issue fPort must be preserved by the fixture policy',
+      hint: 'Use a fixed fPort policy containing every explicit Issue fPort'
+    });
   }
   for (const example of intake.uplinkExamples || []) {
     const matches = fixtureCases.filter(testCase => String(testCase.input).replace(/[^0-9A-Fa-f]/g, '').toUpperCase() === example.hex);
     if (matches.length === 0) {
-      errors.push(`Issue payload is not covered by the fixture: ${example.hex}`);
+      addFailure(errors, failures, 'ISSUE_PAYLOAD_NOT_COVERED', 'issueCoverage', `Issue payload is not covered by the fixture: ${example.hex}`, {
+        payload: example.hex,
+        fPort: Number.isInteger(example.fPort) ? example.fPort : null,
+        field: 'testCases',
+        rule: 'Every Issue payload must appear in the strict fixture',
+        hint: 'Add a strict test case for this exact normalized payload and its evidence-backed expected output'
+      });
       continue;
     }
     if (Number.isInteger(example.fPort) && fixture.fPortPolicy && fixture.fPortPolicy.mode !== 'ignored' &&
         !matches.some(testCase => testCase.fPort === example.fPort)) {
-      errors.push(`Issue payload ${example.hex} is not tested with its explicit fPort ${example.fPort}`);
+      addFailure(errors, failures, 'ISSUE_FPORT_NOT_COVERED', 'issueCoverage', `Issue payload ${example.hex} is not tested with its explicit fPort ${example.fPort}`, {
+        payload: example.hex,
+        fPort: example.fPort,
+        field: 'testCases.fPort',
+        rule: 'Every explicit Issue fPort must be reproduced by a matching fixture test case',
+        hint: `Test this payload with fPort ${example.fPort} and keep the fixed policy consistent`
+      });
     }
   }
-  return check(errors.length === 0, errors, []);
+  return check(errors.length === 0, errors, [], failures);
 }
 
 function validateIdentity(profilePath, fixturePath, manifest, intake, result) {
@@ -64,7 +161,8 @@ function validateIdentity(profilePath, fixturePath, manifest, intake, result) {
   if (manifest.profilePath !== result.profilePath || manifest.fixturePath !== result.fixturePath) errors.push('Manifest and Agent result candidate paths differ');
   if (path.basename(profilePath, '.yaml') !== intake.profileName) errors.push('Profile filename does not match Intake identity');
   if (path.basename(fixturePath, '.test.json') !== intake.profileName) errors.push('Fixture filename does not match Intake identity');
-  return check(errors.length === 0, errors, []);
+  const failures = errors.map((message, index) => validationErrorFailure('identity', message, `errors[${index}]`));
+  return check(errors.length === 0, errors, [], failures);
 }
 
 function mappingRequest(intake, result) {
@@ -103,6 +201,81 @@ function runCommand(root, args) {
   return check(errors.length === 0, errors, []);
 }
 
+function nestedCheckEntries(checks) {
+  const entries = [];
+  for (const [name, checkResult] of Object.entries(checks || {})) {
+    if (name === 'candidateStrict' && checkResult && checkResult.checks) {
+      for (const [nestedName, nestedResult] of Object.entries(checkResult.checks)) {
+        entries.push({ checkPath: `candidateStrict.checks.${nestedName}`, check: nestedResult });
+      }
+      continue;
+    }
+    entries.push({ checkPath: name, check: checkResult });
+  }
+  return entries;
+}
+
+function failurePriority(failure) {
+  if (failure.checkPath === 'validation' || [
+    'candidateStrict.checks.yaml',
+    'candidateStrict.checks.schema',
+    'candidateStrict.checks.requiredFields',
+    'candidateStrict.checks.codecSafety',
+    'candidateStrict.checks.codecSyntax'
+  ].includes(failure.checkPath)) return 0;
+  if (failure.checkPath === 'identity') return 1;
+  if (failure.checkPath === 'fixtureContract' || failure.code === 'FIXTURE_STRICT_REQUIRED' || failure.code === 'FIXTURE_FPORT_POLICY_MISMATCH') return 2;
+  if (failure.checkPath === 'issueCoverage') return 3;
+  if (failure.code === 'FIXTURE_EXPECTED_OUTPUT_MISMATCH') return 4;
+  if (failure.checkPath === 'requestedMapping') return 5;
+  if (failure.checkPath.startsWith('candidateStrict.checks.')) return 6;
+  return 7;
+}
+
+function compareFailures(left, right) {
+  const priority = failurePriority(left) - failurePriority(right);
+  if (priority !== 0) return priority;
+  for (const field of ['checkPath', 'code', 'testCase', 'payload', 'field']) {
+    const compared = String(left[field] ?? '').localeCompare(String(right[field] ?? ''));
+    if (compared !== 0) return compared;
+  }
+  return 0;
+}
+
+function repairFailures(report) {
+  const collected = [];
+  for (const { checkPath, check: checkResult } of nestedCheckEntries(report.checks)) {
+    if (!checkResult || typeof checkResult !== 'object') continue;
+    const sourceFailures = Array.isArray(checkResult.failures) ? checkResult.failures : [];
+    for (const failure of sourceFailures) {
+      collected.push({ ...failure, checkPath });
+    }
+    const represented = new Set();
+    for (const failure of sourceFailures) {
+      represented.add(failure.message);
+      if (failure.testCase) represented.add(`${failure.testCase}: ${failure.message}`);
+    }
+    for (const [index, message] of (checkResult.errors || []).entries()) {
+      if (!represented.has(message)) collected.push(validationErrorFailure(checkPath, message, `errors[${index}]`));
+    }
+    if (checkResult.valid === false && sourceFailures.length === 0 && (checkResult.errors || []).length === 0) {
+      collected.push(validationErrorFailure(checkPath, 'Check failed without diagnostic errors', 'valid'));
+    }
+  }
+  if (report.error) collected.push(validationErrorFailure('validation', report.error, 'error'));
+
+  const unique = new Map();
+  for (const failure of collected) {
+    const checkPath = ALLOWED_CHECK_PATH_SET.has(failure.checkPath) ? failure.checkPath : 'validation';
+    const normalized = { ...failure, checkPath };
+    const key = ['code', 'checkPath', 'testCase', 'payload', 'field']
+      .map(field => String(normalized[field] ?? ''))
+      .join('\u0000');
+    if (!unique.has(key)) unique.set(key, normalized);
+  }
+  return [...unique.values()].sort(compareFailures);
+}
+
 function validateAgentCandidate({ root, candidateDirectory, sourceBundlePath, includeRepositoryChecks = true }) {
   const directory = path.resolve(candidateDirectory);
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'manifest.json'), 'utf8'));
@@ -136,6 +309,13 @@ function validateAgentCandidate({ root, candidateDirectory, sourceBundlePath, in
     report.error = error.message;
     report.valid = false;
   }
+  if (!report.valid) {
+    const failures = repairFailures(report);
+    report.repair = {
+      primaryFailure: failures[0] || validationErrorFailure('validation', 'Candidate validation failed without diagnostics', 'valid'),
+      failures: failures.length > 0 ? failures : [validationErrorFailure('validation', 'Candidate validation failed without diagnostics', 'valid')]
+    };
+  }
   return report;
 }
 
@@ -144,5 +324,7 @@ module.exports = {
   validateIssueCoverage,
   validateIdentity,
   candidateContractChecks,
-  validateAgentCandidate
+  validateAgentCandidate,
+  repairFailures,
+  ALLOWED_CHECK_PATHS
 };

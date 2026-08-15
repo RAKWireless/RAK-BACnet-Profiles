@@ -1,0 +1,9 @@
+{
+  "number": 410,
+  "title": "[Profile Request] Milesight - EM410-RDL",
+  "html_url": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/410",
+  "updated_at": "2026-08-15T00:00:00Z",
+  "author_association": "MEMBER",
+  "labels": ["profile-request"],
+  "body": "### Device Vendor\n\nMilesight\n\n### Device Model\n\nEM410-RDL\n\n### Product Manual/Datasheet Link\n\nhttps://example.com/milesight-em410-rdl.pdf\n\n### LoRaWAN Class\n\nClass A\n\n### LoRaWAN Protocol Version\n\nLORAWAN_1_0_3\n\n### Uplink Data Examples\n\nfPort: 85 Payload: 03 67 EB 00 Temperature = 23.5 C\nfPort: 85 Payload: 03 67 D3 FF Temperature = -4.5 C\n\n### Decode Function (Optional)\n\n```code\nfunction Decoder(bytes, port) { var raw = bytes[2] | (bytes[3] << 8); if (raw & 0x8000) raw -= 0x10000; return { temperature: raw / 10 }; }\n```\n\n### Downlink Support\n\nNo - uplink only\n\n### BACnet Object Mapping Requirements\n\nTemperature -> AnalogInputObject (degreesCelsius)\n\n### Priority\n\nMedium\n\n### Email\n\n[removed]\n\n### Company or organization\n\n[removed]"
+}
