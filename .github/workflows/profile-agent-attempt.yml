@@ -72,7 +72,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: profile-agent-global
+  group: ${{ inputs.shadow && format('profile-agent-shadow-{0}-{1}', inputs.provider, inputs.issue_number) || 'profile-agent-global' }}
   cancel-in-progress: false
 
 jobs:

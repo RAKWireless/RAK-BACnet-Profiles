@@ -347,6 +347,14 @@ function testShadowWorkflowDAG() {
   assert(workflow.jobs.mark_validating.steps.some(step => step.if === "inputs.mode == 'shadow'"), 'mark_validating must include an explicit shadow no-op');
   const source = fs.readFileSync(workflowPath, 'utf8');
   assert(!source.includes("inputs.issue_body_sha == 'current' && '' || inputs.issue_body_sha"));
+
+  const attemptWorkflow = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-agent-attempt.yml'), 'utf8'), { schema: yaml.JSON_SCHEMA });
+  assert.equal(
+    attemptWorkflow.concurrency.group,
+    "${{ inputs.shadow && format('profile-agent-shadow-{0}-{1}', inputs.provider, inputs.issue_number) || 'profile-agent-global' }}",
+    'Shadow Agent attempts must isolate concurrency by provider and Issue while production remains globally serialized'
+  );
+  assert.equal(attemptWorkflow.concurrency['cancel-in-progress'], false);
 }
 
 function testCollectionIssueShaSentinel() {
