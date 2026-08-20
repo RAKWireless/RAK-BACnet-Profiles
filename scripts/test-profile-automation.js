@@ -16,6 +16,7 @@ const { normalizeCollectionExpectedSha, assertCollectionIssueSha } = require('..
 const {
   expectedPaths,
   validateAgentResult,
+  validateAgentEvidenceProvenance,
   parseAgentResultText,
   readAgentResult,
   prepareAgentInput,
@@ -37,6 +38,13 @@ const {
   boundedSourceText
 } = require('../automation/src/source-loader');
 const { loadDecoder, isDecoderCode, extractDecoderUrl, githubRawUrl } = require('../automation/src/decoder-loader');
+const {
+  validateSourceBundle,
+  validateAgentRequest,
+  buildSourceBundle,
+  buildSettledSourceBundle,
+  normalizeSourceBundle
+} = require('../automation/src/evidence-contract');
 const { analyzeCodecSafety } = require('./lib/validation/codec-safety');
 const { validateProfileSemantics, validateDecodedData } = require('./lib/validation/profile-semantics');
 const { validateTestFixture } = require('./lib/validation/test-fixture');
@@ -160,6 +168,7 @@ function testAgentExecutionContracts() {
   const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
   const prompt = fs.readFileSync(path.join(ROOT, '.github', 'codex', 'prompts', 'generate-bacnet-profile.md'), 'utf8');
   const skill = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'SKILL.md'), 'utf8');
+  const evidencePolicy = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'references', 'evidence-policy.md'), 'utf8');
   const fixtureContract = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'references', 'fixture-contract.md'), 'utf8');
 
   for (const source of [agents, prompt, skill]) {
@@ -170,6 +179,10 @@ function testAgentExecutionContracts() {
     assert(source.includes('repository-wide'), 'Profile Agent instructions must leave repository-wide checks to clean validation');
     assert(!source.includes('read-agent-evidence'), 'Profile Agent instructions must not restore the noisy evidence-reader workflow');
   }
+  assert(skill.includes('request.evidence.officialDocument` is null'), 'Profile Agent Skill must treat an absent official document as an explicit evidence state');
+  assert(skill.includes('blocker code `insufficient-evidence`'), 'Profile Agent Skill must block incomplete decoder-derived evidence');
+  assert(evidencePolicy.includes('`decoder.txt` is never official documentation'), 'Evidence policy must keep decoder provenance separate');
+  assert(evidencePolicy.includes('block with `insufficient-evidence`'), 'Evidence policy must reject incomplete decoder coverage');
   assert(agents.includes('run only the\ncandidate validation command'), 'Prepared generation must run only the request candidate validation command');
 
   const exampleMatch = fixtureContract.match(/<!-- canonical-fixture:start -->\s*```json\s*([\s\S]*?)\s*```\s*<!-- canonical-fixture:end -->/);
@@ -548,14 +561,19 @@ function testPreparedInputWhitelist() {
   const issue = syntheticIssue();
   const intake = parseIssue(issue, { allowExisting: true });
   const bundlePath = path.join(temporary, 'bundle.json');
-  fs.writeFileSync(bundlePath, JSON.stringify({
+  fs.writeFileSync(bundlePath, JSON.stringify(buildSourceBundle({
     intake,
     source: { url: intake.datasheetUrl, type: 'text', pages: null, sha256: 'a'.repeat(64), text: 'Protocol field description. Contact: source@example.com. '.repeat(5) },
     decoder: { url: 'Issue #99 decoder', origin: 'issue-inline', authority: 'user-provided', sha256: 'b'.repeat(64), text: intake.decoder },
     error: null
-  }));
+  })));
   const request = prepareAgentInput(bundlePath, path.join(temporary, 'input'), { mode: 'generate', attempt: 1 });
   const serialized = JSON.stringify(request);
+  assert.equal(request.schemaVersion, 2);
+  assert.equal(request.evidence.officialDocument.type, 'text');
+  assert.equal(request.evidence.officialDocumentAttempt.status, 'succeeded');
+  assert.equal(request.evidence.fallback.used, false);
+  validateAgentRequest(request);
   assert(!serialized.includes('customer@example.com'));
   assert(!serialized.includes('Secret Corp'));
   assert(!serialized.includes('Priority'));
@@ -564,6 +582,147 @@ function testPreparedInputWhitelist() {
     profilePath: 'profiles/Acme/Acme-T100.yaml',
     fixturePath: 'profiles/Acme/tests/Acme-T100.test.json'
   });
+}
+
+function testEvidenceContractMigration() {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-evidence-contract-'));
+  try {
+    const intake = parseIssue(syntheticIssue(), { allowExisting: true });
+    const decoder = {
+      url: 'Issue #99 decoder',
+      origin: 'issue-inline',
+      authority: 'user-provided',
+      sha256: 'b'.repeat(64),
+      text: intake.decoder
+    };
+    const sourceFailure = new Error('PDF structure is invalid');
+    sourceFailure.code = 'PDF_INVALID_STRUCTURE';
+    sourceFailure.stage = 'pdf';
+    const fallbackBundle = buildSettledSourceBundle(
+      intake,
+      { status: 'rejected', reason: sourceFailure },
+      { status: 'fulfilled', value: decoder }
+    );
+    assert.equal(fallbackBundle.schemaVersion, 2);
+    assert.equal(fallbackBundle.source, null);
+    assert.equal(fallbackBundle.sourceError.code, 'PDF_INVALID_STRUCTURE');
+    assert.equal(fallbackBundle.officialDocumentAttempt.status, 'failed');
+    assert.equal(fallbackBundle.sourceFallback.used, true);
+    assert.equal(fallbackBundle.sourceFallback.origin, 'decoder');
+    assert.equal(fallbackBundle.decoder, decoder);
+    assert.equal(fallbackBundle.error, null);
+    validateSourceBundle(fallbackBundle);
+
+    const bundlePath = path.join(temporary, 'source-bundle.json');
+    const inputDirectory = path.join(temporary, 'input');
+    fs.mkdirSync(inputDirectory, { recursive: true });
+    fs.writeFileSync(path.join(inputDirectory, 'official-document.txt'), 'stale decoder masquerading as official evidence');
+    fs.writeFileSync(bundlePath, JSON.stringify(fallbackBundle));
+    const request = prepareAgentInput(bundlePath, inputDirectory, { mode: 'generate', attempt: 1 });
+    assert.equal(request.schemaVersion, 2);
+    assert.equal(request.evidence.officialDocument, null);
+    assert.equal(request.evidence.officialDocumentAttempt.status, 'failed');
+    assert.deepEqual(request.evidence.officialDocumentAttempt.sourceError, {
+      code: 'PDF_INVALID_STRUCTURE',
+      stage: 'pdf'
+    });
+    assert.equal(request.evidence.decoder.preparedPath, '.profile-agent/input/decoder.txt');
+    assert.equal(request.evidence.fallback.used, true);
+    assert.equal(fs.existsSync(path.join(inputDirectory, 'official-document.txt')), false);
+    assert.equal(fs.readFileSync(path.join(inputDirectory, 'decoder.txt'), 'utf8'), intake.decoder);
+    validateAgentRequest(JSON.parse(fs.readFileSync(path.join(inputDirectory, 'request.json'), 'utf8')));
+
+    const decoderDerivedResult = {
+      status: 'generated',
+      evidenceLevel: 'decoder-derived',
+      resolvedMappings: [{ name: 'temperature' }],
+      evidenceMatrix: [{
+        officialDocument: null,
+        decoder: 'decoder.txt: temperature field',
+        knownPayload: 'Issue payload 01ff',
+        resolution: 'payload-verified'
+      }]
+    };
+    validateAgentEvidenceProvenance(decoderDerivedResult, request);
+    assert.throws(() => validateAgentEvidenceProvenance({
+      ...decoderDerivedResult,
+      evidenceLevel: 'documentation-only'
+    }, request), /must use evidenceLevel decoder-derived/);
+    assert.throws(() => validateAgentEvidenceProvenance({
+      ...decoderDerivedResult,
+      evidenceMatrix: [{
+        ...decoderDerivedResult.evidenceMatrix[0],
+        officialDocument: 'decoder text mislabeled as official'
+      }]
+    }, request), /must not cite decoder content as official documentation/);
+    assert.throws(() => validateAgentEvidenceProvenance(decoderDerivedResult, {
+      ...request,
+      evidence: {
+        ...request.evidence,
+        decoder: { ...request.evidence.decoder, authority: 'supporting' }
+      }
+    }), /supporting-only decoder/);
+
+    const legacyBundle = {
+      schemaVersion: 1,
+      intake,
+      source: {
+        url: decoder.url,
+        type: 'decoder',
+        pages: null,
+        sha256: decoder.sha256,
+        text: decoder.text
+      },
+      decoder,
+      decoderError: null,
+      error: null
+    };
+    const normalizedLegacy = normalizeSourceBundle(legacyBundle);
+    assert.equal(normalizedLegacy.schemaVersion, 2);
+    assert.equal(normalizedLegacy.source, null);
+    assert.equal(normalizedLegacy.decoder.text, decoder.text);
+    assert.equal(normalizedLegacy.sourceFallback.used, true);
+    assert.equal(normalizedLegacy.officialDocumentAttempt.status, 'failed');
+
+    const normalizedLegacyFailure = normalizeSourceBundle({
+      schemaVersion: 1,
+      intake,
+      source: null,
+      decoder: null,
+      decoderError: null,
+      error: { message: 'Legacy source failed', code: 'SOURCE_UNAVAILABLE' }
+    });
+    assert.equal(normalizedLegacyFailure.officialDocumentAttempt.status, 'failed');
+    assert.equal(normalizedLegacyFailure.sourceError.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(normalizedLegacyFailure.error.code, 'SOURCE_UNAVAILABLE');
+
+    assert.throws(() => validateSourceBundle({
+      ...fallbackBundle,
+      source: {
+        url: decoder.url,
+        type: 'decoder',
+        pages: null,
+        sha256: decoder.sha256,
+        text: decoder.text
+      }
+    }), /Source bundle does not match schema/);
+    assert.throws(() => validateSourceBundle({
+      ...fallbackBundle,
+      sourceFallback: { used: false, origin: null, reasonCode: null }
+    }), /must mark sourceFallback.used/);
+
+    const decoderFailure = new Error('Decoder unavailable');
+    const blockedBundle = buildSettledSourceBundle(
+      intake,
+      { status: 'rejected', reason: sourceFailure },
+      { status: 'rejected', reason: decoderFailure }
+    );
+    assert.equal(blockedBundle.source, null);
+    assert.equal(blockedBundle.sourceFallback.used, false);
+    assert.equal(blockedBundle.error.code, 'PDF_INVALID_STRUCTURE');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 function testDynamicCodecSafety() {
@@ -1234,6 +1393,7 @@ async function main() {
     testTrustAndApprovalStateMachine,
     testProviderConfiguration,
     testPreparedInputWhitelist,
+    testEvidenceContractMigration,
     testDynamicCodecSafety,
     testAgentResultSchemaAndPatchPaths,
     testAgentResultParsingCompatibility,

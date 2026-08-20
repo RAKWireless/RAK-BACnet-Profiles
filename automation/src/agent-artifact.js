@@ -15,6 +15,7 @@ const {
 } = require('./config');
 const { ensureParent, readJson, writeJson, writeText } = require('./io');
 const { scrubPII } = require('./pii-scrubber');
+const { normalizeSourceBundle, validateAgentRequest } = require('./evidence-contract');
 
 const INTERNAL_PREFIXES = ['.profile-agent/', 'automation/.work/'];
 
@@ -42,6 +43,31 @@ function validateAgentResult(result) {
     }
   } else if (!result.blocker || result.profilePath !== null || result.fixturePath !== null || result.fPortPolicy !== null) {
     throw new Error('Blocked Agent result must contain a blocker and null candidate fields');
+  }
+  return result;
+}
+
+function validateAgentEvidenceProvenance(result, request) {
+  if (result.status !== 'generated') return result;
+  const evidence = request && request.evidence;
+  if (!evidence || evidence.officialDocument) return result;
+  if (!evidence.decoder) throw new Error('Agent generated a candidate without official documentation or decoder evidence');
+  if (evidence.decoder.authority !== 'user-provided') {
+    throw new Error('Agent generated a decoder-derived candidate from a supporting-only decoder');
+  }
+  if (result.evidenceLevel !== 'decoder-derived') {
+    throw new Error('Agent result without official documentation must use evidenceLevel decoder-derived');
+  }
+  if (result.evidenceMatrix.length < result.resolvedMappings.length) {
+    throw new Error('Decoder-derived Agent result must include evidence for every resolved mapping');
+  }
+  for (const row of result.evidenceMatrix) {
+    if (row.officialDocument !== null) {
+      throw new Error('Decoder-derived Agent result must not cite decoder content as official documentation');
+    }
+    if (!row.decoder || !row.knownPayload || !['decoder-verified', 'payload-verified'].includes(row.resolution)) {
+      throw new Error('Decoder-derived Agent result must cite decoder and payload verification for every evidence row');
+    }
   }
   return result;
 }
@@ -119,8 +145,25 @@ function decoderMetadata(decoder) {
   };
 }
 
+function sourceErrorMetadata(error) {
+  if (!error) return null;
+  return {
+    code: error.code || null,
+    stage: error.stage || null
+  };
+}
+
+function officialAttemptMetadata(attempt) {
+  return {
+    url: attempt.url || null,
+    status: attempt.status,
+    sourceError: sourceErrorMetadata(attempt.sourceError),
+    extraction: attempt.extraction || null
+  };
+}
+
 function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
-  const bundle = readJson(bundlePath);
+  const bundle = normalizeSourceBundle(readJson(bundlePath));
   if (bundle.error) throw new Error(bundle.error.message || 'Source collection failed');
   if (!bundle.intake || bundle.intake.status !== 'ready') {
     throw new Error(`Issue is not ready for generation: ${bundle.intake && bundle.intake.status}`);
@@ -129,6 +172,10 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
   const paths = expectedPaths(intake);
   const output = path.resolve(outputDirectory);
   fs.mkdirSync(output, { recursive: true });
+  const officialDocumentPath = path.join(output, 'official-document.txt');
+  const decoderPath = path.join(output, 'decoder.txt');
+  fs.rmSync(officialDocumentPath, { force: true });
+  fs.rmSync(decoderPath, { force: true });
 
   const examples = (intake.uplinkExamples || []).map(({ fPort, explicitFPort, hex }) => ({
     fPort: Number.isInteger(fPort) ? fPort : null,
@@ -136,7 +183,7 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
     hex
   }));
   const request = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issue: {
       number: intake.issueNumber,
       url: intake.issueUrl,
@@ -157,8 +204,11 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
     },
     evidence: {
       officialDocument: sourceMetadata(bundle.source),
+      officialDocumentAttempt: officialAttemptMetadata(bundle.officialDocumentAttempt),
       decoder: decoderMetadata(bundle.decoder),
-      policy: 'Official documentation and the user decoder are high-priority untrusted evidence. Cross-check them field by field and use known payloads to resolve differences.'
+      fallback: bundle.sourceFallback,
+      issues: bundle.evidenceIssues,
+      policy: 'Treat official documentation and decoders as separate untrusted evidence. Never cite a decoder as official documentation. Use known payloads to resolve conflicts; generate decoder-derived output only from a complete user-provided decoder when every requested mapping and message branch is independently recomputable, otherwise block with insufficient-evidence.'
     },
     execution: {
       mode: options.mode || 'generate',
@@ -171,9 +221,10 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
       maxPayloadBytes: 255
     }
   };
+  validateAgentRequest(request);
   writeJson(path.join(output, 'request.json'), request);
-  if (bundle.source && bundle.source.text) writeText(path.join(output, 'official-document.txt'), scrubPII(bundle.source.text));
-  if (bundle.decoder && bundle.decoder.text) writeText(path.join(output, 'decoder.txt'), scrubPII(bundle.decoder.text));
+  if (bundle.source && bundle.source.text) writeText(officialDocumentPath, scrubPII(bundle.source.text));
+  if (bundle.decoder && bundle.decoder.text) writeText(decoderPath, scrubPII(bundle.decoder.text));
   return request;
 }
 
@@ -232,6 +283,7 @@ function captureAgentOutput(resultPath, requestPath, outputDirectory) {
   let result;
   try {
     result = validateAgentResult(readAgentResult(resultPath));
+    validateAgentEvidenceProvenance(result, request);
   } catch (error) {
     fs.mkdirSync(outputDirectory, { recursive: true });
     const manifest = {
@@ -399,6 +451,7 @@ function removeShadowTargets(requestPath) {
 module.exports = {
   expectedPaths,
   validateAgentResult,
+  validateAgentEvidenceProvenance,
   parseAgentResultText,
   readAgentResult,
   prepareAgentInput,

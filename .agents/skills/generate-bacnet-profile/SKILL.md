@@ -18,6 +18,13 @@ Read these files before editing anything:
    `.profile-agent/input/validation-report.json` in repair mode
 5. All four contract references linked below
 
+`request.json` schema v2 is authoritative for evidence provenance. Read
+`official-document.txt` only when `request.evidence.officialDocument` is
+non-null, and read `decoder.txt` only when `request.evidence.decoder` is
+non-null. An absent official document is an intentional evidence state, not a
+missing file to reconstruct from the decoder. Never cite decoder content as an
+official document.
+
 Read known files directly. Never enumerate a whole Skill, contract, prepared
 input, or repository file with `path:line:content` output. In particular, do
 not run the empty-pattern command `rg -n --no-heading ''`, a broad `grep -n`,
@@ -42,27 +49,36 @@ inspect and independently re-implement.
    decoder; use known payloads as the strongest reproducible oracle.
    Automatically discovered decoders and existing repository Profiles are
    supporting evidence only.
-3. Stop with `status: "blocked"` and blocker code `evidence-conflict` when a
+3. When `request.evidence.officialDocument` is null, classify a generated
+   candidate as `decoder-derived` only when the decoder, Issue payloads, and
+   BACnet Object Mapping make every requested mapping and relevant message
+   branch independently recomputable. Verify offset, length, endianness,
+   signedness, scale, unit, selector, and branch coverage without guessing.
+4. Stop with `status: "blocked"` and blocker code `insufficient-evidence` when
+   any generated field, mapping attribute, or relevant message branch lacks
+   complete evidence. Return null candidate paths, evidence level, and fPort
+   policy, an empty `resolvedMappings`, and the non-null blocker.
+5. Stop with `status: "blocked"` and blocker code `evidence-conflict` when a
    material conflict cannot be resolved by a known payload. Do not write a
    partial Profile in that case. Return null candidate paths, evidence level,
    and fPort policy, an empty `resolvedMappings`, and the non-null blocker.
-4. Use the linked contracts as the authority for repository shape and BACnet
+6. Use the linked contracts as the authority for repository shape and BACnet
    conventions. Do not search the repository broadly for examples. Inspect one
    exact existing Profile only when a contract leaves a necessary shape
    question unresolved, and never copy a protocol assumption without
    request-specific evidence.
-5. Determine the complete Profile and strict fixture structure before writing.
+7. Determine the complete Profile and strict fixture structure before writing.
    Follow the canonical fixture shape in `fixture-contract.md`, then write
    exactly the two allowed paths from `request.json` in one consolidated edit
    when practical. Never leave an intentionally incomplete candidate, and
    never edit `registry.json` or any other file.
-6. Implement a deterministic, fail-closed uplink codec and a strict fixture
+8. Implement a deterministic, fail-closed uplink codec and a strict fixture
    covering every Issue payload. Dynamic-length cursor parsing, bounded
    `while`, `for`, `do...while`, varint parsing, and `try/catch` are allowed
    under the codec contract. Follow its SQLite `REAL` output rule for every
    decoded `value`; strings, booleans, nulls, and non-finite numbers are not
    publishable BACnet values.
-7. Run the candidate command named in `request.json` only after both output
+9. Run the candidate command named in `request.json` only after both output
    files are structurally complete. Do not run `test-profile-automation.js`,
    `validate-all.js`, `validate-committed-fixtures.js`, `validate-registry.js`,
    or other repository-wide checks inside the Profile Agent. If candidate
@@ -72,10 +88,14 @@ inspect and independently re-implement.
    evidence searches unless a validation diagnostic is genuinely ambiguous.
    Fix candidate errors within the current attempt without weakening tests or
    validation code.
-8. Return only JSON matching the configured Agent output schema. Report every
+10. Return only JSON matching the configured Agent output schema. Report every
    generated BACnet mapping in `resolvedMappings`, and use `blocker: null` for
    a generated result. Keep source
    quotations short and identify evidence by prepared filename and location.
+   The capture validator rejects a generated result when official documentation
+   is absent unless it is `decoder-derived` from a user-provided decoder and
+   every evidence row cites both decoder logic and payload verification without
+   an official-document citation.
 
 ## Repair mode
 

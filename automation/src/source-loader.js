@@ -301,16 +301,6 @@ function isInlineDecoder(value) {
   return /function\s+(?:Decode|Decoder|decodeUplink|decode)\b|(?:decodeUplink|Decoder)\s*[:=]/i.test(String(value || ''));
 }
 
-function decoderFallbackSource(intake, decoder) {
-  return {
-    url: decoder.url || `Issue #${intake.issueNumber} decoder`,
-    type: 'decoder',
-    pages: null,
-    sha256: decoder.sha256 || null,
-    text: boundedSourceText(decoder.text || '')
-  };
-}
-
 module.exports = {
   isPrivateAddress,
   validateRemoteUrl,
@@ -318,7 +308,6 @@ module.exports = {
   extractSourceText,
   loadOfficialSource,
   isInlineDecoder,
-  decoderFallbackSource,
   createPinnedLookup,
   sharePointDownloadUrl,
   normalizeStructuredText,

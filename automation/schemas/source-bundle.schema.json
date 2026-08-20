@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "intake",
+    "source",
+    "officialDocumentAttempt",
+    "sourceError",
+    "sourceFallback",
+    "decoder",
+    "decoderError",
+    "evidenceIssues",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 2 },
+    "intake": { "type": "object" },
+    "source": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "required": ["url", "type", "pages", "sha256", "text"],
+      "properties": {
+        "url": { "type": "string" },
+        "type": { "type": "string", "enum": ["pdf", "html", "text"] },
+        "pages": { "type": ["integer", "null"], "minimum": 1 },
+        "sha256": { "type": ["string", "null"] },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "officialDocumentAttempt": { "$ref": "#/definitions/officialDocumentAttempt" },
+    "sourceError": { "$ref": "#/definitions/nullableError" },
+    "sourceFallback": { "$ref": "#/definitions/fallback" },
+    "decoder": { "type": ["object", "null"] },
+    "decoderError": { "$ref": "#/definitions/nullableError" },
+    "evidenceIssues": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "error": { "$ref": "#/definitions/nullableError" }
+  },
+  "definitions": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "code", "stage"],
+      "properties": {
+        "message": { "type": "string", "maxLength": 1000 },
+        "code": { "type": ["string", "null"] },
+        "stage": { "type": ["string", "null"] }
+      }
+    },
+    "nullableError": {
+      "anyOf": [
+        { "$ref": "#/definitions/error" },
+        { "type": "null" }
+      ]
+    },
+    "extraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "pages", "sha256"],
+      "properties": {
+        "type": { "type": "string", "enum": ["pdf", "html", "text"] },
+        "pages": { "type": ["integer", "null"], "minimum": 1 },
+        "sha256": { "type": ["string", "null"] }
+      }
+    },
+    "officialDocumentAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "status", "sourceError", "extraction"],
+      "properties": {
+        "url": { "type": ["string", "null"] },
+        "status": { "type": "string", "enum": ["not-attempted", "succeeded", "failed"] },
+        "sourceError": { "$ref": "#/definitions/nullableError" },
+        "extraction": {
+          "anyOf": [
+            { "$ref": "#/definitions/extraction" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["used", "origin", "reasonCode"],
+      "properties": {
+        "used": { "type": "boolean" },
+        "origin": { "type": ["string", "null"] },
+        "reasonCode": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

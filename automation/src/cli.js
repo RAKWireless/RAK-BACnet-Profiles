@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseIssue } = require('./issue-parser');
-const { loadOfficialSource, decoderFallbackSource } = require('./source-loader');
+const { loadOfficialSource } = require('./source-loader');
 const { loadDecoder } = require('./decoder-loader');
 const { GitHubClient } = require('./github-client');
 const { decideIntake } = require('./intake-policy');
@@ -20,13 +20,10 @@ const {
 const { parseArgs, readJson, writeJson, writeText, appendGithubOutput } = require('./io');
 const { assertCollectionIssueSha } = require('./issue-sha');
 const { intakeComment, syncFailureMessage, automationMeta, preparePublish } = require('./status');
+const { serializeContractError, buildSourceBundle, buildSettledSourceBundle } = require('./evidence-contract');
 
 function githubClient() {
   return new GitHubClient(process.env.GITHUB_REPOSITORY, process.env.GITHUB_TOKEN);
-}
-
-function serializeError(error) {
-  return { message: error && error.message ? error.message : String(error), code: error && error.code ? error.code : null };
 }
 
 function enabled() {
@@ -131,10 +128,7 @@ async function commandCollectSource(args) {
   const issueNumber = Number(args['issue-number']);
   const issue = await githubClient().getIssue(issueNumber);
   const intake = parseIssue(issue, { allowExisting: args['allow-existing'] === true });
-  let source = null;
-  let decoder = null;
-  let decoderError = null;
-  let error = null;
+  let bundle;
   try {
     assertCollectionIssueSha(intake.issueBodySha, args['expected-sha']);
     if (intake.status !== 'ready') {
@@ -146,31 +140,27 @@ async function commandCollectSource(args) {
       loadOfficialSource(intake),
       loadDecoder(intake, { token: process.env.GITHUB_TOKEN })
     ]);
-    if (decoderResult.status === 'fulfilled') decoder = decoderResult.value;
-    else decoderError = serializeError(decoderResult.reason);
-    if (sourceResult.status === 'fulfilled') source = sourceResult.value;
-    else if (decoder) source = decoderFallbackSource(intake, decoder);
-    else {
-      const sourceError = sourceResult.reason;
-      if (!sourceError.code) sourceError.code = 'SOURCE_UNAVAILABLE';
-      throw sourceError;
-    }
+    bundle = buildSettledSourceBundle(intake, sourceResult, decoderResult);
   } catch (caught) {
-    error = serializeError(caught);
+    bundle = buildSourceBundle({
+      intake,
+      error: serializeContractError(caught, { stage: 'intake' })
+    });
   }
-  const bundle = { schemaVersion: 1, intake, source, decoder, decoderError, error };
   writeJson(args.output, bundle);
-  appendGithubOutput('ready', !error && intake.status === 'ready' ? 'true' : 'false');
+  appendGithubOutput('ready', !bundle.error && intake.status === 'ready' ? 'true' : 'false');
   appendGithubOutput('issue_body_sha', intake.issueBodySha || '');
-  appendGithubOutput('error_code', error && error.code ? error.code : '');
+  appendGithubOutput('error_code', bundle.error && bundle.error.code ? bundle.error.code : '');
   console.log(JSON.stringify({
     issueNumber,
     issueBodySha: intake.issueBodySha,
-    ready: !error && intake.status === 'ready',
-    source: source && { type: source.type, pages: source.pages, sha256: source.sha256, textLength: String(source.text || '').length },
-    decoder: decoder && { origin: decoder.origin, authority: decoder.authority, sha256: decoder.sha256, textLength: String(decoder.text || '').length },
-    decoderError,
-    error
+    ready: !bundle.error && intake.status === 'ready',
+    source: bundle.source && { type: bundle.source.type, pages: bundle.source.pages, sha256: bundle.source.sha256, textLength: String(bundle.source.text || '').length },
+    sourceError: bundle.sourceError,
+    sourceFallback: bundle.sourceFallback,
+    decoder: bundle.decoder && { origin: bundle.decoder.origin, authority: bundle.decoder.authority, sha256: bundle.decoder.sha256, textLength: String(bundle.decoder.text || '').length },
+    decoderError: bundle.decoderError,
+    error: bundle.error
   }, null, 2));
 }
 
