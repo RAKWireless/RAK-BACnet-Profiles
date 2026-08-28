@@ -1,6 +1,6 @@
 # Complete Guide to Profile Test Fixtures
 
-This guide explains how to create and maintain test fixtures for BACnet Profiles. Test fixtures validate that the Codec decodes real payloads correctly and that the decoded data matches the Profile's BACnet object mapping.
+This guide explains how to create and maintain test fixtures for BACnet Profiles. Test fixtures validate uplink decoding and, when present, downlink encoding against the Profile's BACnet object mapping and known protocol vectors.
 
 ---
 
@@ -26,6 +26,7 @@ A single `.test.json` fixture contains both the test inputs and the expected out
 
 - **Inputs**: uplink payloads (`fPort` + hex `input`) and their descriptions
 - **Expected outputs**: the BACnet row array each payload should decode to
+- **Downlink vectors**: BACnet `channel` + numeric `value`, expected fPort, and expected bytes
 - **Metadata**: evidence level, data sources, and robustness policy
 
 The validator runs every test case through the Profile Codec and checks:
@@ -35,6 +36,7 @@ The validator runs every test case through the Profile Codec and checks:
 3. Every decoded entry is valid against the `datatype` mapping (channel, name, unit, value)
 4. All non-output `datatype` channels are covered by the fixture
 5. Robustness: truncated payloads and unknown fPorts are rejected cleanly (configurable)
+6. Every downlink vector encodes deterministically to the expected bytes and fPort
 
 ---
 
@@ -110,6 +112,7 @@ Create `profiles/Vendor/tests/Vendor-Model.test.json`:
 | `robustness` | ❌ | Robustness check toggles: `checkTruncation`, `checkUnknownFPort`, `checkFuzz` |
 | `strict` | ❌ | When `true`, enables stricter contract checks (see below) |
 | `testCases` | ✅ | Array of test cases (at least one) |
+| `downlinkTestCases` | ❌ | Required for strict Profiles with writable datatype channels |
 
 ### evidenceLevel
 
@@ -164,7 +167,7 @@ All three checks default as shown:
 |-------|----------|-------------|
 | `name` | ✅ | Unique test case name |
 | `messageType` | ❌ | Optional label, e.g. `periodic`, `alarm`, `boot` |
-| `fPort` | ✅ | LoRaWAN port, integer 1–223 |
+| `fPort` | ✅ | LoRaWAN port, integer 1–254 |
 | `input` | ✅ | Uplink payload in hex. Spaces and dashes are allowed (e.g. `"01 75 64 05"` or `"01-75-64-05"`) |
 | `description` | ❌ | Human-readable meaning of the payload |
 | `expectedOutput` | ❌ | Expected decoded `data` array (see below) |
@@ -197,6 +200,25 @@ All three checks default as shown:
 | Unitless (binary/status) | `null` |
 
 The full allowed unit list lives in `scripts/lib/units.js` (`ALLOWED_UNITS`). The unit in `expectedOutput` must match `datatype.<channel>.units`.
+
+### downlinkTestCases
+
+```json
+{
+  "name": "Close Valve",
+  "channel": 10,
+  "value": 1,
+  "expectedFPort": 5,
+  "expectedBytes": "73 01",
+  "citation": "Issue #38 Downlink Command Examples"
+}
+```
+
+- `channel` and `value` are passed to `Encode`.
+- `expectedFPort` must equal the writable datatype object's `fport` and be in the range 1–254.
+- `expectedBytes` is an exact hexadecimal oracle from a known payload or complete official protocol documentation.
+- Strict fixtures must cover every writable datatype channel. Unknown channels and non-numeric values must fail closed with an empty `bytes` array and a non-empty `errors` array.
+- Passing this check verifies codec behavior, not the physical device action; hardware verification remains separate.
 
 ---
 
@@ -261,6 +283,7 @@ For every test case the validator:
    - `value` is a finite number
 4. **Checks channel coverage**: every non-output `datatype` channel must appear in at least one test result. For `known-answer`/`decoder-derived` fixtures a gap is an error; for `documentation-only` it is a warning
 5. **Runs robustness checks** according to `robustness` and `fPortPolicy`
+6. **Runs every downlink case twice**, checks exact bytes and fPort, and requires all writable channels to be covered in strict fixtures
 
 Additional contract checks apply to `strict: true` fixtures:
 - BinaryInputObject values must be exactly `0` or `1`
@@ -424,6 +447,7 @@ Confirm before submitting a Profile:
 - [ ] At least one `expectedOutput` (unless `documentation-only`)
 - [ ] Every non-output `datatype` channel is covered by at least one test case
 - [ ] `expectedOutput` uses canonical BACnet units that match `datatype`
+- [ ] When writable datatype channels exist, `downlinkTestCases` covers every writable channel
 - [ ] `node scripts/run-profile-ci.js` passes for the Profile and its fixture
 - [ ] `node scripts/validate-committed-fixtures.js` passes
 
@@ -437,7 +461,8 @@ Real committed fixtures:
 - `profiles/Milesight/tests/Milesight-WT304.test.json`
 - `profiles/QingPing/tests/QingPing-CGP22CLH.test.json`
 - `profiles/Thermokon/tests/Thermokon-NOVOS3-OccLumCO2TempRH.test.json`
+- `profiles/Eddy-Solutions/tests/Eddy-Solutions-LoRa-IQ-V2.test.json` (includes Issue #38 downlink vectors)
 
 ---
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-28

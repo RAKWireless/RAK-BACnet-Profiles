@@ -9,7 +9,11 @@ const { loadYAML } = require('../yaml-parser');
 const mappingRules = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'schemas', 'bacnet-mapping-rules.json'), 'utf8'));
 const OUTPUT_TYPES = new Set(['AnalogOutputObject', 'BinaryOutputObject']);
 const PROFILE_KEY_ORDER = ['codec', 'datatype', 'lorawan', 'model', 'profileVersion', 'name', 'vendor', 'id'];
-const DATATYPE_KEY_ORDER = ['name', 'type', 'units', 'covIncrement', 'updateInterval', 'channel'];
+const DATATYPE_KEY_ORDER = ['name', 'type', 'units', 'covIncrement', 'updateInterval', 'fport', 'channel'];
+
+function isWritableMapping(config) {
+  return Boolean(config && (OUTPUT_TYPES.has(config.type) || Object.prototype.hasOwnProperty.call(config, 'fport')));
+}
 
 function normalize(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -65,9 +69,16 @@ function validateCodecEntrypoints(codec) {
   }
   const decode = functionDeclaration(ast, 'Decode');
   const decodeUplink = functionDeclaration(ast, 'decodeUplink');
-  if (!decode || !decodeUplink) return errors;
-  if (containsCall(decode.body, 'decodeUplink')) errors.push('Decode must return the BACnet row array directly and must not delegate to decodeUplink');
-  if (!containsCall(decodeUplink.body, 'Decode')) errors.push('decodeUplink must call Decode and wrap its returned BACnet row array');
+  if (decode && decodeUplink) {
+    if (containsCall(decode.body, 'decodeUplink')) errors.push('Decode must return the BACnet row array directly and must not delegate to decodeUplink');
+    if (!containsCall(decodeUplink.body, 'Decode')) errors.push('decodeUplink must call Decode and wrap its returned BACnet row array');
+  }
+  const encode = functionDeclaration(ast, 'Encode');
+  const encodeDownlink = functionDeclaration(ast, 'encodeDownlink');
+  if (encode && encodeDownlink) {
+    if (containsCall(encode.body, 'encodeDownlink')) errors.push('Encode must return the downlink byte array directly and must not delegate to encodeDownlink');
+    if (!containsCall(encodeDownlink.body, 'Encode')) errors.push('encodeDownlink must call Encode and wrap its returned downlink byte array');
+  }
   return errors;
 }
 
@@ -76,6 +87,7 @@ function validateProfileSemantics(profile, filePath, options = {}) {
   const errors = [];
   const warnings = [];
   const channels = Object.entries(profile.datatype || {});
+  const writableChannels = channels.filter(([, config]) => isWritableMapping(config));
   const names = new Set();
 
   if (channels.length === 0) errors.push('datatype must declare at least one BACnet object');
@@ -98,8 +110,16 @@ function validateProfileSemantics(profile, filePath, options = {}) {
     }
   }
 
-  if (/function\s+(?:Encode|encodeDownlink)\b|\b(?:Encode|encodeDownlink)\s*=/.test(profile.codec || '')) {
-    errors.push('Profile Automation only accepts uplink-only codecs');
+  const hasEncode = /function\s+Encode\b|\bEncode\s*=/.test(profile.codec || '');
+  const hasEncodeDownlink = /function\s+encodeDownlink\b|\bencodeDownlink\s*=/.test(profile.codec || '');
+  if (writableChannels.length > 0 && (!hasEncode || !hasEncodeDownlink)) {
+    errors.push('Downlink-capable Profiles must provide both Encode and encodeDownlink');
+  }
+  if (writableChannels.length === 0 && (hasEncode || hasEncodeDownlink)) {
+    errors.push('Encode and encodeDownlink require at least one downlink-capable datatype object');
+  }
+  if (hasEncode !== hasEncodeDownlink) {
+    errors.push('Encode and encodeDownlink must be provided together');
   }
   if (strict) errors.push(...validateCodecEntrypoints(profile.codec));
 
@@ -126,8 +146,12 @@ function validateProfileSemantics(profile, filePath, options = {}) {
     if (names.has(normalizedName)) errors.push(`datatype.${channelKey}: duplicate object name '${config.name}'`);
     names.add(normalizedName);
 
-    if (OUTPUT_TYPES.has(config.type) || Object.prototype.hasOwnProperty.call(config, 'fport')) {
-      errors.push(`datatype.${channelKey}: downlink-capable objects are not supported by Profile Automation`);
+    if (OUTPUT_TYPES.has(config.type) && !Object.prototype.hasOwnProperty.call(config, 'fport')) {
+      errors.push(`datatype.${channelKey}: ${config.type} must declare fport`);
+    }
+    if (Object.prototype.hasOwnProperty.call(config, 'fport') &&
+        (!Number.isInteger(config.fport) || config.fport < 1 || config.fport > 254)) {
+      errors.push(`datatype.${channelKey}: fport must be an integer between 1 and 254`);
     }
     if (config.type === 'BinaryInputObject' && config.units != null) {
       errors.push(`datatype.${channelKey}: BinaryInputObject must not define units`);
@@ -141,7 +165,7 @@ function validateProfileSemantics(profile, filePath, options = {}) {
 
     const rule = matchingRule(config.name);
     if (rule) {
-      if (!rule.types.includes(config.type)) errors.push(`datatype.${channelKey}: '${config.name}' should use one of: ${rule.types.join(', ')}`);
+      if (!isWritableMapping(config) && !rule.types.includes(config.type)) errors.push(`datatype.${channelKey}: '${config.name}' should use one of: ${rule.types.join(', ')}`);
       if (rule.units.length > 0 && !rule.units.includes(config.units)) {
         errors.push(`datatype.${channelKey}: '${config.name}' should use one of these units: ${rule.units.join(', ')}`);
       }
@@ -202,4 +226,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { validateProfileSemantics, validateDecodedData };
+module.exports = { OUTPUT_TYPES, isWritableMapping, validateProfileSemantics, validateDecodedData };

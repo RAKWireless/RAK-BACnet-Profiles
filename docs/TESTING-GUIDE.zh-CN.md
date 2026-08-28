@@ -1,6 +1,6 @@
 # Profile 测试数据完整指南
 
-本指南介绍如何为 BACnet Profile 创建和维护测试数据（test fixture），验证 Codec 能否正确解码真实载荷，以及解码结果是否与 Profile 的 BACnet 对象映射一致。
+本指南介绍如何为 BACnet Profile 创建和维护测试数据（test fixture），验证 Codec 的上行解码，以及存在下行能力时的编码结果是否符合 BACnet 对象映射和已知协议向量。
 
 ---
 
@@ -26,6 +26,7 @@ fixture 文件必须与所测试的 Profile 同名，例如 `Milesight-EM410-RDL
 
 - **输入**：上行载荷（`fPort` + 十六进制 `input`）及其描述
 - **期望输出**：每个载荷应解码出的 BACnet 行数组
+- **下行向量**：BACnet `channel` + 数值 `value`、期望 fPort 和期望字节
 - **元数据**：证据等级、数据来源、鲁棒性策略
 
 验证器会对每个测试用例执行 Profile Codec，并检查：
@@ -35,6 +36,7 @@ fixture 文件必须与所测试的 Profile 同名，例如 `Milesight-EM410-RDL
 3. 每个解码条目均符合 `datatype` 映射（channel、name、unit、value）
 4. 所有非输出型 `datatype` 通道都被 fixture 覆盖
 5. 鲁棒性：截断载荷和未知 fPort 能被正确拒绝（可配置）
+6. 每条下行向量都能确定性编码为期望字节和 fPort
 
 ---
 
@@ -110,6 +112,7 @@ mkdir -p profiles/Vendor/tests
 | `robustness` | ❌ | 鲁棒性检查开关：`checkTruncation`、`checkUnknownFPort`、`checkFuzz` |
 | `strict` | ❌ | 为 `true` 时启用更严格的契约检查（见下文） |
 | `testCases` | ✅ | 测试用例数组（至少一个） |
+| `downlinkTestCases` | ❌ | 严格 fixture 含可写 datatype 通道时必需 |
 
 ### evidenceLevel（证据等级）
 
@@ -164,7 +167,7 @@ mkdir -p profiles/Vendor/tests
 |------|------|------|
 | `name` | ✅ | 唯一的测试用例名称 |
 | `messageType` | ❌ | 可选的类型标签，如 `periodic`、`alarm`、`boot` |
-| `fPort` | ✅ | LoRaWAN 端口，整数 1–223 |
+| `fPort` | ✅ | LoRaWAN 端口，整数 1–254 |
 | `input` | ✅ | 十六进制上行载荷。允许空格和连字符（如 `"01 75 64 05"` 或 `"01-75-64-05"`） |
 | `description` | ❌ | 载荷含义的人可读描述 |
 | `expectedOutput` | ❌ | 期望解码出的 `data` 数组（见下文） |
@@ -197,6 +200,25 @@ mkdir -p profiles/Vendor/tests
 | 无单位（二进制/状态） | `null` |
 
 完整允许单位列表在 `scripts/lib/units.js`（`ALLOWED_UNITS`）。`expectedOutput` 中的单位必须与 `datatype.<channel>.units` 一致。
+
+### downlinkTestCases（下行测试用例）
+
+```json
+{
+  "name": "Close Valve",
+  "channel": 10,
+  "value": 1,
+  "expectedFPort": 5,
+  "expectedBytes": "73 01",
+  "citation": "Issue #38 Downlink Command Examples"
+}
+```
+
+- `channel` 和 `value` 会传给 `Encode`。
+- `expectedFPort` 必须等于可写 datatype 对象的 `fport`，范围为 1–254。
+- `expectedBytes` 是来自已知载荷或完整官方协议文档的精确十六进制基准。
+- 严格 fixture 必须覆盖所有可写 datatype 通道；未知 channel 和非数值 value 必须返回空 `bytes` 与非空 `errors`，以失败关闭。
+- 通过该检查只能证明 Codec 编码符合证据，不能证明设备实际动作；实机验证仍需人工完成。
 
 ---
 
@@ -262,6 +284,7 @@ node scripts/test-profile-automation.js       # 自动化回归测试
    - `value` 是有限数字
 4. **检查通道覆盖**：所有非输出型 `datatype` 通道必须至少在一条测试结果中出现。`known-answer`/`decoder-derived` 缺失为错误，`documentation-only` 缺失仅警告
 5. **按 `robustness` 和 `fPortPolicy` 执行鲁棒性检查**
+6. **每条 downlink 用例运行两次**，检查精确字节和 fPort，并要求严格 fixture 覆盖所有可写通道
 
 对 `strict: true` 的 fixture 还有额外契约：
 - BinaryInputObject 的值必须恰好是 `0` 或 `1`
@@ -425,6 +448,7 @@ jq . profiles/Vendor/tests/Vendor-Model.test.json
 - [ ] 至少包含一个 `expectedOutput`（`documentation-only` 除外）
 - [ ] 所有非输出型 `datatype` 通道至少被一条测试用例覆盖
 - [ ] `expectedOutput` 使用与 `datatype` 一致的规范 BACnet 单位
+- [ ] 存在可写 datatype 通道时，`downlinkTestCases` 覆盖每个可写通道
 - [ ] `node scripts/run-profile-ci.js` 对 Profile 及其 fixture 通过
 - [ ] `node scripts/validate-committed-fixtures.js` 通过
 
@@ -438,7 +462,8 @@ jq . profiles/Vendor/tests/Vendor-Model.test.json
 - `profiles/Milesight/tests/Milesight-WT304.test.json`
 - `profiles/QingPing/tests/QingPing-CGP22CLH.test.json`
 - `profiles/Thermokon/tests/Thermokon-NOVOS3-OccLumCO2TempRH.test.json`
+- `profiles/Eddy-Solutions/tests/Eddy-Solutions-LoRa-IQ-V2.test.json`（含 Issue #38 downlink 向量）
 
 ---
 
-**最后更新**: 2026-08-11
+**最后更新**: 2026-08-28

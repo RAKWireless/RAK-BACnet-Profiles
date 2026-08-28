@@ -14,7 +14,7 @@ function intakeComment(intake, decision) {
     const paused = decision.paused
       ? '\n\nProfile Agent execution is currently disabled by the repository kill switch; Intake remains active and this request will stay queued.'
       : '\n\nA new run is bound to the current Issue body SHA. Editing the Issue cancels and replaces that run.';
-    return `The request passed the uplink-only Intake gate and is queued for Profile Agent generation.${warnings ? `\n\nDeferred evidence checks:\n\n${warnings}` : ''}${paused}`;
+    return `The request passed the Profile Intake gate and is queued for Profile Agent generation.${warnings ? `\n\nDeferred evidence checks:\n\n${warnings}` : ''}${paused}`;
   }
   if (decision.state === 'awaiting-approval') {
     const warnings = (intake.warnings || []).map(item => `- ${safeMarkdown(item)}`).join('\n');

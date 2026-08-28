@@ -6,8 +6,8 @@ const path = require('path');
 const Ajv = require('ajv');
 const { loadYAML } = require('../yaml-parser');
 const { hexToBytes } = require('../hex-converter');
-const { testDecode } = require('../../test-codec');
-const { validateDecodedData } = require('./profile-semantics');
+const { testDecode, testEncode } = require('../../test-codec');
+const { isWritableMapping, validateDecodedData } = require('./profile-semantics');
 const { firstDifference, boundedExpectedActual } = require('./diagnostics');
 
 function deepEqual(actual, expected) {
@@ -140,7 +140,7 @@ function validateTruncation(profile, testCase, valueOptions) {
 
 function validateUnknownFPort(profile, testCase, knownFPorts, valueOptions) {
   let unknownFPort = null;
-  for (let candidate = 223; candidate >= 0; candidate -= 1) {
+  for (let candidate = 254; candidate >= 1; candidate -= 1) {
     if (!knownFPorts.has(candidate)) {
       unknownFPort = candidate;
       break;
@@ -184,7 +184,7 @@ function validateRejectedFPort(profile, testCase, fPort, label, valueOptions) {
 
 function validateAgnosticFPort(profile, testCase, baseline, valueOptions) {
   const errors = [];
-  const alternateFPort = testCase.fPort === 223 ? 1 : 223;
+  const alternateFPort = testCase.fPort === 254 ? 1 : 254;
   try {
     const alternate = testDecode(profile.codec, alternateFPort, testCase.input);
     const alternateCase = { ...testCase, fPort: alternateFPort };
@@ -241,22 +241,129 @@ function validateSeededFuzz(profile, testCase, valueOptions) {
   return errors;
 }
 
+function validateEncoderFailure(result, label) {
+  const errors = [];
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return [`${label}: encodeDownlink must return an object`];
+  }
+  if (!Array.isArray(result.bytes) || result.bytes.length !== 0) {
+    errors.push(`${label}: encodeDownlink must return an empty bytes array on failure`);
+  }
+  if (!Array.isArray(result.errors) || result.errors.length === 0 ||
+      result.errors.some(error => typeof error !== 'string' || error.length === 0)) {
+    errors.push(`${label}: encodeDownlink must return a non-empty string errors array on failure`);
+  }
+  return errors;
+}
+
+function validateDownlinkResult(profile, testCase, result, failureOptions = {}) {
+  const errors = [];
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return ['encodeDownlink must return an object'];
+  if (!Array.isArray(result.bytes) || result.bytes.length === 0) {
+    errors.push('encodeDownlink.bytes must be a non-empty array on success');
+  } else {
+    if (result.bytes.length > 255) errors.push('encodeDownlink.bytes must not exceed 255 bytes');
+    if (result.bytes.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+      errors.push('encodeDownlink.bytes must contain only integers between 0 and 255');
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(result, 'errors')) {
+    errors.push('encodeDownlink must omit errors on success');
+  }
+
+  const mapping = profile.datatype && profile.datatype[String(testCase.channel)];
+  if (!mapping) {
+    errors.push(`Downlink channel ${testCase.channel} is not declared in datatype`);
+  } else {
+    if (!isWritableMapping(mapping)) errors.push(`Downlink channel ${testCase.channel} is not writable`);
+    if (mapping.fport !== testCase.expectedFPort) {
+      errors.push(`Downlink channel ${testCase.channel} fport ${mapping.fport} does not match expectedFPort ${testCase.expectedFPort}`);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(result, 'fPort')) {
+    if (!Number.isInteger(result.fPort) || result.fPort < 1 || result.fPort > 254) {
+      errors.push('encodeDownlink.fPort must be an integer between 1 and 254 when present');
+    } else if (result.fPort !== testCase.expectedFPort) {
+      errors.push(`encodeDownlink.fPort ${result.fPort} does not match expectedFPort ${testCase.expectedFPort}`);
+    }
+  }
+
+  const expected = hexToBytes(testCase.expectedBytes);
+  const actual = Array.isArray(result.bytes) ? result.bytes : [];
+  if (!deepEqual(actual, expected)) {
+    const message = 'Actual downlink bytes do not match expectedBytes';
+    errors.push(message);
+    if (Array.isArray(failureOptions.failures)) {
+      const snapshots = boundedExpectedActual(expected, actual);
+      failureOptions.failures.push({
+        code: 'FIXTURE_EXPECTED_BYTES_MISMATCH',
+        checkPath: failureOptions.checkPath || 'candidateStrict.checks.fixture',
+        message,
+        testCase: testCase.name,
+        channel: testCase.channel,
+        value: testCase.value,
+        fPort: testCase.expectedFPort,
+        field: 'expectedBytes',
+        rule: 'Encoded LoRaWAN bytes must exactly match expectedBytes',
+        hint: 'Compare the first difference with the downlink protocol evidence and repair Encode unless the fixture oracle is proven wrong',
+        expected: snapshots.expected,
+        actual: snapshots.actual,
+        difference: firstDifference(expected, actual),
+        truncated: snapshots.truncated,
+        truncatedFields: snapshots.truncatedFields
+      });
+    }
+  }
+  return errors;
+}
+
+function unusedChannel(profile) {
+  let candidate = 1;
+  const declared = new Set(Object.keys(profile.datatype || {}).map(Number));
+  while (declared.has(candidate)) candidate += 1;
+  return candidate;
+}
+
+function validateStrictDownlinkFailures(profile, downlinkCases) {
+  if (downlinkCases.length === 0) return [];
+  const errors = [];
+  try {
+    errors.push(...validateEncoderFailure(
+      testEncode(profile.codec, { channel: unusedChannel(profile), value: 0 }),
+      'unknown channel'
+    ));
+  } catch (error) {
+    errors.push(`unknown channel threw: ${error.message}`);
+  }
+  try {
+    errors.push(...validateEncoderFailure(
+      testEncode(profile.codec, { channel: downlinkCases[0].channel, value: null }),
+      'non-numeric value'
+    ));
+  } catch (error) {
+    errors.push(`non-numeric value threw: ${error.message}`);
+  }
+  return errors;
+}
+
 function validateTestFixture(profilePath, fixturePath) {
   const profile = loadYAML(profilePath);
   const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
   const errors = [];
   const warnings = [];
   const results = [];
+  const downlinkResults = [];
   const failures = [];
   const coveredErrors = new Set();
   const observedChannels = new Set();
+  const observedDownlinkChannels = new Set();
   const schemaCheck = validateFixtureSchema(fixture);
   errors.push(...schemaCheck.errors);
   if (!schemaCheck.valid) {
     for (const [index, message] of schemaCheck.errors.entries()) {
       failures.push(validationErrorFailure('candidateStrict.checks.fixture', message, { field: `errors[${index}]` }));
     }
-    return { valid: false, errors, warnings, results, failures };
+    return { valid: false, errors, warnings, results, downlinkResults, failures };
   }
   const robustness = validateStrictFixtureRobustnessDetails(fixture);
   errors.push(...robustness.errors);
@@ -325,6 +432,46 @@ function validateTestFixture(profilePath, fixturePath) {
     results.push({ name: testCase.name, valid: testErrors.length === 0, errors: testErrors });
   }
 
+  const downlinkCases = fixture.downlinkTestCases || [];
+  for (const testCase of downlinkCases) {
+    const testErrors = [];
+    const testFailures = [];
+    try {
+      const input = { channel: testCase.channel, value: testCase.value };
+      const first = testEncode(profile.codec, input);
+      const second = testEncode(profile.codec, input);
+      if (!deepEqual(first, second)) testErrors.push('Encoder output is not deterministic');
+      testErrors.push(...validateDownlinkResult(profile, testCase, first, {
+        failures: testFailures,
+        checkPath: 'candidateStrict.checks.fixture'
+      }));
+      observedDownlinkChannels.add(testCase.channel);
+    } catch (error) {
+      testErrors.push(error.message);
+    }
+    const structuredMessages = new Set(testFailures.map(failure => failure.message));
+    for (const [index, message] of testErrors.entries()) {
+      if (!structuredMessages.has(message)) {
+        testFailures.push(validationErrorFailure('candidateStrict.checks.fixture', message, {
+          testCase: testCase.name,
+          channel: testCase.channel,
+          value: testCase.value,
+          fPort: testCase.expectedFPort,
+          field: `downlinkErrors[${index}]`
+        }));
+      }
+    }
+    if (testErrors.length > 0) errors.push(...testErrors.map(error => `${testCase.name}: ${error}`));
+    failures.push(...testFailures);
+    for (const failure of testFailures) coveredErrors.add(`${testCase.name}: ${failure.message}`);
+    downlinkResults.push({ name: testCase.name, valid: testErrors.length === 0, errors: testErrors });
+  }
+
+  if (fixture.strict === true && downlinkCases.length > 0) {
+    const failureErrors = validateStrictDownlinkFailures(profile, downlinkCases);
+    errors.push(...failureErrors.map(error => `Downlink fail-closed check: ${error}`));
+  }
+
   const outputTypes = new Set(['AnalogOutputObject', 'BinaryOutputObject']);
   const declaredChannels = Object.entries(profile.datatype || {})
     .filter(([, config]) => !outputTypes.has(config.type))
@@ -338,13 +485,31 @@ function validateTestFixture(profilePath, fixturePath) {
   }
   if (fixture.evidenceLevel === 'documentation-only') warnings.push('No independent known-answer oracle is available');
 
+  const writableChannels = Object.entries(profile.datatype || {})
+    .filter(([, config]) => isWritableMapping(config))
+    .map(([channel]) => Number(channel))
+    .sort((a, b) => a - b);
+  const missingDownlinkChannels = writableChannels.filter(channel => !observedDownlinkChannels.has(channel));
+  if (fixture.strict === true && missingDownlinkChannels.length > 0) {
+    errors.push(`Downlink fixtures do not cover writable datatype channels: ${missingDownlinkChannels.join(', ')}`);
+  }
+
   for (const [index, message] of errors.entries()) {
     if (!coveredErrors.has(message)) {
       failures.push(validationErrorFailure('candidateStrict.checks.fixture', message, { field: `errors[${index}]` }));
     }
   }
 
-  return { valid: errors.length === 0, errors, warnings, results, failures, observedChannels: [...observedChannels].sort((a, b) => a - b) };
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    results,
+    downlinkResults,
+    failures,
+    observedChannels: [...observedChannels].sort((a, b) => a - b),
+    observedDownlinkChannels: [...observedDownlinkChannels].sort((a, b) => a - b)
+  };
 }
 
 function main() {

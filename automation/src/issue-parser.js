@@ -16,6 +16,7 @@ const FIELD_LABELS = {
   uplinkData: 'Uplink Data Examples',
   decoder: 'Decode Function (Optional)',
   downlinkSupport: 'Downlink Support',
+  downlinkCommands: 'Downlink Command Examples (Only if Downlink Support is Yes)',
   bacnetMapping: 'BACnet Object Mapping Requirements'
 };
 
@@ -103,6 +104,115 @@ function extractUplinkExamples(value) {
   return examples;
 }
 
+function numericControlValue(value) {
+  const raw = String(value || '').trim();
+  if (/^0x[0-9a-f]+$/i.test(raw)) return parseInt(raw.slice(2), 16);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function emptyDownlinkExample() {
+  return {
+    command: null,
+    bacnetObject: null,
+    fPort: null,
+    value: null,
+    hex: null,
+    allowedValues: null,
+    expectedResponse: null,
+    reference: null
+  };
+}
+
+function extractDownlinkExamples(value) {
+  const examples = [];
+  const errors = [];
+  let current = emptyDownlinkExample();
+
+  function hasContent(example) {
+    return Object.values(example).some(item => item !== null && item !== '');
+  }
+
+  function finish() {
+    if (!hasContent(current)) return;
+    const normalized = {
+      ...current,
+      complete: Boolean(
+        current.command &&
+        Number.isInteger(current.fPort) &&
+        typeof current.value === 'number' &&
+        Number.isFinite(current.value) &&
+        current.hex
+      )
+    };
+    const duplicate = examples.some(example => (
+      example.command === normalized.command &&
+      example.fPort === normalized.fPort &&
+      example.value === normalized.value &&
+      example.hex === normalized.hex
+    ));
+    if (!duplicate) examples.push(normalized);
+    current = emptyDownlinkExample();
+  }
+
+  for (const rawLine of String(value || '').split(/\r?\n/)) {
+    const line = normalizeMarkdownLine(rawLine).trim().replace(/^[-+]\s+/, '');
+    if (!line) {
+      finish();
+      continue;
+    }
+
+    let match = line.match(/^(?:command(?:\s+name)?|downlink\s+command)\s*[:=]\s*(.+)$/i);
+    if (match) {
+      if (hasContent(current)) finish();
+      current.command = scrubPII(match[1].trim());
+      continue;
+    }
+    match = line.match(/^bacnet\s+object\s*[:=]\s*(.+)$/i);
+    if (match) {
+      current.bacnetObject = scrubPII(match[1].trim());
+      continue;
+    }
+    match = line.match(/^(?:f\s*port|port)\s*[:=]\s*(-?\d{1,3})\s*$/i);
+    if (match) {
+      current.fPort = Number(match[1]);
+      continue;
+    }
+    match = line.match(/^control\s+value\s*[:=]\s*(.+)$/i);
+    if (match) {
+      current.value = numericControlValue(match[1]);
+      if (current.value === null) errors.push(`Downlink control value must be numeric: ${scrubPII(match[1].trim())}`);
+      continue;
+    }
+    match = line.match(/^(?:expected\s+)?downlink\s+payload\s*[:=]\s*(.+)$/i);
+    if (match) {
+      const hex = normalizeHex(match[1]);
+      if (!hex || hex.length % 2 !== 0) errors.push(`Downlink payload must contain complete hexadecimal bytes: ${scrubPII(match[1].trim())}`);
+      else current.hex = hex;
+      continue;
+    }
+    match = line.match(/^allowed\s+values?(?:\s+or\s+range)?\s*[:=]\s*(.+)$/i);
+    if (match) {
+      current.allowedValues = scrubPII(match[1].trim());
+      continue;
+    }
+    match = line.match(/^expected\s+(?:device\s+)?(?:response(?:\s*\/\s*ack)?|ack)\s*[:=]\s*(.+)$/i);
+    if (match) {
+      current.expectedResponse = scrubPII(match[1].trim());
+      continue;
+    }
+    match = line.match(/^(?:reference|reference\s+or\s+verification\s+source|verification\s+source)\s*[:=]\s*(.+)$/i);
+    if (match) {
+      current.reference = scrubPII(match[1].trim());
+      continue;
+    }
+
+    if (!current.command) current.command = scrubPII(line.replace(/[:：]\s*$/, ''));
+  }
+  finish();
+  return { examples, errors };
+}
+
 function field(sections, key) {
   return sections[FIELD_LABELS[key]] || '';
 }
@@ -156,8 +266,8 @@ function parseIssue(issue, options = {}) {
   if (fPortStatus === 'deferred') {
     warnings.push('One or more uplink examples omit fPort; evidence must prove fixed/agnostic behavior or select payload-driven ignored mode without guessing a device port');
   }
-  if (uplinkExamples.some(example => Number.isInteger(example.fPort) && (example.fPort < 1 || example.fPort > 223))) {
-    errors.push('Every application uplink fPort must be between 1 and 223');
+  if (uplinkExamples.some(example => Number.isInteger(example.fPort) && (example.fPort < 1 || example.fPort > 254))) {
+    errors.push('Every uplink fPort must be between 1 and 254');
   }
   const lorawanClass = field(sections, 'lorawanClass');
   if (!['Class A', 'Class B', 'Class C'].includes(lorawanClass)) {
@@ -178,10 +288,35 @@ function parseIssue(issue, options = {}) {
   }
 
   const downlinkSupport = field(sections, 'downlinkSupport');
+  const supportsDownlink = /^Yes\s*-?\s*supports downlink commands/i.test(downlinkSupport);
   const isUplinkOnly = /^No\s*-?\s*uplink only/i.test(downlinkSupport);
+  const downlinkText = field(sections, 'downlinkCommands');
+  const downlinkExtraction = extractDownlinkExamples(downlinkText);
+  const downlinkExamples = downlinkExtraction.examples;
+  errors.push(...downlinkExtraction.errors);
+  if (downlinkExamples.length > 20) errors.push('At most 20 downlink examples can be processed automatically');
+  if (downlinkExamples.some(example => example.hex && example.hex.length / 2 > 255)) {
+    errors.push('Downlink examples must not exceed 255 bytes');
+  }
+  if (downlinkExamples.some(example => Number.isInteger(example.fPort) && (example.fPort < 1 || example.fPort > 254))) {
+    errors.push('Every downlink fPort must be between 1 and 254');
+  }
+  const completeDownlinkExamples = downlinkExamples.filter(example => example.complete);
+  const downlinkEvidenceStatus = !supportsDownlink
+    ? 'not-requested'
+    : (completeDownlinkExamples.length > 0 ? 'explicit' : 'deferred');
+  if (supportsDownlink && downlinkEvidenceStatus === 'deferred') {
+    warnings.push('Downlink known-answer examples are incomplete or absent; the official document must fully specify each requested command, fPort, numeric value encoding, and payload format');
+  }
+  if (isUplinkOnly && downlinkExamples.length > 0) {
+    warnings.push('Downlink examples were provided while Downlink Support is set to uplink only');
+  }
   const manualReasons = [];
-  const status = !isUplinkOnly ? 'manual' : (errors.length > 0 ? 'needs-info' : 'ready');
-  if (!isUplinkOnly) manualReasons.push('Profile Automation only handles uplink-only devices');
+  let status = errors.length > 0 ? 'needs-info' : 'ready';
+  if (!supportsDownlink && !isUplinkOnly) {
+    status = 'manual';
+    manualReasons.push('Downlink support must be confirmed as Yes or No before Profile Automation can run');
+  }
 
   const profilePath = profileName ? path.join(WORKSPACE_ROOT, 'profiles', vendor, `${profileName}.yaml`) : null;
   if (status === 'ready' && profilePath && fs.existsSync(profilePath) && !options.allowExisting) {
@@ -217,6 +352,9 @@ function parseIssue(issue, options = {}) {
     uplinkExamples,
     decoder: scrubPII(field(sections, 'decoder')),
     downlinkSupport,
+    downlinkEvidenceStatus,
+    downlinkText: scrubPII(downlinkText),
+    downlinkExamples,
     manualReasons,
     bacnetMapping: scrubPII(bacnetMapping),
     bacnetMappingStatus: bacnetMappingRequest.status,
@@ -225,4 +363,4 @@ function parseIssue(issue, options = {}) {
   };
 }
 
-module.exports = { FIELD_LABELS, parseSections, parseIssue, extractUplinkExamples, normalizeHex };
+module.exports = { FIELD_LABELS, parseSections, parseIssue, extractUplinkExamples, extractDownlinkExamples, normalizeHex };

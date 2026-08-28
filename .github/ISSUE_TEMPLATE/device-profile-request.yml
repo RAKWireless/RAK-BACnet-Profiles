@@ -11,7 +11,7 @@ body:
         
         **Note**: The more detailed the information, the faster the profile can be created.
 
-        **Profile Automation scope:** new single-device, uplink-only Profiles with machine-readable documentation. External requests require maintainer approval, and editing the Issue invalidates that approval. Downlink-capable devices and scanned/image-only protocol documents are handled manually.
+        **Profile Automation scope:** new single-device Profiles with uplink and downlink support backed by machine-readable documentation or known payloads. External requests require maintainer approval, and editing the Issue invalidates that approval. Scanned/image-only protocol documents are handled manually.
         
   - type: input
     id: vendor
@@ -118,49 +118,27 @@ body:
     attributes:
       label: Downlink Command Examples (Only if Downlink Support is Yes)
       description: |
-        If the device supports downlink, provide command examples from the manual or real device testing.
-        Include the command name, LoRaWAN fPort, control value if applicable, and expected downlink payload in hexadecimal.
+        If the device supports downlink, provide at least one known payload for every writable BACnet command, or cite the exact official-manual page or section that defines it.
+        Use one block per control value. Include the command, matching BACnet object, LoRaWAN fPort (1-254), numeric control value, expected hexadecimal payload when known, allowed values/range when known, and the evidence source.
       placeholder: |
-        Set Power ON:
+        Command: Set Power ON
+        BACnet object: Set Power
         fPort: 85
         control value: 1
-        downlink payload: 55 01 00 02 01 01 5A
+        expected downlink payload: 55 01 00 02 01 01 5A
+        allowed values or range: 0 = off, 1 = on
+        reference or verification source: Product manual page 18
 
-        Set Temperature:
+        Command: Set Temperature
+        BACnet object: Set Temperature
         fPort: 85
         control value: 22.5
-        downlink payload: 55 01 00 02 05 2D 8A
+        expected downlink payload: 55 01 00 02 05 2D 8A
+        allowed values or range: 5-35 degrees Celsius
+        reference or verification source: Hardware-tested payload
 
-        Inquiry All:
-        fPort: 85
-        downlink payload: 55 02 00 01 0F 67
+        If no known payload is available, identify the requested command and cite the exact official-document page or section containing its fPort, value encoding, and payload format.
       render: text
-    validations:
-      required: false
-
-  - type: textarea
-    id: encode-function
-    attributes:
-      label: Encode Function (Optional, only if Downlink Support is Yes)
-      description: |
-        If you have a payload encoding function, provide it here. Vendor-provided encodeDownlink(input), Encode(data, variables), or logic in another language is accepted.
-        Please include enough comments or examples to show how each downlink command is generated.
-      placeholder: |
-        function encodeDownlink(input) {
-          var command = input.data.command;
-          var value = input.data.value;
-          var bytes = [];
-
-          // Example: Set Power
-          if (command === "setPower") {
-            bytes.push(0x55, 0x01, 0x00, 0x02, 0x01, value);
-            var checksum = bytes.reduce((sum, b) => sum + b, 0) % 256;
-            bytes.push(checksum);
-          }
-
-          return { bytes: bytes };
-        }
-      render: code
     validations:
       required: false
 

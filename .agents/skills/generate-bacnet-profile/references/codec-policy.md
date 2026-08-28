@@ -38,3 +38,26 @@ evidence defines only labels, assign stable numeric codes `1, 2, 3, ...` in
 evidence order. Put an adjacent codec comment that declares every code-to-label
 mapping, and record the same mapping in the evidence matrix. Do not renumber a
 documented code, derive a value from label text, or emit the label itself.
+
+## Downlink encoding
+
+When the request supports downlink, provide both `Encode(data, variables)` and
+`encodeDownlink(input)`. `Encode` is authoritative and returns the byte array
+directly. `encodeDownlink` must call `Encode` and wrap success as
+`{ bytes: bytes }`; never make `Encode` delegate to `encodeDownlink`. The
+transmit fPort comes from the matching `datatype` channel's `fport` field, not
+from an invented codec default.
+
+Accept only a positive integer `data.channel` declared as writable and a finite
+numeric `data.value`. Apply documented enum, range, scale, rounding,
+endianness, length, and checksum rules. Successful bytes must be a non-empty
+array of at most 255 integers from 0 through 255. The same input must always
+produce the same result.
+
+Unsupported channels, non-numeric values, and values rejected by the protocol
+must fail closed as `{ bytes: [], errors: [message] }`. Omit `errors` on
+success. Do not emit an empty byte array as a successful command, silently
+clamp an out-of-range value, or guess a command from the object name. Issue
+known vectors and complete official documentation are downlink evidence; the
+optional uplink decoder is not a downlink authority unless it explicitly
+contains independently verifiable encoding logic.

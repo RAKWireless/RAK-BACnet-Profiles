@@ -158,7 +158,7 @@ datatype:
     channel: 11                     # Passed to Encode as data.channel
 ```
 
-The `fport` field is **required** for all downlink-capable objects (`AnalogOutputObject`, `BinaryOutputObject`, `AnalogValueObject`, `BinaryValueObject`). When the BMS writes to the BACnet object, the gateway calls `Encode({ channel, value })` and sends the returned bytes on the specified `fport`.
+The `fport` field is **required** for all downlink-capable objects (`AnalogOutputObject`, `BinaryOutputObject`, `AnalogValueObject`, `BinaryValueObject`) and must be an integer from **1 through 254**. When the BMS writes to the BACnet object, the gateway calls `Encode({ channel, value })` and sends the returned bytes on the specified `fport`.
 
 **Supported BACnet Object Types:**
 - `AnalogInputObject` - Analog input (sensor readings)
@@ -242,7 +242,7 @@ Downlink data sent (LoRaWAN)
 
 Contributions of new device configuration files are welcome!
 
-Complete uplink-only requests can be processed by [Profile Automation](automation/README.md). The automation creates a Draft PR with an evidence report and committed per-profile test fixture; a CODEOWNER must still approve and merge it.
+Complete new single-device uplink and downlink requests can be processed by [Profile Automation](automation/README.md). Downlink generation is checked against known Issue payloads or complete official protocol documentation; actual device behavior still requires hardware verification. The automation creates a Draft PR with an evidence report and committed per-profile test fixture; a CODEOWNER must still approve and merge it.
 
 ### Adding New Device Profiles
 
@@ -255,7 +255,7 @@ Complete uplink-only requests can be processed by [Profile Automation](automatio
    - Example: `profiles/YourVendor/YourVendor-Model.yaml`
 
 3. **Write configuration file**
-   - Implement Decode and Encode functions
+   - Implement Decode, plus Encode when the device supports downlink
    - Define BACnet object mappings
    - Configure LoRaWAN parameters
    - Add complete metadata information

@@ -4,7 +4,8 @@
 
 Use evidence in this order:
 
-1. A known payload whose decoded values can be independently recomputed.
+1. A known uplink or downlink payload whose result can be independently
+   recomputed.
 2. Agreement between official protocol documentation and a user-supplied
    decoder.
 3. Complete official documentation by itself.
@@ -31,6 +32,10 @@ or copy decoder evidence into the official-document column.
   known payload verifies the relevant behavior.
 - Mark unresolved material differences `conflict` and block publication.
 - Never fill gaps by guessing offsets, fPorts, units, signedness, or formulas.
+- A complete official downlink specification may supply the fPort, numeric
+  value rule, payload layout, byte order, scale, and checksum when the Issue
+  does not include a known payload. Record that command as documentation-only
+  evidence and still create an executable expected-bytes fixture case.
 - Use blocker code `evidence-conflict` when two available sources materially
   disagree and known payloads cannot resolve the disagreement.
 - Use blocker code `insufficient-evidence` when a required field, mapping
@@ -61,5 +66,7 @@ evidence row must leave `officialDocument` null while citing both decoder logic
 and payload verification.
 
 Every generated BACnet channel must have a row in the Agent evidence matrix.
-Each row must name the resolved value or rule, source citations, resolution
-status, and rationale. Do not copy full source documents into the matrix.
+For writable channels, the row must also resolve the fPort, accepted numeric
+value rule, and byte encoding. Each row must name the resolved value or rule,
+source citations, resolution status, and rationale. Do not copy full source
+documents into the matrix.

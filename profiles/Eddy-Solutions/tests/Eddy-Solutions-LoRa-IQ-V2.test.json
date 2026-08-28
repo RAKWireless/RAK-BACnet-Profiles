@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "strict": false,
+  "strict": true,
   "profile": "Eddy-Solutions-LoRa-IQ-V2",
   "evidenceLevel": "known-answer",
   "reviewMode": "single-model",
@@ -101,6 +101,44 @@
         { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
         { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
       ]
+    }
+  ],
+  "downlinkTestCases": [
+    {
+      "name": "Open Valve",
+      "channel": 10,
+      "value": 0,
+      "expectedFPort": 5,
+      "expectedBytes": "73 00",
+      "description": "Issue #38 known downlink for opening the valve.",
+      "citation": "Issue #38 Downlink Command Examples"
+    },
+    {
+      "name": "Close Valve",
+      "channel": 10,
+      "value": 1,
+      "expectedFPort": 5,
+      "expectedBytes": "73 01",
+      "description": "Issue #38 known downlink for closing the valve.",
+      "citation": "Issue #38 Downlink Command Examples"
+    },
+    {
+      "name": "Set Report Period to 25 Minutes",
+      "channel": 11,
+      "value": 25,
+      "expectedFPort": 5,
+      "expectedBytes": "71 19",
+      "description": "Issue #38 known downlink for a 25-minute report period.",
+      "citation": "Issue #38 Downlink Command Examples"
+    },
+    {
+      "name": "Set Report Period to 60 Minutes",
+      "channel": 11,
+      "value": 60,
+      "expectedFPort": 5,
+      "expectedBytes": "71 3C",
+      "description": "Issue #38 known downlink for a 60-minute report period.",
+      "citation": "Issue #38 Downlink Command Examples"
     }
   ]
 }

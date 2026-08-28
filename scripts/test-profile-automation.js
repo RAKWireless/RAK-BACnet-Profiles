@@ -261,6 +261,9 @@ function testCleanRoomCopyDoesNotPreserveOwnership() {
 function testIssueCreationHasSingleIntakeRun() {
   const template = yaml.load(fs.readFileSync(path.join(ROOT, '.github', 'ISSUE_TEMPLATE', 'device-profile-request.yml'), 'utf8'));
   assert.equal(template.labels, undefined, 'The Issue form must not emit labeled events during creation');
+  assert(!template.body.some(field => field.id === 'encode-function'), 'The Issue form must not request a user-supplied downlink encoder');
+  const downlinkField = template.body.find(field => field.id === 'downlink-commands');
+  assert(downlinkField.attributes.description.includes('fPort (1-254)'));
 
   const workflowSource = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'profile-intake.yml'), 'utf8');
   const workflow = yaml.load(workflowSource, { schema: yaml.JSON_SCHEMA });
@@ -472,8 +475,9 @@ function testManualIssueMappingDiagnostics() {
 **Minor Flow Alert –> BinaryInputObject** (Meter Status Byte 1), Bit 3
 **Valve Control –> BinaryOutputObject**`);
   const intake = parseIssue(issue, { allowExisting: true });
-  assert.equal(intake.status, 'manual');
-  assert.deepEqual(intake.manualReasons, ['Profile Automation only handles uplink-only devices']);
+  assert.equal(intake.status, 'needs-info');
+  assert.deepEqual(intake.manualReasons, []);
+  assert.equal(intake.downlinkEvidenceStatus, 'deferred');
   assert.deepEqual(intake.requestedMappings.map(mapping => [mapping.name, mapping.type]), [
     ['Flow Rate', 'AnalogInputObject'],
     ['Odometer', 'AnalogValueObject'],
@@ -483,11 +487,143 @@ function testManualIssueMappingDiagnostics() {
   assert.deepEqual(intake.errors, ["Unsupported BACnet object type 'AnalogValueInput' for 'Valve Operation Status'"]);
   assert(!intake.errors.some(error => error.includes('must contain mapping rows')));
 
-  const comment = intakeComment(intake, { state: 'manual' });
-  assert(comment.includes('Manual scope reasons:'));
-  assert(comment.includes('Profile Automation only handles uplink-only devices'));
-  assert(comment.includes('Additional Intake diagnostics (these do not change the manual routing):'));
+  const comment = intakeComment(intake, { state: 'needs-info' });
+  assert(comment.includes('Please edit the original Issue'));
   assert(comment.includes("Unsupported BACnet object type 'AnalogValueInput'"));
+}
+
+function testDownlinkIssue38Contracts() {
+  const downlinkBody = `### Downlink Support
+
+Yes - supports downlink commands
+
+### Downlink Command Examples (Only if Downlink Support is Yes)
+
+Close Valve
+Fport: 5
+Control Value: 0x01
+Downlink Payload: 0x7301
+
+Open Valve
+Fport: 5
+Control Value: 0x00
+Downlink Payload: 0x7300
+
+Set Report Period (25 mins)
+Fport: 5
+Control Value: 0x19
+Downlink Payload: 0x7119
+
+Set Report Period (60 mins)
+Fport: 5
+Control Value: 0x3C
+Downlink Payload: 0x713C
+
+### BACnet Object Mapping Requirements`;
+  const issue = syntheticIssue();
+  issue.number = 38;
+  issue.html_url = 'https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/38';
+  issue.body = issue.body
+    .replace(/### Downlink Support[\s\S]*?### BACnet Object Mapping Requirements/, downlinkBody)
+    .replace('- Temperature → AnalogInputObject (degreesCelsius)', `- Temperature → AnalogInputObject (degreesCelsius)
+- Valve Control → BinaryOutputObject
+- Set Meter Report Period → AnalogValueObject (minutes)`);
+  const parsed = parseIssue(issue, { allowExisting: true });
+  assert.equal(parsed.status, 'ready');
+  assert.equal(parsed.downlinkEvidenceStatus, 'explicit');
+  assert.deepEqual(parsed.downlinkExamples.map(example => [example.fPort, example.value, example.hex, example.complete]), [
+    [5, 1, '7301', true],
+    [5, 0, '7300', true],
+    [5, 25, '7119', true],
+    [5, 60, '713C', true]
+  ]);
+  assert.equal(parseIssue({ ...issue, body: issue.body.replace(/Fport: 5/g, 'Fport: 1') }, { allowExisting: true }).status, 'ready');
+  assert.equal(parseIssue({ ...issue, body: issue.body.replace(/Fport: 5/g, 'Fport: 254') }, { allowExisting: true }).status, 'ready');
+  assert(parseIssue({ ...issue, body: issue.body.replace(/Fport: 5/g, 'Fport: 255') }, { allowExisting: true }).errors.some(error => error.includes('downlink fPort must be between 1 and 254')));
+  const preparedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-downlink-request-'));
+  try {
+    const bundlePath = path.join(preparedRoot, 'bundle.json');
+    fs.writeFileSync(bundlePath, JSON.stringify(buildSourceBundle({
+      intake: parsed,
+      source: {
+        url: parsed.datasheetUrl,
+        type: 'text',
+        pages: null,
+        sha256: 'c'.repeat(64),
+        text: 'Official downlink protocol with fPort, command byte, numeric value, and payload format.'
+      },
+      error: null
+    })));
+    const request = prepareAgentInput(bundlePath, path.join(preparedRoot, 'input'));
+    validateAgentRequest(request);
+    assert.equal(request.issue.downlinkEvidenceStatus, 'explicit');
+    assert.deepEqual(request.issue.downlinkExamples.map(example => example.hex), ['7301', '7300', '7119', '713C']);
+  } finally {
+    fs.rmSync(preparedRoot, { recursive: true, force: true });
+  }
+
+  const documentationOnly = syntheticIssue();
+  documentationOnly.body = documentationOnly.body.replace(
+    /### Downlink Support[\s\S]*?### BACnet Object Mapping Requirements/,
+    `### Downlink Support
+
+Yes - supports downlink commands
+
+### Downlink Command Examples (Only if Downlink Support is Yes)
+
+Command: Close Valve
+BACnet object: Valve Control
+Reference or verification source: Product manual section 7
+
+### BACnet Object Mapping Requirements`
+  );
+  const deferred = parseIssue(documentationOnly, { allowExisting: true });
+  assert.equal(deferred.status, 'ready');
+  assert.equal(deferred.downlinkEvidenceStatus, 'deferred');
+  assert(deferred.warnings.some(warning => warning.includes('official document must fully specify')));
+
+  const upperBoundary = syntheticIssue();
+  upperBoundary.body = upperBoundary.body.replace('00 FA', 'fPort: 254 Payload: 00 FA');
+  assert.equal(parseIssue(upperBoundary, { allowExisting: true }).status, 'ready');
+  const invalidPort = syntheticIssue();
+  invalidPort.body = invalidPort.body.replace('00 FA', 'fPort: 255 Payload: 00 FA');
+  assert(parseIssue(invalidPort, { allowExisting: true }).errors.some(error => error.includes('between 1 and 254')));
+  const unknownSupport = syntheticIssue();
+  unknownSupport.body = unknownSupport.body.replace('No - uplink only', 'Unknown');
+  const unknown = parseIssue(unknownSupport, { allowExisting: true });
+  assert.equal(unknown.status, 'manual');
+  assert(unknown.manualReasons.some(reason => reason.includes('confirmed as Yes or No')));
+}
+
+function testDownlinkFixtureValidation() {
+  const profilePath = path.join(ROOT, 'profiles', 'Eddy-Solutions', 'Eddy-Solutions-LoRa-IQ-V2.yaml');
+  const fixturePath = path.join(ROOT, 'profiles', 'Eddy-Solutions', 'tests', 'Eddy-Solutions-LoRa-IQ-V2.test.json');
+  const report = validateTestFixture(profilePath, fixturePath);
+  assert.equal(report.valid, true, JSON.stringify(report, null, 2));
+  assert.equal(report.downlinkResults.length, 4);
+  assert.deepEqual(report.observedDownlinkChannels, [10, 11]);
+
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-downlink-fixture-'));
+  try {
+    const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    fixture.downlinkTestCases[0].expectedBytes = '73 FF';
+    const badFixturePath = path.join(temporary, 'Eddy-Solutions-LoRa-IQ-V2.test.json');
+    fs.writeFileSync(badFixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+    const mismatch = validateTestFixture(profilePath, badFixturePath);
+    assert.equal(mismatch.valid, false);
+    const byteMismatch = mismatch.failures.find(failure => failure.code === 'FIXTURE_EXPECTED_BYTES_MISMATCH');
+    assert(byteMismatch);
+    assert.deepEqual(byteMismatch.difference, { path: '[1]', expected: 255, actual: 0 });
+    assert.equal(byteMismatch.channel, 10);
+    assert.equal(byteMismatch.value, 0);
+    assert.equal(byteMismatch.fPort, 5);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+
+  const profile = yaml.load(fs.readFileSync(profilePath, 'utf8'));
+  profile.datatype['10'].fport = 255;
+  assert(validateProfileSemantics(profile, profilePath, { strict: false }).errors.some(error => error.includes('between 1 and 254')));
 }
 
 function testTrustAndApprovalStateMachine() {
@@ -1390,6 +1526,8 @@ async function main() {
     testCollectionIssueShaSentinel,
     testIssueParsingAndPII,
     testManualIssueMappingDiagnostics,
+    testDownlinkIssue38Contracts,
+    testDownlinkFixtureValidation,
     testTrustAndApprovalStateMachine,
     testProviderConfiguration,
     testPreparedInputWhitelist,

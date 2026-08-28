@@ -151,6 +151,24 @@ function validateIssueCoverage(intake, fixture) {
       });
     }
   }
+  const downlinkCases = fixture.downlinkTestCases || [];
+  for (const example of (intake.downlinkExamples || []).filter(item => item.complete === true)) {
+    const matches = downlinkCases.filter(testCase => (
+      String(testCase.expectedBytes || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase() === example.hex &&
+      testCase.expectedFPort === example.fPort &&
+      testCase.value === example.value
+    ));
+    if (matches.length === 0) {
+      addFailure(errors, failures, 'ISSUE_DOWNLINK_NOT_COVERED', 'issueCoverage', `Issue downlink is not covered by the fixture: ${example.command || example.hex}`, {
+        payload: example.hex,
+        fPort: example.fPort,
+        value: example.value,
+        field: 'downlinkTestCases',
+        rule: 'Every complete Issue downlink example must appear in the strict fixture',
+        hint: 'Add a downlink test case with this exact numeric value, fPort, and normalized expected payload'
+      });
+    }
+  }
   return check(errors.length === 0, errors, [], failures);
 }
 
@@ -226,7 +244,7 @@ function failurePriority(failure) {
   if (failure.checkPath === 'identity') return 1;
   if (failure.checkPath === 'fixtureContract' || failure.code === 'FIXTURE_STRICT_REQUIRED' || failure.code === 'FIXTURE_FPORT_POLICY_MISMATCH') return 2;
   if (failure.checkPath === 'issueCoverage') return 3;
-  if (failure.code === 'FIXTURE_EXPECTED_OUTPUT_MISMATCH') return 4;
+  if (failure.code === 'FIXTURE_EXPECTED_OUTPUT_MISMATCH' || failure.code === 'FIXTURE_EXPECTED_BYTES_MISMATCH') return 4;
   if (failure.checkPath === 'requestedMapping') return 5;
   if (failure.checkPath.startsWith('candidateStrict.checks.')) return 6;
   return 7;

@@ -13,8 +13,10 @@ one-shot `profile:approved` label. Editing an external Issue removes approval.
 Every artifact and publication step is bound to the SHA-256 of the current
 Issue body. A new run explicitly cancels older active runs for that Issue.
 
-The first version handles one new, uplink-only device. Existing Profile
-updates, downlink, and multi-device requests use `profile:manual`.
+The automation handles one new device with uplink and requested downlink.
+Existing Profile updates and multi-device requests use `profile:manual`.
+Downlink codecs are deterministically checked against complete Issue vectors
+or official protocol documentation; hardware behavior remains a human gate.
 
 ## Provider environments
 

@@ -158,7 +158,7 @@ datatype:
     channel: 11                     # 传入 Encode 的 data.channel
 ```
 
-`fport` 字段对所有支持下行控制的对象（`AnalogOutputObject`、`BinaryOutputObject`、`AnalogValueObject`、`BinaryValueObject`）均为**必填项**。当 BMS 向 BACnet 对象写入数值时，网关会调用 `Encode({ channel, value })`，并将返回的字节数组通过指定的 `fport` 发送给设备。
+`fport` 字段对所有支持下行控制的对象（`AnalogOutputObject`、`BinaryOutputObject`、`AnalogValueObject`、`BinaryValueObject`）均为**必填项**，且必须是 **1–254** 范围内的整数。当 BMS 向 BACnet 对象写入数值时，网关会调用 `Encode({ channel, value })`，并将返回的字节数组通过指定的 `fport` 发送给设备。
 
 **支持的 BACnet 对象类型：**
 - `AnalogInputObject` - 模拟输入（传感器读数）
@@ -242,7 +242,7 @@ Encode 函数编码
 
 欢迎为本仓库贡献新的设备配置文件！
 
-资料完整的 uplink-only 请求可由 [Profile Automation](automation/README.md) 自动处理。系统会创建包含证据报告和独立测试夹具的 Draft PR，但仍必须由 CODEOWNER 审批合并。
+资料完整的新单设备 uplink 和 downlink 请求可由 [Profile Automation](automation/README.md) 自动处理。Downlink 编码会根据 Issue 已知载荷或完整官方协议文档进行验证，设备实际行为仍需实机验证。系统会创建包含证据报告和独立测试夹具的 Draft PR，但仍必须由 CODEOWNER 审批合并。
 
 ### 添加新设备配置
 
@@ -255,7 +255,7 @@ Encode 函数编码
    - 示例：`profiles/YourVendor/YourVendor-Model.yaml`
 
 3. **编写配置文件**
-   - 实现 Decode 和 Encode 函数
+   - 实现 Decode；设备支持 downlink 时再实现 Encode
    - 定义 BACnet 对象映射
    - 配置 LoRaWAN 参数
    - 添加完整的元数据信息

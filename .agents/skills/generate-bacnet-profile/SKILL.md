@@ -1,6 +1,6 @@
 ---
 name: generate-bacnet-profile
-description: Generate or repair one new uplink-only RAK BACnet Profile and its strict test fixture from the prepared `.profile-agent/input` evidence bundle. Use when Profile Automation or a maintainer asks Codex to turn a profile-request Issue, official protocol documentation, a decoder, known payloads, or validation feedback into the repository's vendor Profile YAML and matching `.test.json` fixture.
+description: Generate or repair one new RAK BACnet Profile with uplink and requested downlink support plus its strict test fixture from the prepared `.profile-agent/input` evidence bundle. Use when Profile Automation or a maintainer asks Codex to turn a profile-request Issue, official protocol documentation, a decoder, known payloads, or validation feedback into the repository's vendor Profile YAML and matching `.test.json` fixture.
 ---
 
 # Generate BACnet Profile
@@ -43,10 +43,13 @@ inspect and independently re-implement.
 
 ## Workflow
 
-1. Confirm the request is one new, single-device, uplink-only Profile.
+1. Confirm the request is one new, single-device Profile. Implement uplink and
+   implement downlink when `request.issue.downlinkSupport` says the device
+   supports it.
 2. Build a per-field evidence matrix and explicit `resolvedMappings` before
    writing files. Cross-check official documentation and the user-supplied
-   decoder; use known payloads as the strongest reproducible oracle.
+   decoder; use known uplink and downlink payloads as the strongest
+   reproducible oracle.
    Automatically discovered decoders and existing repository Profiles are
    supporting evidence only.
 3. When `request.evidence.officialDocument` is null, classify a generated
@@ -54,6 +57,10 @@ inspect and independently re-implement.
    BACnet Object Mapping make every requested mapping and relevant message
    branch independently recomputable. Verify offset, length, endianness,
    signedness, scale, unit, selector, and branch coverage without guessing.
+   A decoder is uplink evidence only unless it explicitly and verifiably
+   contains downlink encoding logic. For requested downlink, require either a
+   complete known Issue vector or official documentation that specifies the
+   command fPort, numeric value rule, payload layout, and any checksum.
 4. Stop with `status: "blocked"` and blocker code `insufficient-evidence` when
    any generated field, mapping attribute, or relevant message branch lacks
    complete evidence. Return null candidate paths, evidence level, and fPort
@@ -72,12 +79,16 @@ inspect and independently re-implement.
    exactly the two allowed paths from `request.json` in one consolidated edit
    when practical. Never leave an intentionally incomplete candidate, and
    never edit `registry.json` or any other file.
-8. Implement a deterministic, fail-closed uplink codec and a strict fixture
-   covering every Issue payload. Dynamic-length cursor parsing, bounded
+8. Implement deterministic, fail-closed uplink and requested downlink codec
+   entrypoints. The strict fixture must cover every Issue uplink payload, every
+   complete Issue downlink vector, and every writable datatype channel.
+   Dynamic-length cursor parsing, bounded
    `while`, `for`, `do...while`, varint parsing, and `try/catch` are allowed
    under the codec contract. Follow its SQLite `REAL` output rule for every
    decoded `value`; strings, booleans, nulls, and non-finite numbers are not
-   publishable BACnet values.
+   publishable BACnet values. Downlink control values are also finite numbers;
+   do not invent string command objects outside the gateway's `channel` and
+   `value` contract.
 9. Run the candidate command named in `request.json` only after both output
    files are structurally complete. Do not run `test-profile-automation.js`,
    `validate-all.js`, `validate-committed-fixtures.js`, `validate-registry.js`,
@@ -104,14 +115,14 @@ inspect and independently re-implement.
    ordered `repair.failures`. Always inspect every legacy error not already
    represented, including nested `checks.candidateStrict.checks.*.errors`
    entries.
-2. For each structured failure, cross-check `payload`, `fPort`, `difference`,
-   `expected`, `actual`, `rule`, and `hint` against the prepared Issue,
-   document, decoder, and previous candidate. When `truncated` is true, use the
-   first difference and rerun validation instead of assuming the snapshots are
-   complete.
-3. Repair the codec by default. Change `expectedOutput` only when the prepared
-   evidence proves the fixture oracle is wrong; never change it merely to match
-   the current decoder output.
+2. For each structured failure, cross-check `payload`, `channel`, `value`,
+   `fPort`, `difference`, `expected`, `actual`, `rule`, and `hint` against the
+   prepared Issue, document, decoder, and previous candidate. When `truncated`
+   is true, use the first difference and rerun validation instead of assuming
+   the snapshots are complete.
+3. Repair the codec by default. Change `expectedOutput` or downlink
+   `expectedBytes` only when the prepared evidence proves the fixture oracle is
+   wrong; never change either merely to match the current codec output.
 4. Resolve `VALIDATION_ERROR` entries from their `checkPath` and message without
    guessing a more specific error code from the wording.
 5. Never remove failing test cases, disable strict, truncation, fuzz, or

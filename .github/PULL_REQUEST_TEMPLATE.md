@@ -40,6 +40,7 @@ Please confirm that the following items have been completed:
 ### Codec Function Validation
 - [ ] `Decode()` function implemented
 - [ ] `decodeUplink()` function implemented
+- [ ] `Encode()` and `encodeDownlink()` implemented when the Profile has writable objects
 - [ ] Codec functions pass syntax checks (no JavaScript errors)
 - [ ] Decoding functionality tested with real data
 
@@ -48,11 +49,13 @@ Please confirm that the following items have been completed:
 - [ ] Channel numbers are unique and start from 1
 - [ ] Units use BACnet standard unit names
 - [ ] Reasonable `updateInterval` and `covIncrement` are set (if applicable)
+- [ ] Every writable object declares an fPort from 1 through 254
 
 ### Device Testing
 - [ ] Verified on real device (or provided sufficient test data)
 - [ ] Test data covers main functional scenarios
 - [ ] Decoding results match expectations
+- [ ] Downlink bytes match known payloads or complete official documentation (if applicable)
 
 ### Documentation (if updated)
 - [ ] Updated related README (if necessary)
@@ -165,4 +168,3 @@ Before submitting your PR, please ensure:
 
 We will review your PR as soon as possible. If there are any issues, we will provide feedback in the comments.
 -->
-

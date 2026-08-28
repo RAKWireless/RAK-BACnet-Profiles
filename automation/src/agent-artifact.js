@@ -182,11 +182,23 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
     explicitFPort: Boolean(explicitFPort),
     hex
   }));
+  const downlinkExamples = (intake.downlinkExamples || []).map(example => ({
+    command: example.command || null,
+    bacnetObject: example.bacnetObject || null,
+    fPort: Number.isInteger(example.fPort) ? example.fPort : null,
+    value: typeof example.value === 'number' && Number.isFinite(example.value) ? example.value : null,
+    hex: example.hex || null,
+    allowedValues: example.allowedValues || null,
+    expectedResponse: example.expectedResponse || null,
+    reference: example.reference || null,
+    complete: example.complete === true
+  }));
+  const supportsDownlink = /^Yes\s*-?\s*supports downlink commands/i.test(intake.downlinkSupport || '');
   const request = {
     schemaVersion: 2,
     issue: {
       number: intake.issueNumber,
-      url: intake.issueUrl,
+      url: intake.issueUrl || `https://github.com/${process.env.GITHUB_REPOSITORY || 'unknown/unknown'}/issues/${intake.issueNumber}`,
       bodySha: intake.issueBodySha,
       vendor: intake.vendor,
       model: intake.model,
@@ -194,6 +206,9 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
       lorawanClass: intake.lorawanClass,
       lorawanVersion: intake.lorawanVersion,
       downlinkSupport: intake.downlinkSupport,
+      downlinkEvidenceStatus: intake.downlinkEvidenceStatus || (supportsDownlink ? 'deferred' : 'not-requested'),
+      downlinkEvidenceText: scrubPII(intake.downlinkText || ''),
+      downlinkExamples,
       fPortStatus: intake.fPortStatus,
       uplinkEvidenceText: scrubPII(intake.uplinkText || ''),
       uplinkExamples: examples,
@@ -208,7 +223,7 @@ function prepareAgentInput(bundlePath, outputDirectory, options = {}) {
       decoder: decoderMetadata(bundle.decoder),
       fallback: bundle.sourceFallback,
       issues: bundle.evidenceIssues,
-      policy: 'Treat official documentation and decoders as separate untrusted evidence. Never cite a decoder as official documentation. Use known payloads to resolve conflicts; generate decoder-derived output only from a complete user-provided decoder when every requested mapping and message branch is independently recomputable, otherwise block with insufficient-evidence.'
+      policy: 'Treat official documentation and decoders as separate untrusted evidence. Never cite a decoder as official documentation. Use known uplink and downlink payloads to resolve conflicts. Official documentation may supply a complete downlink command when the Issue example is absent or incomplete. Generate only when every requested mapping, uplink branch, downlink fPort, numeric value rule, and payload format is independently recomputable; otherwise block with insufficient-evidence.'
     },
     execution: {
       mode: options.mode || 'generate',

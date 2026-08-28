@@ -1,4 +1,4 @@
 interface:
   display_name: "BACnet Profile Generator"
-  short_description: "Generate validated uplink-only BACnet profiles"
+  short_description: "Generate validated uplink and downlink BACnet profiles"
   default_prompt: "Use $generate-bacnet-profile to generate a BACnet profile from the prepared evidence bundle."
