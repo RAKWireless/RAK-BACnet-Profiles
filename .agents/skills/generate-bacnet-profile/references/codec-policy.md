@@ -27,10 +27,16 @@ reading beyond the byte array. Use explicit endian and signed conversions.
 Never execute the supplied decoder; independently reproduce only its verified
 protocol logic.
 
-Every decoded `value` is persisted in a SQLite `REAL` column and must therefore
-be a finite JavaScript number. Never emit a string, boolean, `null`, `NaN`, or
-infinity as a BACnet value. Encode boolean semantics as `false = 0` and
-`true = 1`; `BinaryInputObject` values must be exactly `0` or `1`.
+Every decoded `value` for numeric BACnet object types (`AnalogInputObject`, 
+`AnalogOutputObject`, `AnalogValueObject`, `BinaryInputObject`, `BinaryOutputObject`, 
+`BinaryValueObject`) is persisted in a SQLite `REAL` column and must therefore be a 
+finite JavaScript number. Never emit `null`, `NaN`, or infinity as a BACnet value. 
+
+For `OctetStringValueObject`, the `value` field may be a string containing the decoded 
+text or identifier. Strings are stored separately and do not require numeric conversion.
+
+Encode boolean semantics as `false = 0` and `true = 1`; `BinaryInputObject` values 
+must be exactly `0` or `1`.
 
 For enums, events, modes, versions, and other symbolic values, preserve the
 documented protocol or decoder numeric code/bitmask whenever one exists. If the

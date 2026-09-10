@@ -203,10 +203,19 @@ function validateDecodedData(profile, decodedData, options = {}) {
     const expectedUnit = mapping.units === undefined ? null : mapping.units;
     const actualUnit = item.unit === undefined ? null : item.unit;
     if (actualUnit !== expectedUnit) errors.push(`Channel ${item.channel} unit '${actualUnit}' does not match datatype unit '${expectedUnit}'`);
-    if (typeof item.value !== 'number' || !Number.isFinite(item.value)) {
-      errors.push(`Channel ${item.channel} value must be a finite number for SQLite REAL storage`);
-    } else if (options.requireBinary01 === true && mapping.type === 'BinaryInputObject' && item.value !== 0 && item.value !== 1) {
-      errors.push(`Channel ${item.channel} BinaryInputObject value must be 0 or 1`);
+
+    // OctetStringValueObject can have string values, all other types require finite numbers
+    const isOctetString = mapping.type === 'OctetStringValueObject';
+    if (isOctetString) {
+      if (typeof item.value !== 'string' && (typeof item.value !== 'number' || !Number.isFinite(item.value))) {
+        errors.push(`Channel ${item.channel} OctetStringValueObject value must be a string or finite number`);
+      }
+    } else {
+      if (typeof item.value !== 'number' || !Number.isFinite(item.value)) {
+        errors.push(`Channel ${item.channel} value must be a finite number for SQLite REAL storage`);
+      } else if (options.requireBinary01 === true && mapping.type === 'BinaryInputObject' && item.value !== 0 && item.value !== 1) {
+        errors.push(`Channel ${item.channel} BinaryInputObject value must be 0 or 1`);
+      }
     }
   }
 

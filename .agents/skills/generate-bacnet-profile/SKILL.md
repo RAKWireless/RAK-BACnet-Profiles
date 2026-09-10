@@ -84,11 +84,11 @@ inspect and independently re-implement.
    complete Issue downlink vector, and every writable datatype channel.
    Dynamic-length cursor parsing, bounded
    `while`, `for`, `do...while`, varint parsing, and `try/catch` are allowed
-   under the codec contract. Follow its SQLite `REAL` output rule for every
-   decoded `value`; strings, booleans, nulls, and non-finite numbers are not
-   publishable BACnet values. Downlink control values are also finite numbers;
-   do not invent string command objects outside the gateway's `channel` and
-   `value` contract.
+   under the codec contract. Follow its SQLite `REAL` output rule for numeric
+   BACnet object types; `OctetStringValueObject` values may be strings.
+   Booleans, nulls, and non-finite numbers are not publishable BACnet values.
+   Downlink control values are also finite numbers; do not invent string 
+   command objects outside the gateway's `channel` and `value` contract.
 9. Run the candidate command named in `request.json` only after both output
    files are structurally complete. Do not run `test-profile-automation.js`,
    `validate-all.js`, `validate-committed-fixtures.js`, `validate-registry.js`,
