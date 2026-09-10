@@ -282,7 +282,8 @@ function testSQLiteRealCodecValues() {
   const profile = {
     datatype: {
       '1': { name: 'State', type: 'BinaryInputObject' },
-      '2': { name: 'Event', type: 'OctetStringValueObject' }
+      '2': { name: 'Event', type: 'AnalogInputObject' },
+      '3': { name: 'DeviceID', type: 'OctetStringValueObject' }
     }
   };
   assert.equal(validateDecodedData(profile, [
@@ -290,10 +291,28 @@ function testSQLiteRealCodecValues() {
     { name: 'Event', channel: 2, value: 4, unit: null }
   ]).valid, true);
 
+  // Test that numeric types reject non-numeric values
   for (const value of [false, true, 'state_alert', null, Number.NaN, Number.POSITIVE_INFINITY]) {
     const result = validateDecodedData(profile, [{ name: 'Event', channel: 2, value, unit: null }]);
     assert(result.errors.some(error => error.includes('SQLite REAL storage')), `Expected SQLite REAL rejection for ${String(value)}`);
   }
+
+  // Test that OctetStringValueObject accepts strings
+  assert.equal(validateDecodedData(profile, [
+    { name: 'DeviceID', channel: 3, value: 'device-12345', unit: null }
+  ]).valid, true);
+
+  // Test that OctetStringValueObject accepts numbers
+  assert.equal(validateDecodedData(profile, [
+    { name: 'DeviceID', channel: 3, value: 42, unit: null }
+  ]).valid, true);
+
+  // Test that OctetStringValueObject rejects invalid values
+  for (const value of [false, true, null, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const result = validateDecodedData(profile, [{ name: 'DeviceID', channel: 3, value, unit: null }]);
+    assert(result.errors.some(error => error.includes('OctetStringValueObject value must be')), `Expected OctetStringValueObject rejection for ${String(value)}`);
+  }
+
   const invalidBinary = validateDecodedData(
     profile,
     [{ name: 'State', channel: 1, value: 2, unit: null }],
