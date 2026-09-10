@@ -40,7 +40,7 @@ function resolveProvider(labels, overrides = {}) {
   if (!definition) throw new Error(`Unsupported Profile Agent provider: ${provider}`);
   const model = String(overrides.model || '').trim();
   const effort = String(overrides.effort || '').trim();
-  if (effort && !['low', 'medium', 'high', 'xhigh'].includes(effort)) throw new Error(`Unsupported model effort: ${effort}`);
+  if (effort && !['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) throw new Error(`Unsupported model effort: ${effort}`);
   return {
     provider,
     environment: `profile-agent-${provider}`,
@@ -59,7 +59,7 @@ function resolveAgentRuntime(provider, overrides = {}) {
   if (!model) throw new Error(`No model configured for Profile Agent provider '${provider}'`);
   if (!effort) throw new Error(`No model effort configured for Profile Agent provider '${provider}'`);
   if (!responsesEndpoint.startsWith('https://')) throw new Error(`Profile Agent Responses endpoint must use HTTPS for provider '${provider}'`);
-  if (!['low', 'medium', 'high', 'xhigh'].includes(effort)) throw new Error(`Unsupported model effort: ${effort}`);
+  if (!['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) throw new Error(`Unsupported model effort: ${effort}`);
   return { provider, model, effort, responsesEndpoint, environment: `profile-agent-${provider}` };
 }
 
