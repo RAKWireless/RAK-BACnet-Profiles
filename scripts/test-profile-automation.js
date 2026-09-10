@@ -321,7 +321,7 @@ function testSQLiteRealCodecValues() {
   assert(invalidBinary.errors.includes('Channel 1 BinaryInputObject value must be 0 or 1'));
 
   const fixtureSchema = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'schemas', 'profile-test-schema.json'), 'utf8'));
-  assert.equal(fixtureSchema.properties.testCases.items.properties.expectedOutput.items.properties.value.type, 'number');
+  assert.deepEqual(fixtureSchema.properties.testCases.items.properties.expectedOutput.items.properties.value.type, ['number', 'string']);
 
   const codecPolicy = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'generate-bacnet-profile', 'references', 'codec-policy.md'), 'utf8');
   assert(codecPolicy.includes('SQLite `REAL`'));

@@ -47,7 +47,8 @@ const UNIT_ALIASES = new Map([
   ['w', 'watts'], ['kw', 'kilowatts'], ['mw', 'milliwatts'], ['wh', 'wattHours'], ['kwh', 'kilowattHours'],
   ['hz', 'hertz'], ['khz', 'kilohertz'], ['mhz', 'megahertz'],
   ['ph', 'pH'],
-  ['unit', null], ['nounits', null], ['none', null], ['na', null]
+  ['unit', null], ['nounits', null], ['none', null], ['na', null],
+  ['raw', null], ['string', null], ['rawstring', null], ['text', null], ['ascii', null]
 ]);
 
 function normalize(value) {

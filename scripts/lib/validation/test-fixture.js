@@ -16,7 +16,7 @@ function deepEqual(actual, expected) {
 
 function validateFixtureSchema(fixture) {
   const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'schemas', 'profile-test-schema.json'), 'utf8'));
-  const validate = new Ajv({ allErrors: true }).compile(schema);
+  const validate = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(schema);
   const valid = validate(fixture);
   return {
     valid,
