@@ -182,7 +182,7 @@ mkdir -p profiles/Vendor/tests
 
 - `name` — 必须与 Profile 中 `datatype.<channel>.name` 完全一致
 - `channel` — 正整数，必须在 `datatype` 中声明
-- `value` — 有限数字（SQLite REAL 存储）。整数值用整数，缩放值用浮点数
+- `value` — 数值型 BACnet 对象必须为有限数字（存储在 SQLite `REAL` 中）；整数值用整数，缩放值用浮点数。`OctetStringValueObject` 也接受字符串。
 - `unit` — 必须是**规范 BACnet 单位名**（见允许列表），无单位的对象（如 `BinaryInputObject`）用 `null`
 
 ⚠️ 不要使用 `"°C"`、`"%"` 这类显示单位，请使用规范名称：
@@ -217,7 +217,7 @@ mkdir -p profiles/Vendor/tests
 - `channel` 和 `value` 会传给 `Encode`。
 - `expectedFPort` 必须等于可写 datatype 对象的 `fport`，范围为 1–254。
 - `expectedBytes` 是来自已知载荷或完整官方协议文档的精确十六进制基准。
-- 严格 fixture 必须覆盖所有可写 datatype 通道；未知 channel 和非数值 value 必须返回空 `bytes` 与非空 `errors`，以失败关闭。
+- 严格 fixture 必须覆盖所有可写 datatype 通道；未知 channel 和非数值的下行 value 必须返回空 `bytes` 与非空 `errors`，以失败关闭。
 - 通过该检查只能证明 Codec 编码符合证据，不能证明设备实际动作；实机验证仍需人工完成。
 
 ---
@@ -281,7 +281,7 @@ node scripts/test-profile-automation.js       # 自动化回归测试
    - 单次解码结果中无重复 channel
    - `name` 等于 `datatype.<channel>.name`
    - `unit` 等于 `datatype.<channel>.units`（或 `null`）
-   - `value` 是有限数字
+   - 数值型 BACnet 对象的 `value` 是有限数字，`OctetStringValueObject` 的 `value` 可以是字符串
 4. **检查通道覆盖**：所有非输出型 `datatype` 通道必须至少在一条测试结果中出现。`known-answer`/`decoder-derived` 缺失为错误，`documentation-only` 缺失仅警告
 5. **按 `robustness` 和 `fPortPolicy` 执行鲁棒性检查**
 6. **每条 downlink 用例运行两次**，检查精确字节和 fPort，并要求严格 fixture 覆盖所有可写通道

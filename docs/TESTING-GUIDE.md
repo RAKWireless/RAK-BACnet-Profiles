@@ -182,7 +182,7 @@ All three checks default as shown:
 
 - `name` — must exactly match the `datatype.<channel>.name` in the Profile
 - `channel` — positive integer, must be declared in `datatype`
-- `value` — finite number (SQLite REAL storage). Use integers for whole values and floats for scaled values
+- `value` — a finite number for numeric BACnet object types (stored in SQLite `REAL`); use integers for whole values and floats for scaled values. `OctetStringValueObject` also accepts strings.
 - `unit` — must be a **canonical BACnet unit name** from the allowed list, or `null` when the object has no unit (e.g. `BinaryInputObject`)
 
 ⚠️ Do not use display units like `"°C"` or `"%"`. Use the canonical names:
@@ -217,7 +217,7 @@ The full allowed unit list lives in `scripts/lib/units.js` (`ALLOWED_UNITS`). Th
 - `channel` and `value` are passed to `Encode`.
 - `expectedFPort` must equal the writable datatype object's `fport` and be in the range 1–254.
 - `expectedBytes` is an exact hexadecimal oracle from a known payload or complete official protocol documentation.
-- Strict fixtures must cover every writable datatype channel. Unknown channels and non-numeric values must fail closed with an empty `bytes` array and a non-empty `errors` array.
+- Strict fixtures must cover every writable datatype channel. Unknown channels and non-numeric downlink values must fail closed with an empty `bytes` array and a non-empty `errors` array.
 - Passing this check verifies codec behavior, not the physical device action; hardware verification remains separate.
 
 ---
@@ -280,7 +280,7 @@ For every test case the validator:
    - No duplicate channels in one decode result
    - `name` equals `datatype.<channel>.name`
    - `unit` equals `datatype.<channel>.units` (or `null`)
-   - `value` is a finite number
+   - `value` is a finite number for numeric BACnet object types, or a string for `OctetStringValueObject`
 4. **Checks channel coverage**: every non-output `datatype` channel must appear in at least one test result. For `known-answer`/`decoder-derived` fixtures a gap is an error; for `documentation-only` it is a warning
 5. **Runs robustness checks** according to `robustness` and `fPortPolicy`
 6. **Runs every downlink case twice**, checks exact bytes and fPort, and requires all writable channels to be covered in strict fixtures
