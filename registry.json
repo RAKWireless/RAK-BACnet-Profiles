@@ -1,8 +1,8 @@
 {
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
-  "lastUpdate": "2026-08-12",
-  "totalProfiles": 27,
+  "lastUpdate": "2026-09-14",
+  "totalProfiles": 28,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -147,6 +147,22 @@
       ],
       "contentSha256": "ec6bd00b66f02bbc08dc5b9f9a929d0622355b89ee95e8bca4a2ce817c853c65",
       "lastUpdate": "2026-04-24"
+    },
+    {
+      "id": "eddy-solutions-h20-v3",
+      "vendor": "Eddy-Solutions",
+      "model": "Eddy-Solutions-H20-V3",
+      "version": "3.0.0",
+      "path": "profiles/Eddy-Solutions/Eddy-Solutions-H20-V3.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "Eddy-Solutions Eddy-Solutions-H20-V3 Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "A"
+      ],
+      "contentSha256": "1459359acd021ba0cea89306c932dd77fbdaddd08cdd1d1437eb743bcb83bc66",
+      "lastUpdate": "2026-09-14"
     },
     {
       "id": "eddy-solutions-lora-iq-v2",
@@ -442,7 +458,7 @@
       "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
-      "Eddy-Solutions": 1,
+      "Eddy-Solutions": 2,
       "Kaiterra": 1,
       "Milesight": 4,
       "Moko": 1,
@@ -450,7 +466,7 @@
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 5,
+    "withTests": 6,
     "withoutTests": 22
   }
 }

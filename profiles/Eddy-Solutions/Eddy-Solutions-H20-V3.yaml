@@ -1,0 +1,150 @@
+codec: |
+  function validBytes(data) {
+    if (!Array.isArray(data) || data.length === 0 || data.length > 255) {
+      return "invalid payload";
+    }
+    for (var i = 0; i < data.length; i += 1) {
+      if (!Number.isInteger(data[i]) || data[i] < 0 || data[i] > 255) {
+        return "invalid payload byte";
+      }
+    }
+    return null;
+  }
+
+  function frameError(fPort, data) {
+    if (fPort !== 3) {
+      return "unsupported fPort";
+    }
+    var error = validBytes(data);
+    if (error !== null) {
+      return error;
+    }
+    var type = data[0];
+    if (type === 0x00 || type === 0x03) {
+      return data.length === 11 ? null : "invalid describe/ack length";
+    }
+    if (type === 0x01) {
+      return data.length === 11 ? null : "invalid report length";
+    }
+    if (type === 0x02 || type === 0x04) {
+      return data.length === 7 ? null : "invalid alert/deep-sleep length";
+    }
+    return "unsupported message type";
+  }
+
+  function appendStatus(values, status) {
+    values.push({ name: "Leak Alert", channel: 1, value: status & 0x01, unit: null });
+    values.push({ name: "Leak Clear", channel: 2, value: (status >> 3) & 0x01, unit: null });
+  }
+
+  function Decode(fPort, data, variables) {
+    var error = frameError(fPort, data);
+    if (error !== null) {
+      return [];
+    }
+
+    var values = [];
+    var type = data[0];
+    appendStatus(values, data[1]);
+
+    if (type === 0x00) {
+      values.push({ name: "Get Report Period", channel: 5, value: data[2], unit: null });
+      // Firmware byte: bits 5-7 major, bits 2-4 minor, bits 0-1 revision.
+      values.push({ name: "Firmware Version", channel: 6, value: data[10], unit: null });
+      values.push({ name: "Set Report Period", channel: 7, value: data[2], unit: null });
+      return values;
+    }
+
+    if (type === 0x01 || type === 0x02 || type === 0x04) {
+      values.push({ name: "Temperature", channel: 3, value: data[2], unit: "degreesCelsius" });
+      values.push({ name: "Humidity", channel: 4, value: data[3], unit: "percentRelativeHumidity" });
+      return values;
+    }
+
+    if (type === 0x03) {
+      values.push({ name: "Get Report Period", channel: 5, value: data[2], unit: null });
+      values.push({ name: "Set Report Period", channel: 7, value: data[2], unit: null });
+      return values;
+    }
+
+    return [];
+  }
+
+  function Encode(data, variables) {
+    if (!data || !Number.isInteger(data.channel) || !Number.isFinite(data.value)) {
+      return [];
+    }
+    if (data.channel !== 7 || !Number.isInteger(data.value) || data.value < 0 || data.value > 255) {
+      return [];
+    }
+    return [0x10, data.value, 0x0F];
+  }
+
+  function decodeUplink(input) {
+    if (!input) {
+      return { data: [], errors: ["invalid input"] };
+    }
+    var error = frameError(input.fPort, input.bytes);
+    if (error !== null) {
+      return { data: [], errors: [error] };
+    }
+    return { data: Decode(input.fPort, input.bytes, input.variables) };
+  }
+
+  function encodeDownlink(input) {
+    if (!input) {
+      return { bytes: [], errors: ["invalid input"] };
+    }
+    var bytes = Encode(input.data, input.variables);
+    if (bytes.length === 0) {
+      return { bytes: [], errors: ["unsupported channel or value"] };
+    }
+    return { bytes: bytes };
+  }
+
+datatype:
+  "1":
+    name: Leak Alert
+    type: BinaryInputObject
+    channel: 1
+  "2":
+    name: Leak Clear
+    type: BinaryInputObject
+    channel: 2
+  "3":
+    name: Temperature
+    type: AnalogValueObject
+    units: degreesCelsius
+    channel: 3
+  "4":
+    name: Humidity
+    type: AnalogValueObject
+    units: percentRelativeHumidity
+    channel: 4
+  "5":
+    name: Get Report Period
+    type: AnalogValueObject
+    channel: 5
+  "6":
+    name: Firmware Version
+    type: AnalogValueObject
+    channel: 6
+  "7":
+    name: Set Report Period
+    type: AnalogValueObject
+    fport: 5
+    channel: 7
+
+lorawan:
+  adrAlgorithm: LoRa Only
+  classCDownlinkTimeout: 5
+  macVersion: LORAWAN_1_0_3
+  regionalParametersRevision: A
+  supportClassB: false
+  supportClassC: false
+  supportOTAA: true
+model: Eddy-Solutions-H20-V3
+profileVersion: 1.0.0
+name: H20-V3
+vendor: Eddy-Solutions
+id: f2c5f7c1-6b5d-4b7a-9f1e-2c4d8a6e7310
