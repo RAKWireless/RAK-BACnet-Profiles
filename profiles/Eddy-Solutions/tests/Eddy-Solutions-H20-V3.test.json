@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "strict": true,
+  "profile": "Eddy-Solutions-H20-V3",
+  "evidenceLevel": "documentation-only",
+  "reviewMode": "single-model",
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [3],
+    "citation": "Issue #41 supplies all uplink examples on fPort 3; the documented Set Report and Read Time Period downlink is on fPort 5."
+  },
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "https://github.com/RAKWireless/RAK-BACnet-Profiles/issues/41",
+      "citation": "Four known uplink payloads, BACnet mappings, and the Set Report Period downlink vector."
+    },
+    {
+      "type": "official-document",
+      "reference": "H20 Leak Detector V3 Technical Specification, supplied official-document.txt",
+      "citation": "Sections 5.1 and 6.1-6.6; 9-page PDF SHA-256 cc69eaeb11bea043d32f2f92f652a8bb8d1a890c435ee0cc117ee373c5d7e768."
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "Describe",
+      "fPort": 3,
+      "input": "0000040F27E3286E000097",
+      "expectedOutput": [
+        { "name": "Leak Alert", "channel": 1, "value": 0, "unit": null },
+        { "name": "Leak Clear", "channel": 2, "value": 0, "unit": null },
+        { "name": "Get Report Period", "channel": 5, "value": 4, "unit": null },
+        { "name": "Firmware Version", "channel": 6, "value": 151, "unit": null },
+        { "name": "Set Report Period", "channel": 7, "value": 4, "unit": null }
+      ]
+    },
+    {
+      "name": "Report",
+      "fPort": 3,
+      "input": "010015241E640A15162424",
+      "expectedOutput": [
+        { "name": "Leak Alert", "channel": 1, "value": 0, "unit": null },
+        { "name": "Leak Clear", "channel": 2, "value": 0, "unit": null },
+        { "name": "Temperature", "channel": 3, "value": 21, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 4, "value": 36, "unit": "percentRelativeHumidity" }
+      ]
+    },
+    {
+      "name": "Alert",
+      "fPort": 3,
+      "input": "0201185A215A08",
+      "expectedOutput": [
+        { "name": "Leak Alert", "channel": 1, "value": 1, "unit": null },
+        { "name": "Leak Clear", "channel": 2, "value": 0, "unit": null },
+        { "name": "Temperature", "channel": 3, "value": 24, "unit": "degreesCelsius" },
+        { "name": "Humidity", "channel": 4, "value": 90, "unit": "percentRelativeHumidity" }
+      ]
+    },
+    {
+      "name": "Acknowledgement",
+      "fPort": 3,
+      "input": "0318040F27FE286E000097",
+      "expectedOutput": [
+        { "name": "Leak Alert", "channel": 1, "value": 0, "unit": null },
+        { "name": "Leak Clear", "channel": 2, "value": 1, "unit": null },
+        { "name": "Get Report Period", "channel": 5, "value": 4, "unit": null },
+        { "name": "Set Report Period", "channel": 7, "value": 4, "unit": null }
+      ]
+    }
+  ],
+  "downlinkTestCases": [
+    {
+      "name": "Set Report Period to 20 Hours",
+      "channel": 7,
+      "value": 20,
+      "expectedFPort": 5,
+      "expectedBytes": "10 14 0F",
+      "description": "Issue #41 prepared downlink evidence: report period 20 hours and read period 15 minutes.",
+      "citation": "Issue #41 downlinkEvidenceText."
+    }
+  ]
+}
