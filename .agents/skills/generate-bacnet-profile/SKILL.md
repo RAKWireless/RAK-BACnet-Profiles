@@ -99,7 +99,11 @@ inspect and independently re-implement.
    evidence searches unless a validation diagnostic is genuinely ambiguous.
    Fix candidate errors within the current attempt without weakening tests or
    validation code.
-10. Return only JSON matching the configured Agent output schema. Report every
+10. Return only JSON matching the configured Agent output schema. The final
+   response must be the JSON document itself, with no prose, summary, heading,
+   or commentary before or after it. If you cannot comply, wrap the JSON in
+   exactly one ```json fenced block and output nothing else; any other
+   surrounding text is rejected as invalid Agent output. Report every
    generated BACnet mapping in `resolvedMappings`, and use `blocker: null` for
    a generated result. Keep source
    quotations short and identify evidence by prepared filename and location.

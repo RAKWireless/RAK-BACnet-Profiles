@@ -16,7 +16,11 @@ run repository-wide validation commands inside the Profile Agent. If candidate
 validation fails, consider every diagnostic, make one consolidated repair for
 all understood failures, and then rerun it. After the first edit, avoid further
 repository or evidence searches unless a validation diagnostic is genuinely
-ambiguous. Return only JSON matching the configured output schema.
+ambiguous. Return only JSON matching the configured output schema. The final
+response must be the JSON document itself, with no prose, summary, heading,
+or commentary before or after it. If you cannot comply, wrap the JSON in
+exactly one ```json fenced block and output nothing else; any other
+surrounding text is rejected as invalid Agent output.
 Every new strict fixture must explicitly set `robustness.checkTruncation` and
 `robustness.checkFuzz` to `true`. Return `evidenceLevel` and `fPortPolicy`
 exactly as written in the fixture. In repair mode, resolve every error in the
