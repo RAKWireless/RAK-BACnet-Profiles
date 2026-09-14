@@ -47,6 +47,50 @@ function validateAgentResult(result) {
   return result;
 }
 
+// The fixture is the committed, executable artifact, and the deterministic
+// validator requires the structured result to mirror its evidenceLevel and
+// fPortPolicy exactly. Align the result with the fixture so a model that
+// writes a correct fixture but drifts (or leaves a placeholder) in its
+// result JSON does not fail the fixtureContract check. When the aligned
+// result would no longer match the output schema, keep the original result
+// and let the strict validator report the underlying fixture problem.
+// Record a warning whenever alignment actually changes a value so validation
+// reports still show that the model drifted from its own fixture.
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function alignResultWithFixture(result, fixture) {
+  if (!result || result.status !== 'generated' || !fixture || typeof fixture !== 'object') return result;
+  const aligned = { ...result };
+  const adjusted = [];
+  if (fixture.fPortPolicy && typeof fixture.fPortPolicy === 'object'
+    && stableStringify(fixture.fPortPolicy) !== stableStringify(result.fPortPolicy)) {
+    aligned.fPortPolicy = fixture.fPortPolicy;
+    adjusted.push('fPortPolicy');
+  }
+  if (typeof fixture.evidenceLevel === 'string' && fixture.evidenceLevel !== result.evidenceLevel) {
+    aligned.evidenceLevel = fixture.evidenceLevel;
+    adjusted.push('evidenceLevel');
+  }
+  if (adjusted.length > 0) {
+    aligned.warnings = [
+      ...(Array.isArray(result.warnings) ? result.warnings : []),
+      `Agent result ${adjusted.join(' and ')} was aligned to the committed fixture values`
+    ];
+  }
+  try {
+    validateAgentResult(aligned);
+  } catch {
+    return result;
+  }
+  return aligned;
+}
+
 function validateAgentEvidenceProvenance(result, request) {
   if (result.status !== 'generated') return result;
   const evidence = request && request.evidence;
@@ -298,6 +342,15 @@ function captureAgentOutput(resultPath, requestPath, outputDirectory) {
   let result;
   try {
     result = validateAgentResult(readAgentResult(resultPath));
+    if (result.status === 'generated') {
+      let fixture = null;
+      try {
+        fixture = readJson(path.join(WORKSPACE_ROOT, expected.fixturePath));
+      } catch {
+        fixture = null;
+      }
+      result = alignResultWithFixture(result, fixture);
+    }
     validateAgentEvidenceProvenance(result, request);
   } catch (error) {
     fs.mkdirSync(outputDirectory, { recursive: true });
@@ -466,6 +519,7 @@ function removeShadowTargets(requestPath) {
 module.exports = {
   expectedPaths,
   validateAgentResult,
+  alignResultWithFixture,
   validateAgentEvidenceProvenance,
   parseAgentResultText,
   readAgentResult,

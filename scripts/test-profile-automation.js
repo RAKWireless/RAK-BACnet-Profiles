@@ -16,6 +16,7 @@ const { normalizeCollectionExpectedSha, assertCollectionIssueSha } = require('..
 const {
   expectedPaths,
   validateAgentResult,
+  alignResultWithFixture,
   validateAgentEvidenceProvenance,
   parseAgentResultText,
   readAgentResult,
@@ -957,6 +958,44 @@ function testAgentResultSchemaAndPatchPaths() {
   assert.throws(() => patchPaths('diff --git a/a b/b\n'), /Renames/);
 }
 
+function testAlignResultWithFixture() {
+  const generated = {
+    schemaVersion: 1,
+    status: 'generated',
+    issueNumber: 41,
+    issueBodySha: 'a'.repeat(64),
+    summary: 'Generated candidate.',
+    profilePath: 'profiles/Acme/Acme-T100.yaml',
+    fixturePath: 'profiles/Acme/tests/Acme-T100.test.json',
+    evidenceLevel: 'documentation-only',
+    resolvedMappings: [{ name: 'Temperature', type: 'AnalogInputObject', units: 'degreesCelsius' }],
+    fPortPolicy: { mode: 'ignored', representativeFPort: 1, reason: 'Pending final fixture policy resolution.' },
+    warnings: [],
+    evidenceMatrix: [{ field: 'Temperature', officialDocument: 'manual p.5', decoder: null, knownPayload: '00FA', resolution: 'payload-verified', resolvedValue: '25', rationale: 'Known answer' }],
+    blocker: null
+  };
+  const fixturePolicy = { mode: 'fixed', ports: [3], citation: 'Issue uplinks use fPort 3' };
+  const aligned = alignResultWithFixture(generated, { fPortPolicy: fixturePolicy, evidenceLevel: 'known-answer' });
+  assert.deepEqual(aligned.fPortPolicy, fixturePolicy);
+  assert.equal(aligned.evidenceLevel, 'known-answer');
+  assert.equal(aligned.resolvedMappings, generated.resolvedMappings);
+  assert.equal(generated.fPortPolicy.mode, 'ignored');
+  assert(aligned.warnings.some(warning => warning.includes('fPortPolicy') && warning.includes('evidenceLevel') && warning.includes('aligned to the committed fixture')));
+
+  const inSync = { ...generated, fPortPolicy: { citation: 'Issue uplinks use fPort 3', ports: [3], mode: 'fixed' }, warnings: ['existing warning'] };
+  const unchanged = alignResultWithFixture(inSync, { fPortPolicy: fixturePolicy, evidenceLevel: 'documentation-only' });
+  assert.deepEqual(unchanged.warnings, ['existing warning']);
+
+  const blocked = { ...generated, status: 'blocked', profilePath: null, fixturePath: null, evidenceLevel: null, resolvedMappings: [], fPortPolicy: null, evidenceMatrix: [], blocker: { code: 'insufficient-evidence', message: 'No evidence.', retryable: false } };
+  assert.equal(alignResultWithFixture(blocked, { fPortPolicy: fixturePolicy }), blocked);
+
+  assert.equal(alignResultWithFixture(generated, null), generated);
+  const invalidPolicy = alignResultWithFixture(generated, { fPortPolicy: { mode: 'fixed' }, evidenceLevel: 'documentation-only' });
+  assert.equal(invalidPolicy.fPortPolicy.mode, 'ignored');
+  const invalidLevel = alignResultWithFixture(generated, { fPortPolicy: fixturePolicy, evidenceLevel: 'guessed' });
+  assert.equal(invalidLevel.fPortPolicy.mode, 'ignored');
+}
+
 function testAgentResultParsingCompatibility() {
   const result = {
     schemaVersion: 1,
@@ -1553,6 +1592,7 @@ async function main() {
     testEvidenceContractMigration,
     testDynamicCodecSafety,
     testAgentResultSchemaAndPatchPaths,
+    testAlignResultWithFixture,
     testAgentResultParsingCompatibility,
     testRetryableAttemptSeedingWithoutCandidatePatch,
     testNetworkBoundary,
