@@ -78,19 +78,28 @@ Select one evidence level: `known-answer`, `documentation-only`, or
 `decoder-derived`. List sources without embedding private contact information,
 full documents, or decoder source.
 
-Select one fPort policy:
+Select one fPort policy, then reuse that **exact same object** in both the
+fixture and the structured Agent result:
 
 - `fixed`: evidence identifies one or more real fPorts and the codec rejects
-  other ports.
+  other ports. Use this when the Issue supplies any explicit fPort on uplink or
+  downlink examples (even if uplink and downlink use different ports): pick the
+  application uplink port(s) and cite the evidence.
 - `agnostic`: evidence proves all fPorts 1-254 behave identically;
   use a representative application port and reject 0 and 255.
 - `ignored`: neither Issue nor protocol evidence specifies fPort and the codec
   is entirely payload-driven. Use `representativeFPort: 1` only as a test-call
   placeholder and explain why. Do not claim it is the device's actual fPort.
+  Do **not** choose `ignored` when the Issue or documentation names any real
+  fPort; explicit ports force `fixed`, not `ignored`.
 
 The fixture's `evidenceLevel` and complete `fPortPolicy` object must match the
-final structured Agent result exactly. Reuse the same values and citation text;
-do not shorten or rephrase them when producing the result JSON.
+final structured Agent result **byte-for-byte**. After deciding the mode,
+build the `fPortPolicy` object once and write the identical object (same
+`mode`, `ports`/`representativeFPort`, and the same `citation` or `reason`
+text) into both the fixture and the Agent result JSON. Never write `fixed`
+in the fixture but `ignored` in the Agent result; that self-contradiction is
+the deterministic validation error `FIXTURE_FPORT_POLICY_MISMATCH`.
 
 Every new strict candidate must include this exact robustness shape:
 
