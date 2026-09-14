@@ -159,7 +159,7 @@
       "description": "Eddy-Solutions Eddy-Solutions-Link Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
-        "A"
+        "C"
       ],
       "contentSha256": "63240ba3d632dcad40a9809d613af9aee70161612c7a8d90134e97e2a19f6ef6",
       "lastUpdate": "2026-09-14"
