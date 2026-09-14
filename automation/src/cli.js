@@ -432,6 +432,13 @@ async function commandAuthorizeReview(args) {
   console.log(JSON.stringify({ authorized, issueNumber: match ? Number(match[1]) : null, username, reviewCycle, reason }, null, 2));
 }
 
+function profileLinksFromFiles(files, repositoryUrl, ref) {
+  const base = String(repositoryUrl || '').replace(/\.git$/, '');
+  return (files || [])
+    .filter(file => file.startsWith('profiles/') && file.endsWith('.yaml'))
+    .map(file => `[${file}](${base}/blob/${ref}/${file})`);
+}
+
 async function commandMerged(args) {
   const event = eventFrom(args);
   const branch = event.pull_request && event.pull_request.head && event.pull_request.head.ref;
@@ -439,9 +446,22 @@ async function commandMerged(args) {
   if (!match || !event.pull_request.merged) return;
   const issueNumber = Number(match[1]);
   const client = githubClient();
+
+  // Resolve the merged Profile paths from the PR files so the Issue links to real files.
+  let profileLinks = [];
+  try {
+    const files = await client.listPullFiles(event.pull_request.number);
+    profileLinks = profileLinksFromFiles(files, event.repository && event.repository.html_url, event.pull_request.merge_commit_sha || 'main');
+  } catch {
+    profileLinks = [];
+  }
+  const profileLine = profileLinks.length > 0
+    ? `Merged Profile: ${profileLinks.join(', ')}.`
+    : `The generated Profile was merged in ${event.pull_request.html_url}.`;
+
   await client.setStateLabels(issueNumber, 'profile:generated');
   await client.addLabels(issueNumber, ['profile:unverified']);
-  await client.upsertComment(issueNumber, '<!-- profile-automation:merged -->', `The generated Profile was merged in ${event.pull_request.html_url}. It remains unverified until confirmed on real hardware.`);
+  await client.upsertComment(issueNumber, '<!-- profile-automation:merged -->', `${profileLine} It remains unverified until confirmed on real hardware.`);
   await client.closeIssue(issueNumber);
 }
 

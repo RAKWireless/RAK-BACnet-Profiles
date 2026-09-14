@@ -65,6 +65,11 @@ class GitHubClient {
     return this.request('GET', `/pulls/${number}`);
   }
 
+  async listPullFiles(number) {
+    const files = await this.request('GET', `/pulls/${number}/files?per_page=100`);
+    return (files || []).map(file => file.filename).filter(Boolean);
+  }
+
   async ensureLabel(name) {
     const definition = LABELS[name];
     if (!definition) throw new Error(`Unknown automation label: ${name}`);
