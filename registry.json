@@ -2,7 +2,7 @@
   "$schema": "./registry-schema.json",
   "version": "1.0.0",
   "lastUpdate": "2026-09-14",
-  "totalProfiles": 28,
+  "totalProfiles": 29,
   "profiles": [
     {
       "id": "rakwireless-rak2461",
@@ -162,6 +162,22 @@
         "C"
       ],
       "contentSha256": "1459359acd021ba0cea89306c932dd77fbdaddd08cdd1d1437eb743bcb83bc66",
+      "lastUpdate": "2026-09-14"
+    },
+    {
+      "id": "eddy-solutions-link",
+      "vendor": "Eddy-Solutions",
+      "model": "Eddy-Solutions-Link",
+      "version": "1.0.0",
+      "path": "profiles/Eddy-Solutions/Eddy-Solutions-Link.yaml",
+      "verified": false,
+      "hasTests": true,
+      "description": "Eddy-Solutions Eddy-Solutions-Link Sensor",
+      "deviceType": "Sensor",
+      "lorawanClass": [
+        "C"
+      ],
+      "contentSha256": "63240ba3d632dcad40a9809d613af9aee70161612c7a8d90134e97e2a19f6ef6",
       "lastUpdate": "2026-09-14"
     },
     {
@@ -458,7 +474,7 @@
       "RAKwireless": 2,
       "Becasmart": 1,
       "Dragino": 6,
-      "Eddy-Solutions": 2,
+      "Eddy-Solutions": 3,
       "Kaiterra": 1,
       "Milesight": 4,
       "Moko": 1,
@@ -466,7 +482,7 @@
       "Senso8": 9,
       "Thermokon": 1
     },
-    "withTests": 6,
+    "withTests": 7,
     "withoutTests": 22
   }
 }
