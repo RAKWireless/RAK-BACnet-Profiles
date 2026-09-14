@@ -242,6 +242,12 @@ function testStructuredOutputSchemas() {
     assert.equal(schema.type, 'object');
     assertStructuredOutputSchema(schema, name);
   }
+
+  const agentSchema = JSON.parse(fs.readFileSync(path.join(ROOT, '.github', 'codex', 'schemas', 'profile-agent-output.schema.json'), 'utf8'));
+  const agentTypes = agentSchema.properties.resolvedMappings.items.properties.type.enum;
+  const profileSchema = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'schemas', 'profile-schema.json'), 'utf8'));
+  const profileTypes = profileSchema.properties.datatype.patternProperties['^\\d+$'].properties.type.enum;
+  assert.deepEqual(new Set(agentTypes), new Set(profileTypes), 'Agent output resolvedMappings types must cover every Profile datatype object type');
 }
 
 function testCodexPermissionProfile() {
