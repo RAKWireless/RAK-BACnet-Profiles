@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "strict": true,
+  "profile": "Eddy-Solutions-Link",
+  "evidenceLevel": "known-answer",
+  "reviewMode": "single-model",
+  "fPortPolicy": {
+    "mode": "fixed",
+    "ports": [3],
+    "citation": "Issue #42 declares fport3 on all three uplink examples; its downlink command examples declare Fport 5, which datatype channels 10 and 11 declare as fport."
+  },
+  "sources": [
+    {
+      "type": "issue",
+      "reference": "Issue #42 uplink examples",
+      "citation": "fport3: 010702080319180102 (Describe), 020C040000001C0104B000 (Meter Data), 030800 (Valve)"
+    },
+    {
+      "type": "issue",
+      "reference": "Issue #42 downlink command vectors",
+      "citation": "Fport 5: Close Valve value 1 -> 0x7301, Open Valve value 0 -> 0x7300, Set Report Period value 5 -> 0x7105"
+    },
+    {
+      "type": "official-document",
+      "reference": "Link Meter Technical Specification v1.0 (15 pages)",
+      "citation": "Sections 4.1-4.2.1 uplink layouts and meter status bits; sections 5.2 and 5.4 downlink commands"
+    }
+  ],
+  "robustness": {
+    "checkTruncation": true,
+    "checkUnknownFPort": true,
+    "checkFuzz": true
+  },
+  "testCases": [
+    {
+      "name": "Describe (0x01) firmware version and report period",
+      "messageType": "0x01",
+      "fPort": 3,
+      "input": "010702080319180102",
+      "description": "Issue #42 Describe frame: firmware version bytes 1-2 = 0x0702 = 1794, report period byte 5 = 0x19 = 25 minutes.",
+      "expectedOutput": [
+        { "name": "Report Period", "channel": 3, "value": 25, "unit": "minutes" },
+        { "name": "Firmware Version", "channel": 4, "value": 1794, "unit": null },
+        { "name": "Set Report Period", "channel": 11, "value": 25, "unit": "minutes" }
+      ]
+    },
+    {
+      "name": "Meter Data (0x02) flow rate, odometer and meter status",
+      "messageType": "0x02",
+      "fPort": 3,
+      "input": "020C040000001C0104B000",
+      "description": "Issue #42 Meter Data frame: odometer bytes 3-6 = 28, flow rate bytes 9-10 = 0xB000 = 45056, meter status 0x0C04 -> steady state, valve error, no flow alerts.",
+      "expectedOutput": [
+        { "name": "Flow Rate", "channel": 1, "value": 45056, "unit": null },
+        { "name": "Odometer", "channel": 2, "value": 28, "unit": null },
+        { "name": "Valve Operation Status", "channel": 5, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 6, "value": 4, "unit": null },
+        { "name": "Minor Flow Alert", "channel": 7, "value": 0, "unit": null },
+        { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
+        { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
+      ]
+    },
+    {
+      "name": "Valve (0x03) meter status",
+      "messageType": "0x03",
+      "fPort": 3,
+      "input": "030800",
+      "description": "Issue #42 Valve frame: meter status 0x0800 -> steady state, valve closed, no flow alerts.",
+      "expectedOutput": [
+        { "name": "Valve Operation Status", "channel": 5, "value": 0, "unit": null },
+        { "name": "Valve Status", "channel": 6, "value": 0, "unit": null },
+        { "name": "Minor Flow Alert", "channel": 7, "value": 0, "unit": null },
+        { "name": "Major Flow Alert", "channel": 8, "value": 0, "unit": null },
+        { "name": "Extreme Flow Alert", "channel": 9, "value": 0, "unit": null }
+      ]
+    }
+  ],
+  "downlinkTestCases": [
+    {
+      "name": "Close Valve",
+      "channel": 10,
+      "value": 1,
+      "expectedFPort": 5,
+      "expectedBytes": "73 01",
+      "description": "Issue #42 vector: Close Valve, Fport 5, control value 0x01, expected downlink 0x7301.",
+      "citation": "Issue #42 downlink evidence and specification section 5.4 (0x01 close valve)"
+    },
+    {
+      "name": "Open Valve",
+      "channel": 10,
+      "value": 0,
+      "expectedFPort": 5,
+      "expectedBytes": "73 00",
+      "description": "Issue #42 vector: Open Valve, Fport 5, control value 0x00, expected downlink 0x7300.",
+      "citation": "Issue #42 downlink evidence and specification section 5.4 (0x00 open valve)"
+    },
+    {
+      "name": "Set Report Period",
+      "channel": 11,
+      "value": 5,
+      "expectedFPort": 5,
+      "expectedBytes": "71 05",
+      "description": "Issue #42 vector: Set Report Period, Fport 5, control value 0x05, expected downlink 0x7105.",
+      "citation": "Issue #42 downlink evidence and specification section 5.2 (0x02-60 batch mode minutes)"
+    }
+  ]
+}
