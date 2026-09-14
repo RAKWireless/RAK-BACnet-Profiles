@@ -47,7 +47,7 @@
       "description": "Becasmart Becasmart-BAC006 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
-        "A"
+        "C"
       ],
       "contentSha256": "d3931b9f50e86d61584c07513403ba786abf3e30dc1bd810b15947075c573237",
       "lastUpdate": "2026-04-29"
@@ -191,7 +191,7 @@
       "description": "Kaiterra Kaiterra-SE-300 CO2 Sensor",
       "deviceType": "CO2 Sensor",
       "lorawanClass": [
-        "A"
+        "C"
       ],
       "contentSha256": "31a47ef20e68821c1be5d58d6be824ac0409b146f1386299eb7d8b8c163f2297",
       "lastUpdate": "2026-07-23"
@@ -255,7 +255,7 @@
       "description": "Milesight Milesight-WT304 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
-        "A"
+        "C"
       ],
       "contentSha256": "09dcf071957ce43e5fce6bd43cc9f9b003f153e82c61c80c9bf33eefb88bd43a",
       "lastUpdate": "2026-08-06"

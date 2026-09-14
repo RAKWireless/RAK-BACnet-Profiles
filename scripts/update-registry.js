@@ -88,6 +88,36 @@ function extractModelFromFilename(yamlFile) {
 }
 
 /**
+ * Derive the registry lorawanClass list from the Profile lorawan section.
+ *
+ * The registry stores exactly one declared device class, so report the single
+ * most capable class the Profile enables rather than accumulating A/B/C. The
+ * Profile schema has no supportClassA switch because Class A is the implicit
+ * LoRaWAN baseline, so a profile with B and C both disabled is Class A.
+ * Returns null when the lorawan section is absent or malformed so callers can
+ * keep their existing fallback.
+ */
+function deriveLorawanClassFromYaml(profileData) {
+  const lorawan = profileData && profileData.lorawan;
+  if (!lorawan || typeof lorawan !== 'object') return null;
+  if (lorawan.supportClassC === true) return ['C'];
+  if (lorawan.supportClassB === true) return ['B'];
+  return ['A'];
+}
+
+/**
+ * Safely load a Profile YAML for merge-time derivation. Returns null when the
+ * file is unreadable or unparsable so callers keep their existing fallback.
+ */
+function readProfileYaml(filePath) {
+  try {
+    return yaml.load(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
  * Get models that have test data from vendor's test directory
  */
 function getModelsWithTests(vendorDir) {
@@ -137,6 +167,10 @@ function hashProfileContent(yamlContent) {
  * - verified and descriptive metadata: always preserved from the existing
  *   registry so manual review survives re-runs. New profiles use generated
  *   defaults until a maintainer curates them.
+ * - lorawanClass: derived from the Profile lorawan section, because the
+ *   existing registry inherits a wrong value forever once a profile is added
+ *   (for example a Class C device stored as ["A"]). The existing value is only
+ *   kept when the Profile carries no usable lorawan section to derive from.
  */
 function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
   const byPath = new Map();
@@ -167,8 +201,12 @@ function mergeLastUpdatesFromRegistry(existingRegistry, profiles) {
     }
 
     if (old) {
-      for (const field of ['version', 'description', 'deviceType', 'lorawanClass']) {
+      for (const field of ['version', 'description', 'deviceType']) {
         if (old[field] !== undefined) profile[field] = old[field];
+      }
+      const derived = deriveLorawanClassFromYaml(readProfileYaml(absPath));
+      if (derived === null && old.lorawanClass !== undefined) {
+        profile.lorawanClass = old.lorawanClass;
       }
     }
   }
@@ -235,6 +273,7 @@ function scanProfiles() {
       const description = extractDescription(vendor, modelClean, yamlContent, profileData);
       const contentSha256 = hashProfileContent(yamlContent);
       const lastUpdate = getLastUpdateDate(filePath);
+      const lorawanClass = deriveLorawanClassFromYaml(profileData);
       
       profiles.push({
         id,
@@ -246,7 +285,7 @@ function scanProfiles() {
         hasTests,
         description,
         deviceType,
-        lorawanClass: ['A'], // Default, can be enhanced later
+        lorawanClass: lorawanClass || ['A'],
         contentSha256,
         lastUpdate
       });
