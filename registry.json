@@ -159,7 +159,7 @@
       "description": "Eddy-Solutions Eddy-Solutions-H20-V3 Sensor",
       "deviceType": "Sensor",
       "lorawanClass": [
-        "A"
+        "C"
       ],
       "contentSha256": "1459359acd021ba0cea89306c932dd77fbdaddd08cdd1d1437eb743bcb83bc66",
       "lastUpdate": "2026-09-14"
